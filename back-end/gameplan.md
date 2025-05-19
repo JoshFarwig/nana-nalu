@@ -7,13 +7,14 @@
 - [ ] Users can create a surf spot  
 - [ ] Users can view their current registered surf spots 
 - [ ] Users can create logs (notes) on the surf spot
-- [ ] 
 
 
 ### cool but, am i becoming the idea man? 
 
 - [ ] Surf spots can snapshot days when its good a  
-- [ ] Users can specify some general parameters (swht, sw, wdspd) for when a surf spot is "fair" or "good"  
+- [ ] Users can specify some general parameters (swht, sw, wdspd) for when a surf spot is "fair" or "good"   
+- [ ] Implement a simple yet complex for me lol approach to wave refracting 
+    - [ ] Shadow / line of sight approach for a first implementation
 
 
 ### data, models, database structure and ideas  
