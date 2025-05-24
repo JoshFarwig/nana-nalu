@@ -1,11 +1,6 @@
-# Hawaii Surf App Architecture Document
+# nānā nalu architecture document
 
-## Overview
-
-This document outlines the architecture for a Hawaii-focused surf forecasting application that combines NOAA buoy data with user-generated insights. The application will initially focus on Maui with the goal of expanding to other Hawaiian islands.
-
-## System Goals
-
+### sys goals
 1. Display near real-time surf conditions based on NOAA buoy data
 2. Allow users to create "surf spots" tied to geographical locations
 3. Enable users to log observations and optimal conditions for each spot
@@ -14,36 +9,40 @@ This document outlines the architecture for a Hawaii-focused surf forecasting ap
    - 2D shadow/refraction modeling
    - Advanced bathymetry-based modeling
 
-## Development Phases
+## dev phases
 
-### Phase 1: Core Features and User Validation
-- Basic user authentication
+### phase 1: core features / user validations
+- Basic user authentication, authorization, profile setup
 - NOAA buoy data integration
+  - Each registered bouy is stashed in redis (need to look into how to update it dynamically)
 - Surf spot creation and management
 - User observations and condition notes
 
-### Phase 2: Enhanced Forecasting
+### phase 2: enhanced wave modeling
 - 2D shadow line/wave refraction modeling
 - Tide integration
 - Historical data analysis
 - Improved spot recommendations
 
-### Phase 3: Advanced Modeling
+### phase 3: advanced modeling
 - Bathymetry-based wave forecasting
 - Machine learning from user observations
 - Comprehensive forecast system
 
-## System Architecture
+## sys arch 
 
-The system will follow a modern microservices architecture with:
-- FastAPI backend (RESTful API)
-- PostgreSQL database
-- Redis cache for buoy data
-- Modern frontend (React/Vue/Angular)
-- Docker containerization
+can follow a modern microservices architecture with:  
+
+- FastAPI backend (RESTful API) 
+  - Will handle most if not all of the buisness logic of the app
+- PostgreSQL database (with SQLModel to start)
+  - will include user data and spot data
+- Redis cache for buoy data 
+  - Will link with the back-end, each
+- Next.JS front-end with shadcn ui? 
 - CI/CD pipeline
 
-### Data Flow
+### data flow
 
 ```mermaid
 flowchart TD
@@ -59,7 +58,7 @@ flowchart TD
     B -->|Store User Data| D
 ```
 
-## Entity Relationship Diagram
+## potiental ER diagram
 
 ```mermaid
 erDiagram
@@ -69,27 +68,6 @@ erDiagram
         string password_hash
         timestamp created_at
         boolean is_active
-    }
-    
-    BUOY {
-        string station_id PK
-        string name
-        float latitude
-        float longitude
-        timestamp last_updated
-    }
-    
-    BUOY_DATA {
-        uuid id PK
-        string station_id FK
-        timestamp timestamp
-        float wave_height
-        float dominant_period
-        float average_period
-        float wave_direction
-        float wind_speed
-        float wind_direction
-        float temperature
     }
     
     SURF_SPOT {
@@ -135,20 +113,19 @@ erDiagram
     BUOY ||--o{ SURF_SPOT : informs
 ```
 
-## API Endpoints
+## potiental endpoints
 
-### Authentication
+### auth
 - `POST /api/auth/register` - User registration
 - `POST /api/auth/login` - User login
-- `POST /api/auth/refresh` - Refresh token
+- `POST /api/auth/refresh` - Refresh token 
 
-### Buoy Data
+### bouys
 - `GET /api/buoys` - List all buoys
 - `GET /api/buoys/{station_id}` - Get specific buoy info
-- `GET /api/buoys/{station_id}/data` - Get buoy readings
-- `GET /api/buoys/{station_id}/data/latest` - Get latest reading
+- `GET /api/buoys/{station_id}/spec/latest` - Get latest spec readings
 
-### Surf Spots
+### surf spots 
 - `GET /api/spots` - List all surf spots
 - `POST /api/spots` - Create new surf spot
 - `GET /api/spots/{spot_id}` - Get spot details
