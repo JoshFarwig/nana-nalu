@@ -35,12 +35,12 @@ can follow a modern microservices architecture with:
 
 - FastAPI backend (RESTful API) 
   - Will handle most if not all of the buisness logic of the app
-- PostgreSQL database (with SQLModel to start)
+- PostgreSQL database (with SQLModel)
   - will include user data and spot data
 - Redis cache for buoy data 
   - Will link with the back-end, each
 - Next.JS front-end with shadcn ui? 
-- CI/CD pipeline
+- CI/CD pipeline with docker composes / gh actions 
 
 ### data flow
 
@@ -175,7 +175,8 @@ erDiagram
    - longitude (FLOAT)
    - created_by (UUID, FK)
    - buoy_id (VARCHAR, FK)
-   - tide_factor (FLOAT)
+   - tide_factor (FLOAT) 
+      - factor set by users to determine + or - of tide reading in kahalui 
    - created_at (TIMESTAMP)
 
 5. `spot_observations`
@@ -200,21 +201,25 @@ erDiagram
    - tide_preference (VARCHAR)
    - wind_preference (VARCHAR)
 
-## Technology Stack
+## tech stack
 
-### Backend
+### back-end
 - **Framework**: FastAPI
 - **Database**: PostgreSQL
 - **Cache**: Redis
 - **Authentication**: JWT
-- **Data Processing**: Pandas/NumPy
+- **Data Processing**: Pandas/NumPy 
 
-### DevOps
+### front-end 
+- **Framework**: Next.js  
+- **UI Kit**: shadcn/ui 
+
+### devops
 - **Containerization**: Docker
 - **CI/CD**: GitHub Actions
-- **Deployment**: Kubernetes or AWS ECS
+- **Deployment**: ?? Not sure yet 
 
-### Infrastructure Diagram
+### infrastructure diagram
 
 ```mermaid
 flowchart TD
@@ -250,7 +255,6 @@ flowchart TD
     WORKER1 -->|Fetch NOAA Data| EXTERNAL[NOAA API]
 ```
 
-## Docker Compose Setup
 
 ```yaml
 version: '3.8'
@@ -396,8 +400,7 @@ sequenceDiagram
     Worker->>Worker: Parse data
     Worker->>Cache: Store recent data
     Worker->>DB: Archive historical data
-    
-    Note over Worker,DB: Run every 30 minutes
+  
 ```
 
 ### Key Buoy Parameters to Store
