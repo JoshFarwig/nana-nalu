@@ -1,10 +1,11 @@
 [project]
-name = "back-end"
+name = "app"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12.10"
+requires-python = ">=3.11.12"
 dependencies = [
     "fastapi[standard]>=0.115.12",
-    "sqlmodel>=0.0.24",
+    "geoalchemy2>=0.17.1",
+    "sqlalchemy>=2.0.41",
 ]
