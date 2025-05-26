@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15                    
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: appdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build: ./back-end/api/Dockerfile.dev                    
+    depends_on:
+      - db
+    ports:
+      - "8000:80"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/appdb
+
+volumes:
+  postgres_data:
