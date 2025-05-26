@@ -1,8 +1,8 @@
 # nānā nalu architecture document
 
-### sys goals
-1. Display near real-time surf conditions based on NOAA buoy data
-2. Allow users to create "surf spots" tied to geographical locations
+### generalized system goals
+1. Display near real-time surf conditions based on NOAA buoy data and model predictions
+2. Allow users to create "surf spots" tied to geographical locations, potientally leading to custom base-maps
 3. Enable users to log observations and optimal conditions for each spot
 4. Implement progressive wave modeling capabilities:
    - Simple buoy data display
@@ -11,35 +11,38 @@
 
 ## dev phases
 
-### phase 1: core features / user validations
+### phase 1: mini features
 - Basic user authentication, authorization, profile setup
-- NOAA buoy data integration
-  - Each registered bouy is stashed in redis (need to look into how to update it dynamically)
-- Surf spot creation and management
-- User observations and condition notes
+- basic buoy data integration / registry
+  - Each registered bouy is stashed in redis? (need to look into options on how to update it dynamically / based on user requests)
+- Basic surf spot creation / deletion
+- User observations notes
 
-### phase 2: enhanced wave modeling
-- 2D shadow line/wave refraction modeling
-- Tide integration
-- Historical data analysis
-- Improved spot recommendations
+### phase 2: basic wave modeling / bouy caching integration 
+- NOAA buoy data caching integration
+  - Each registered bouy is stashed in redis? (need to look into options on how to update it dynamically / based on user requests) 
+- 2D shadow line/wave refraction modeling 
+- Custom base-map creation for islands of hawaii.
 
-### phase 3: advanced modeling
+### phase 3: advanced modeling and extended features 
+- Tide integration 
+- Wind integration
+- Historical data analysis (Somewhat out of scope for now, could be a future feature for model training)
 - Bathymetry-based wave forecasting
 - Machine learning from user observations
-- Comprehensive forecast system
 
 ## sys arch 
 
 can follow a modern microservices architecture with:  
 
 - FastAPI backend (RESTful API) 
-  - Will handle most if not all of the buisness logic of the app
-- PostgreSQL database (with SQLModel)
-  - will include user data and spot data
+  - Will handle most if not all of the buisness logic of the app, takes a monolithic approach, or modular-monolithic? Could do a micro-services approach too but start mono for simplistic
+- PostgreSQL database (with SQLModel? Or only sql-alchemy)
 - Redis cache for buoy data 
   - Will link with the back-end, each
 - Next.JS front-end with shadcn ui? 
+  - Need to consider the options for maps. 
+  - Also, must be phone friendly as well so users can log in via browser on phone.
 - CI/CD pipeline with docker composes / gh actions 
 
 ### data flow
@@ -68,6 +71,10 @@ erDiagram
         string password_hash
         timestamp created_at
         boolean is_active
+    } 
+
+    BOUY { 
+      uuid id PK
     }
     
     SURF_SPOT {
