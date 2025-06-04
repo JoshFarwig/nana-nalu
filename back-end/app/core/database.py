@@ -6,7 +6,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/mydb"
 )
 
-# Async Engine
+# async engine
 engine = create_async_engine(
     DATABASE_URL,
     echo=True,
@@ -15,12 +15,7 @@ engine = create_async_engine(
     pool_timeout=30,  # seconds to wait before error if pool is full
 )
 
-# Session factory
+# session factory
 AsyncSessionLocal = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )
-
-
-# Base class for declarative models
-class Base(DeclarativeBase):
-    pass
