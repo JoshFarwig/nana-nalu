@@ -11,26 +11,44 @@ class BaseConfig(BaseSettings):
     database_url: str
 
     # note: no default env_file here, subclasses override it
+    # and all vars will be loaded from that file.
+    # can add a default value .env file for base configurations if needed
     model_config = SettingsConfigDict(env_file=None)
 
 
 class DevelopmentConfig(BaseConfig):
     model_config = SettingsConfigDict(
-        env_file=".env.dev",
+        _env_file=".env.dev",
         env_file_encoding="utf-8",
     )
+
+    # general application settings
+    app_name: str = "My FastAPI App (Development)"
+    app_version: str = "0.1.0"
+    debug: bool = True
+
+    # redis settings
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+
+    # postgres db settings
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "mydatabase"
+    db_user: str = "myuser"
+    db_password: str = "mypassword"
 
 
 class ProductionConfig(BaseConfig):
     model_config = SettingsConfigDict(
-        env_file=".env.prod",
+        _env_file=".env.prod",
         env_file_encoding="utf-8",
     )
 
 
 class TestConfig(BaseConfig):
     model_config = SettingsConfigDict(
-        env_file=".env.test",
+        _env_file=".env.test",
         env_file_encoding="utf-8",
     )
 
@@ -41,6 +59,7 @@ def get_settings() -> BaseConfig:
     Reads FASTAPI_CONFIG to pick which .env to load.
     CACHE so that multiple calls share one instance.
     """
+    # note: this may cause issues if the environment variable is in hot-reloading scenarios? not sure need to test
     mapping = {
         "dev": DevelopmentConfig,
         "prod": ProductionConfig,
