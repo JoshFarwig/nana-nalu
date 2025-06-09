@@ -1,49 +1,51 @@
-# Hawaii Surf App Architecture Document
+# nānā nalu architecture document
 
-## Overview
-
-This document outlines the architecture for a Hawaii-focused surf forecasting application that combines NOAA buoy data with user-generated insights. The application will initially focus on Maui with the goal of expanding to other Hawaiian islands.
-
-## System Goals
-
-1. Display near real-time surf conditions based on NOAA buoy data
-2. Allow users to create "surf spots" tied to geographical locations
+### generalized system goals
+1. Display near real-time surf conditions based on NOAA buoy data and model predictions
+2. Allow users to create "surf spots" tied to geographical locations, potientally leading to custom base-maps
 3. Enable users to log observations and optimal conditions for each spot
 4. Implement progressive wave modeling capabilities:
    - Simple buoy data display
    - 2D shadow/refraction modeling
    - Advanced bathymetry-based modeling
 
-## Development Phases
+## dev phases
 
-### Phase 1: Core Features and User Validation
-- Basic user authentication
-- NOAA buoy data integration
-- Surf spot creation and management
-- User observations and condition notes
+### phase 1: mini features
+- Basic user authentication, authorization, profile setup
+- basic buoy data integration / registry
+  - Each registered bouy is stashed in redis? (need to look into options on how to update it dynamically / based on user requests)
+- Basic surf spot creation / deletion
+- User observations notes
 
-### Phase 2: Enhanced Forecasting
-- 2D shadow line/wave refraction modeling
-- Tide integration
-- Historical data analysis
-- Improved spot recommendations
+### phase 2: basic wave modeling / bouy caching integration 
+- NOAA buoy data caching integration
+  - Each registered bouy is stashed in redis? (need to look into options on how to update it dynamically / based on user requests) 
+- 2D shadow line/wave refraction modeling 
+- Custom base-map creation for islands of hawaii.
 
-### Phase 3: Advanced Modeling
+### phase 3: advanced modeling and extended features 
+- Tide integration 
+- Wind integration
+- Historical data analysis (Somewhat out of scope for now, could be a future feature for model training)
 - Bathymetry-based wave forecasting
 - Machine learning from user observations
-- Comprehensive forecast system
 
-## System Architecture
+## sys arch 
 
-The system will follow a modern microservices architecture with:
-- FastAPI backend (RESTful API)
-- PostgreSQL database
-- Redis cache for buoy data
-- Modern frontend (React/Vue/Angular)
-- Docker containerization
-- CI/CD pipeline
+can follow a modern microservices architecture with:  
 
-### Data Flow
+- FastAPI backend (RESTful API) 
+  - Will handle most if not all of the buisness logic of the app, takes a monolithic approach, or modular-monolithic? Could do a micro-services approach too but start mono for simplistic
+- PostgreSQL database (with SQLModel? Or only sql-alchemy)
+- Redis cache for buoy data 
+  - Will link with the back-end, each
+- Next.JS front-end with shadcn ui? 
+  - Need to consider the options for maps. 
+  - Also, must be phone friendly as well so users can log in via browser on phone.
+- CI/CD pipeline with docker composes / gh actions 
+
+### data flow
 
 ```mermaid
 flowchart TD
@@ -59,7 +61,7 @@ flowchart TD
     B -->|Store User Data| D
 ```
 
-## Entity Relationship Diagram
+## potiental ER diagram
 
 ```mermaid
 erDiagram
@@ -69,27 +71,10 @@ erDiagram
         string password_hash
         timestamp created_at
         boolean is_active
-    }
-    
-    BUOY {
-        string station_id PK
-        string name
-        float latitude
-        float longitude
-        timestamp last_updated
-    }
-    
-    BUOY_DATA {
-        uuid id PK
-        string station_id FK
-        timestamp timestamp
-        float wave_height
-        float dominant_period
-        float average_period
-        float wave_direction
-        float wind_speed
-        float wind_direction
-        float temperature
+    } 
+
+    BOUY { 
+      uuid id PK
     }
     
     SURF_SPOT {
@@ -135,20 +120,19 @@ erDiagram
     BUOY ||--o{ SURF_SPOT : informs
 ```
 
-## API Endpoints
+## potiental endpoints
 
-### Authentication
+### auth
 - `POST /api/auth/register` - User registration
 - `POST /api/auth/login` - User login
-- `POST /api/auth/refresh` - Refresh token
+- `POST /api/auth/refresh` - Refresh token 
 
-### Buoy Data
+### bouys
 - `GET /api/buoys` - List all buoys
 - `GET /api/buoys/{station_id}` - Get specific buoy info
-- `GET /api/buoys/{station_id}/data` - Get buoy readings
-- `GET /api/buoys/{station_id}/data/latest` - Get latest reading
+- `GET /api/buoys/{station_id}/spec/latest` - Get latest spec readings
 
-### Surf Spots
+### surf spots 
 - `GET /api/spots` - List all surf spots
 - `POST /api/spots` - Create new surf spot
 - `GET /api/spots/{spot_id}` - Get spot details
@@ -198,7 +182,8 @@ erDiagram
    - longitude (FLOAT)
    - created_by (UUID, FK)
    - buoy_id (VARCHAR, FK)
-   - tide_factor (FLOAT)
+   - tide_factor (FLOAT) 
+      - factor set by users to determine + or - of tide reading in kahalui 
    - created_at (TIMESTAMP)
 
 5. `spot_observations`
@@ -223,21 +208,25 @@ erDiagram
    - tide_preference (VARCHAR)
    - wind_preference (VARCHAR)
 
-## Technology Stack
+## tech stack
 
-### Backend
+### back-end
 - **Framework**: FastAPI
 - **Database**: PostgreSQL
 - **Cache**: Redis
 - **Authentication**: JWT
-- **Data Processing**: Pandas/NumPy
+- **Data Processing**: Pandas/NumPy 
 
-### DevOps
+### front-end 
+- **Framework**: Next.js  
+- **UI Kit**: shadcn/ui 
+
+### devops
 - **Containerization**: Docker
 - **CI/CD**: GitHub Actions
-- **Deployment**: Kubernetes or AWS ECS
+- **Deployment**: ?? Not sure yet 
 
-### Infrastructure Diagram
+### infrastructure diagram
 
 ```mermaid
 flowchart TD
@@ -273,7 +262,6 @@ flowchart TD
     WORKER1 -->|Fetch NOAA Data| EXTERNAL[NOAA API]
 ```
 
-## Docker Compose Setup
 
 ```yaml
 version: '3.8'
@@ -419,8 +407,7 @@ sequenceDiagram
     Worker->>Worker: Parse data
     Worker->>Cache: Store recent data
     Worker->>DB: Archive historical data
-    
-    Note over Worker,DB: Run every 30 minutes
+  
 ```
 
 ### Key Buoy Parameters to Store
