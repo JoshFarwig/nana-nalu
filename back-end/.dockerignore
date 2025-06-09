@@ -1,4 +1,3 @@
-# python related files/folders  
-
-*__pycache__
-.venv  
+.venv
+__pycache__
+*.pyc

@@ -1,24 +1,61 @@
-version: "3.8"
-
 services:
   db:
-    image: postgres:15                    
+    image: postgis/postgis:15-3.5-alpine
     restart: always
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: appdb
+      # TODO: change this to a more secure user? Pass via secrets
+      POSTGRES_USER: nn-base-user
+      # TODO: change this to a more secure password? Pass via secrets
+      POSTGRES_PASSWORD: nn-base-pass
+      POSTGRES_DB: nn-db
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  api:
-    build: ./back-end/api/Dockerfile.dev                    
+  backend:
+    build:
+      context: ./back-end
+      dockerfile: ./back-end/Dockerfile.dev
     depends_on:
       - db
     ports:
       - "8000:80"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/appdb
+    env_file: ./back-end/.env.dev
+    develop:
+      watch:
+        # Hot reload for API endpoints
+        - action: sync
+          path: ./back-end/api
+          target: /app/api
+
+        # Sync schemas for Pydantic models
+        - action: sync
+          path: ./back-end/schemas
+          target: /app/schemas
+
+        # Sync services with restart for business logic changes
+        - action: sync
+          path: ./back-end/services
+          target: /app/services
+
+        # Sync models and trigger model changes and migrations if needed
+        - action: sync+restart
+          path: ./back-end/models
+          target: /app/models
+
+        - action: sync+restart
+          path: ./back-end/migrations
+          target: /app/migrations
+
+        # Sync core configurations
+        - action: sync+restart
+          path: ./back-end/core
+          target: /app/core
+
+        # Rebuild on dependency changes
+        - action: rebuild
+          path: pyproject.toml
+        - action: rebuild
+          path: uv.lock
 
 volumes:
   postgres_data:

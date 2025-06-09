@@ -34,9 +34,9 @@ class DevelopmentConfig(BaseConfig):
     # postgres db settings
     db_host: str = "localhost"
     db_port: int = 5432
-    db_name: str = "mydatabase"
-    db_user: str = "myuser"
-    db_password: str = "mypassword"
+    db_name: str = "nn-db"
+    db_user: str = "nn-base-user"
+    db_password: str = "nn-base-pass"
 
 
 class ProductionConfig(BaseConfig):
