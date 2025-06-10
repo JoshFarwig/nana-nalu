@@ -26,35 +26,35 @@ services:
           path: ./back-end/api
           target: /app/api
 
-        # Sync schemas for Pydantic models
-        - action: sync
-          path: ./back-end/schemas
-          target: /app/schemas
+# Sync schemas for Pydantic models
+# - action: sync
+#   path: ./back-end/schemas
+#   target: /app/schemas
 
-        # Sync services with restart for business logic changes
-        - action: sync
-          path: ./back-end/services
-          target: /app/services
+# # Sync services with restart for business logic changes
+# - action: sync
+#   path: ./back-end/services
+#   target: /app/services
 
-        # Sync models and trigger model changes and migrations if needed
-        - action: sync+restart
-          path: ./back-end/models
-          target: /app/models
+# # Sync models and trigger model changes and migrations if needed
+# - action: sync+restart
+#   path: ./back-end/models
+#   target: /app/models
 
-        - action: sync+restart
-          path: ./back-end/migrations
-          target: /app/migrations
+# - action: sync+restart
+#   path: ./back-end/migrations
+#   target: /app/migrations
 
-        # Sync core configurations
-        - action: sync+restart
-          path: ./back-end/core
-          target: /app/core
+# # Sync core configurations
+# - action: sync+restart
+#   path: ./back-end/core
+#   target: /app/core
 
-        # Rebuild on dependency changes
-        - action: rebuild
-          path: pyproject.toml
-        - action: rebuild
-          path: uv.lock
+# # Rebuild on dependency changes
+# - action: rebuild
+#   path: pyproject.toml
+# - action: rebuild
+#   path: uv.lock
 
 volumes:
   postgres_data:
