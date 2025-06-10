@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgis/postgis:15-3.5-alpine
+    image: postgis/postgis:15-3.5
     restart: always
     environment:
       # TODO: change this to a more secure user? Pass via secrets
@@ -14,12 +14,11 @@ services:
   backend:
     build:
       context: ./back-end
-      dockerfile: ./back-end/Dockerfile.dev
+      dockerfile: Dockerfile.dev
     depends_on:
       - db
     ports:
       - "8000:80"
-    env_file: ./back-end/.env.dev
     develop:
       watch:
         # Hot reload for API endpoints
