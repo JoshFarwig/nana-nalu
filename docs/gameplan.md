@@ -47,7 +47,7 @@ tldr, tavares can be good during mid-tide but enough swell, or really good when 
 
 - [ ] Building out a tide / wind integration into spots? Would I also need my los / shadow model to have factors like wind and tide in consideration? also how much processing power will a model like this take?
 
-## thinking about forms of data 
+## thinking about forms of data  
 
 ### database entities  
 
@@ -85,7 +85,17 @@ should include basic user profile data i.e.
 - surf_spot_id (these pretty much make the pk)
 - user_id (these pretty much make the pk) 
 - ... all relevant data from the bouy
-- note (limit to a certain amount of chars)
+- note (limit to a certain amount of chars) 
+
+### database inits / arch  
+
+#### schemas 
+
+should create some organized schemas for the more privatizied data geared towards home-brew surf forecast generation
+
+#### role management? 
+
+if this app scales a fair amount, could be important to start incorperating some roles (i.e. app_user to create role that only api uses, or maybe read_only role)
 
 ## biz logic and potiental approaches
 

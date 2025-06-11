@@ -1,6 +1,9 @@
 services:
-  db:
-    image: postgis/postgis:15-3.5
+  db: 
+    # NOTICE: This is a deployment uses a ARM64 compatible image since I;v
+    build: 
+      context: ../db
+      dockerfile: Dockerfile.postgis
     restart: always
     environment:
       # TODO: change this to a more secure user? Pass via secrets
@@ -9,11 +12,12 @@ services:
       POSTGRES_PASSWORD: nn-base-pass
       POSTGRES_DB: nn-db
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data 
+      - ../db/init:/docker-entrypoint-initdb.d
 
   backend:
     build:
-      context: ./back-end
+      context: ../back-end
       dockerfile: Dockerfile.dev
     depends_on:
       - db

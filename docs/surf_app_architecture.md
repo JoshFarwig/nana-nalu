@@ -145,7 +145,7 @@ erDiagram
 - `GET /api/spots/{spot_id}/optimal-conditions` - Get optimal conditions
 - `POST /api/spots/{spot_id}/optimal-conditions` - Set optimal conditions
 
-## Database Schema
+## database stuff 
 
 ### Tables
 
