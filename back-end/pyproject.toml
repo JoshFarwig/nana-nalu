@@ -1,0 +1,11 @@
+[project]
+name = "back-end"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115.12",
+    "geoalchemy2>=0.17.1",
+    "pydantic-settings>=2.9.1",
+]
