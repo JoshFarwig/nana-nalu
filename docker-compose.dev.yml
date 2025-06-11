@@ -1,6 +1,7 @@
 services:
   db: 
-    # NOTICE: This is a deployment uses a ARM64 compatible image since I;v
+    # NOTICE: This is deployment uses a dockerfile to build the PostGIS image, primarily because  
+    # the official postgis image doesn't have any arm64 builds.
     build: 
       context: ../db
       dockerfile: Dockerfile.postgis
@@ -12,7 +13,8 @@ services:
       POSTGRES_PASSWORD: nn-base-pass
       POSTGRES_DB: nn-db
     volumes:
-      - postgres_data:/var/lib/postgresql/data 
+      - postgres_data:/var/lib/postgresql/data  
+      # Initialize the database with custom scripts 
       - ../db/init:/docker-entrypoint-initdb.d
 
   backend:

@@ -87,7 +87,7 @@ should include basic user profile data i.e.
 - ... all relevant data from the bouy
 - note (limit to a certain amount of chars) 
 
-### database inits / arch  
+### database /init/ or scripts
 
 #### schemas 
 
@@ -95,7 +95,11 @@ should create some organized schemas for the more privatizied data geared toward
 
 #### role management? 
 
-if this app scales a fair amount, could be important to start incorperating some roles (i.e. app_user to create role that only api uses, or maybe read_only role)
+if this app scales a fair amount, could be important to start incorperating some roles (i.e. app_user to create role that only api uses, or maybe read_only role) 
+
+#### seeding 
+
+potientally start setting up seeding for integration testing? or just unit testing.
 
 ## biz logic and potiental approaches
 
