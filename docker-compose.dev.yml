@@ -20,11 +20,11 @@ services:
     ports:
       - "8000:80"
     develop:
-      watch:
-        # Hot reload for API endpoints
-        - action: sync
-          path: ./back-end/api
-          target: /app/api
+# watch:
+#   # Hot reload for API endpoints
+#   - action: sync
+#     path: ./back-end/api
+#     target: /app/api
 
 # Sync schemas for Pydantic models
 # - action: sync

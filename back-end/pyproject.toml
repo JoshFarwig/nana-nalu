@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115.12",
+    "fastapi-cli>=0.0.7",
     "geoalchemy2>=0.17.1",
     "pydantic-settings>=2.9.1",
+    "uvicorn>=0.34.3",
 ]
