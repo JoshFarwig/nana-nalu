@@ -1,10 +1,12 @@
 services:
   db: 
+    container_name: nn-db-dev
     # NOTICE: This is deployment uses a dockerfile to build the PostGIS image, primarily because  
-    # the official postgis image doesn't have any arm64 builds.
+    # the official postgis image doesn't have any arm64 builds. 
     build: 
       context: ../db
       dockerfile: Dockerfile.postgis
+    image: nn-db:dev
     restart: always
     environment:
       # TODO: change this to a more secure user? Pass via secrets
@@ -17,20 +19,22 @@ services:
       # Initialize the database with custom scripts 
       - ../db/init:/docker-entrypoint-initdb.d
 
-  backend:
+  backend: 
+    container_name: nn-backend-dev
     build:
-      context: ../back-end
+      context: ../backend
       dockerfile: Dockerfile.dev
+    image: nn-backend:dev
     depends_on:
       - db
     ports:
       - "8000:80"
     develop:
-# watch:
-#   # Hot reload for API endpoints
-#   - action: sync
-#     path: ./back-end/api
-#     target: /app/api
+      watch:
+        # Hot reload for API endpoints
+        - action: sync
+          path: ./backend/api
+          target: /app/api
 
 # Sync schemas for Pydantic models
 # - action: sync
