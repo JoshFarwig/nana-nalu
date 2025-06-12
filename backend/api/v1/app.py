@@ -10,22 +10,21 @@ from backend.core.logging import init_logging, get_logger
 def create_app(config: str | None = None) -> FastAPI:
     """
     Factory function to create and configure the FastAPI application.
-    This allows for better testing and modularity.
+    This function initializes logging, sets up configuration settings,
+    initializes database connections, and sets up routes.
+    Args:
+        config (str | None): The configuration environment to use.
+                             If None, it will read from the FASTAPI_CONFIG
+                             environment variable. Valid values are "dev",
+                             "prod", or "test".
     """
-
-    # Set up pydantic settings based on the environment
-    # Throw an error if env is not of the 3 possible values
+    # Set up configuration and settings, pass settings to services via DI if needed.
     config = config or os.getenv("FASTAPI_CONFIG", "dev")
     settings = get_settings(config)
-    init_logging("INFO", settings.app_name)
+
+    init_logging("DEBUG", settings.app_name)
     logger = get_logger(settings.app_name)
-    logger.critical(
-        f"Starting {settings.app_name} version {settings.app_version} in {config} mode"
-    )
-    logger.info("test")
-    logger.debug("Debugging information here")
-    logger.warning("This is a warning message")
-    logger.error("An error occurred")
+    # Set up pydantic settings based on the environment
 
     # Set up conns (redis / database)
 
