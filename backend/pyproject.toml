@@ -1,5 +1,5 @@
 [project]
-name = "back-end"
+name = "backend"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -10,4 +10,5 @@ dependencies = [
     "geoalchemy2>=0.17.1",
     "pydantic-settings>=2.9.1",
     "uvicorn>=0.34.3",
+    "alembic>=1.16.1",
 ]

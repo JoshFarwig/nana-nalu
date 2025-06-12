@@ -4,7 +4,7 @@ services:
     # NOTICE: This is deployment uses a dockerfile to build the PostGIS image, primarily because  
     # the official postgis image doesn't have any arm64 builds. 
     build: 
-      context: ../db
+      context: ./db
       dockerfile: Dockerfile.postgis
     image: nn-db:dev
     restart: always
@@ -22,7 +22,7 @@ services:
   backend: 
     container_name: nn-backend-dev
     build:
-      context: ../backend
+      context: ./backend
       dockerfile: Dockerfile.dev
     image: nn-backend:dev
     depends_on:
