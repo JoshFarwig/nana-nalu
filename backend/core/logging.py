@@ -24,7 +24,7 @@ class ColorFormatter(logging.Formatter):
         return super().format(record)
 
 
-def init_logging(level: str = "INFO", app_name: str = "nānā-nalu"):
+def init_logging(level: str = "INFO", app_name: str = "nānā-nalu-backend"):
     fmt = (
         "%(levelname)s %(asctime)s "
         "%(filename)s:%(lineno)d %(funcName)s(): %(message)s"
@@ -40,6 +40,6 @@ def init_logging(level: str = "INFO", app_name: str = "nānā-nalu"):
     logger.propagate = False
 
 
-# default logger to "nānā-nalu"
-def get_logger(name: str | None = "nānā-nalu"):
+# default logger to "nānā-nalu" app
+def get_logger(name: str | None = "nānā-nalu-backend"):
     return logging.getLogger(name)

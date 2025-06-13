@@ -10,10 +10,10 @@ services:
     restart: always
     environment:
       # TODO: change this to a more secure user? Pass via secrets
-      POSTGRES_USER: nn-base-user
+      POSTGRES_USER: nn-db-dev-user
       # TODO: change this to a more secure password? Pass via secrets
-      POSTGRES_PASSWORD: nn-base-pass
-      POSTGRES_DB: nn-db
+      POSTGRES_PASSWORD: nn-db-dev-pass
+      POSTGRES_DB: nn-db-dev
     volumes:
       - postgres_data:/var/lib/postgresql/data  
       # Initialize the database with custom scripts 

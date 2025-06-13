@@ -8,17 +8,19 @@ class BaseConfig(BaseSettings):
     # general application settings
     app_name: str = "nānā-nalu-backend"
     app_version: str = "0.1.0"
+    log_level: str = "INFO"
+    debug: bool = False  # whether to run in debug mode
 
-    # # postgres db settings
-    # db_host: str
-    # db_port: int
-    # db_name: str
-    # db_user: str
-    # db_password: str
+    # db settings
+    db_host: str
+    db_port: int
+    db_name: str
+    db_user: str
+    db_password: str
 
-    # @property
-    # def database_url(self) -> str:
-    #     return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+    @property
+    def database_url(self) -> str:
+        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     # note: no default env_file here, subclasses override it
     # and all vars will be loaded from that file.
@@ -27,6 +29,10 @@ class BaseConfig(BaseSettings):
 
 
 class DevelopmentConfig(BaseConfig):
+    # general application settings
+    log_level: str = "DEBUG"
+    debug: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env.dev",
         env_file_encoding="utf-8",
@@ -41,6 +47,12 @@ class ProductionConfig(BaseConfig):
 
 
 class TestConfig(BaseConfig):
+    # general application settings
+    log_level: str = "DEBUG"
+    debug: bool = False
+
+    # db settings
+    # TODO: use a test database URL or mock the database? or sqlite for unit tests?
     model_config = SettingsConfigDict(
         env_file=".env.test",
         env_file_encoding="utf-8",
