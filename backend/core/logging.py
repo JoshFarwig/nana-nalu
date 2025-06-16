@@ -24,22 +24,27 @@ class ColorFormatter(logging.Formatter):
         return super().format(record)
 
 
-def init_logging(level: str = "INFO", app_name: str = "nānā-nalu-backend"):
+def init_fastapi_logger(
+    level: str = "INFO", logger_type: str = "FastAPI"
+) -> logging.Logger:
+
     fmt = (
-        "%(levelname)s %(asctime)s "
+        "%(levelname)s %(asctime)s - %(logger_type)s "
         "%(filename)s:%(lineno)d %(funcName)s(): %(message)s"
     )
     formatter = ColorFormatter(fmt=fmt, datefmt="%Y-%m-%d %H:%M:%S")
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
 
-    logger = logging.getLogger(app_name)
+    logger = logging.getLogger(logger_type)
     logger.handlers.clear()
     logger.addHandler(handler)
     logger.setLevel(level)
     logger.propagate = False
 
+    return logger
 
-# default logger to "nānā-nalu" app
-def get_logger(name: str | None = "nānā-nalu-backend"):
+
+# default logger to FastAPI logger
+def get_logger(name: str | None = "FastAPI") -> logging.Logger:
     return logging.getLogger(name)

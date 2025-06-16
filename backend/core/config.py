@@ -18,6 +18,17 @@ class BaseConfig(BaseSettings):
     db_user: str
     db_password: str
 
+    # sqlalchemy settings
+    engine_echo: bool = False  # whether to log SQL queries
+    engine_pool_size: int = 5  # number of connections in the pool
+    engine_max_overflow: int = (
+        10  # number of connections allowed to exceed the pool size
+    )
+    engine_pool_timeout: int = (
+        30  # seconds to wait before giving up on getting a connection from the pool
+    )
+    session_expire_on_commit: bool = False  # whether to expire session after commit
+
     @property
     def database_url(self) -> str:
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
@@ -32,6 +43,9 @@ class DevelopmentConfig(BaseConfig):
     # general application settings
     log_level: str = "DEBUG"
     debug: bool = True
+
+    # sqlalchemy settings
+    engine_echo: bool = True  # log SQL queries in development
 
     model_config = SettingsConfigDict(
         env_file=".env.dev",
