@@ -59,19 +59,9 @@ def create_app(config: str | None = None) -> FastAPI:
         title=settings.app_name, version=settings.app_version, lifespan=lifespan
     )
 
-    # Initialize logging
-    logger = init_fastapi_logger(level=settings.log_level, logger_type="FastAPI")
-
-    # Set the app state with settings and logger
-    app.state.settings = settings
-    app.state.logger = logger
-    app.state.db_manager = (
-        None  # Placeholder for database manager, to be initialized later
-    )
-
     @app.get("/")
     def read_root():
-        logger.info("Root endpoint called")
+        app.state.logger.info("Root endpoint called")
         return {"Hello": "World"}
 
     # Set up application routes
