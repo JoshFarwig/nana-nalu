@@ -1,9 +1,8 @@
+import logging
 from fastapi import Depends, Request
-from functools import lru_cache
 from typing import Annotated
 
 from backend.core.config import BaseConfig
-from backend.core.logging import get_logger
 from backend.core.database import DatabaseManager
 
 
@@ -17,7 +16,7 @@ def get_db_manager(request: Request) -> DatabaseManager:
     return request.app.state.db_manager
 
 
-def get_logger_dependency(request: Request):
+def get_logger_dependency(request: Request) -> logging.Logger:
     """Get logger from app state."""
     return request.app.state.logger
 
