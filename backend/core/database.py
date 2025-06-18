@@ -105,10 +105,20 @@ class DatabaseManager:
 
     async def create_tables(self, metadata) -> None:
         """Create all tables defined in metadata."""
+        if not self.settings.debug and os.getenv("FASTAPI_CONFIG") == "prod":
+            raise RuntimeError(
+                "Cannot create tables via the DatabaseManager in production environment"
+            )
+
         async with self.engine.begin() as conn:
             await conn.run_sync(metadata.create_all)
 
     async def drop_tables(self, metadata) -> None:
         """Drop all tables defined in metadata."""
+        if not self.settings.debug and os.getenv("FASTAPI_CONFIG") == "prod":
+            raise RuntimeError(
+                "Cannot drop tables via the DatabaseManager in production environment"
+            )
+
         async with self.engine.begin() as conn:
             await conn.run_sync(metadata.drop_all)
