@@ -34,8 +34,14 @@ services:
         # Hot reload for API endpoints
         - action: sync
           path: ./backend/api
-          target: /app/api
+          target: /app/api 
 
+  redis: 
+    container_name: nn-redis-dev
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
 # Sync schemas for Pydantic models
 # - action: sync
 #   path: ./back-end/schemas
