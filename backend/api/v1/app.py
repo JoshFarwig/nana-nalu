@@ -5,9 +5,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from backend.core.config import get_settings
-from backend.core.logging import init_fastapi_logger
-from backend.core.database import DatabaseManager
 from backend.core.dependencies.core import (
+    get_db_manager,
+    get_logger_dependency,
     get_settings_dependency,
 )
 
@@ -15,20 +15,9 @@ from backend.core.dependencies.core import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan - startup and shutdown."""
-    # Startup
-    config = os.getenv("FASTAPI_CONFIG", "dev")
-    settings = get_settings(config)
-
-    # Set up logger for fastapi
-    logger = init_fastapi_logger(settings.log_level, settings.app_name)
-
-    # Initialize database via db manager
-    db_manager = DatabaseManager(settings)
-
-    # Store thing in app.state
-    app.state.settings = settings
-    app.state.db_manager = db_manager
-    app.state.logger = logger
+    settings = get_settings_dependency()
+    db_manager = get_db_manager()
+    logger = get_logger_dependency()
 
     logger.info(f"Application {settings.app_name} started")
 
@@ -52,7 +41,7 @@ def create_app(config: str | None = None) -> FastAPI:
     """
     # Set up configuration and settings, pass settings to services via DI if needed.
     config = config or os.getenv("FASTAPI_CONFIG", "dev")
-    settings = get_settings(config)
+    settings = get_settings_dependency()
 
     # Create FastAPI app with lifespan context manager
     app = FastAPI(

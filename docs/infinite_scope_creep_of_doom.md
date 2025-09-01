@@ -1,8 +1,9 @@
 ### get this shit done 
 
-- [ ] Set up response envopling 
+- [x] Set up response envopling 
 - [ ] Set up JWT access / refresh tokens set up for auth 
 - [ ] Middlewares for API 
+- [ ] Setup [CBV](https://gist.github.com/dmontagu/87e9d3d7795b14b63388d4b16054f0ff) for future endpoint organization? 
 
 
 ### why am i like this  

@@ -33,6 +33,20 @@ class BaseConfig(BaseSettings):
     def database_url(self) -> str:
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
+    # redis settings
+    redis_host: str
+    redis_port: int
+    redis_name: str
+    redis_password: str
+
+    redis_max_connections: int = 10  # max connections to Redis
+    redis_connect_timeout: int = 5  # seconds to wait for Redis connection
+    redis_socket_timeout: int = 5  # seconds to wait for Redis socket operations
+
+    @property
+    def redis_url(self) -> str:
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_name}"
+
     # note: no default env_file here, subclasses override it
     # and all vars will be loaded from that file.
     # can add a default value .env file for base configurations if needed
@@ -73,14 +87,11 @@ class TestConfig(BaseConfig):
     )
 
 
-@lru_cache()
 def get_settings(config: str) -> BaseConfig:
     """
-    Reads FASTAPI_CONFIG to pick which .env to load.
-    CACHE so that multiple calls share one instance.
+    Reads FASTAPI_CONFIG to pick which .env to load
     """
-    # note: this may cause issues if the environment variable is in hot-reloading (caching issue) scenarios?
-    # not sure need to test
+
     mapping = {
         "dev": DevelopmentConfig,
         "prod": ProductionConfig,

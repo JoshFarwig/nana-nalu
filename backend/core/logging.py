@@ -24,8 +24,8 @@ class ColorFormatter(logging.Formatter):
         return super().format(record)
 
 
-def init_fastapi_logger(
-    level: str = "INFO", logger_type: str = "FastAPI"
+def init_logger(
+    level: str = "INFO", logger_type: str | None = "default"
 ) -> logging.Logger:
 
     fmt = (
@@ -37,7 +37,7 @@ def init_fastapi_logger(
     handler.setFormatter(formatter)
 
     logger = logging.getLogger(logger_type)
-    logger.handlers.clear()
+    logger.handlers.clear()  # could this cause race condition? if lru locks itself should be fine.
     logger.addHandler(handler)
     logger.setLevel(level)
     logger.propagate = False
@@ -45,6 +45,6 @@ def init_fastapi_logger(
     return logger
 
 
-# default logger to FastAPI logger
-def get_logger(name: str | None = "FastAPI") -> logging.Logger:
+# default logger
+def get_logger(name: str | None = "default") -> logging.Logger:
     return logging.getLogger(name)
