@@ -1,0 +1,76 @@
+services:
+  db: 
+    container_name: nn-db-dev
+    # NOTICE: This is deployment uses a dockerfile to build the PostGIS image, primarily because  
+    # the official postgis image doesn't have any arm64 builds. 
+    build: 
+      context: ./db
+      dockerfile: Dockerfile.postgis
+    image: nn-db:dev
+    restart: always
+    environment:
+      # TODO: change this to a more secure user? Pass via secrets
+      POSTGRES_USER: nn-db-dev-user
+      # TODO: change this to a more secure password? Pass via secrets
+      POSTGRES_PASSWORD: nn-db-dev-pass
+      POSTGRES_DB: nn-db-dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  
+      # Initialize the database with custom scripts 
+      - ../db/init:/docker-entrypoint-initdb.d
+
+  backend: 
+    container_name: nn-backend-dev
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    image: nn-backend:dev
+    depends_on:
+      - db
+    ports:
+      - "8000:80"
+    develop:
+      watch:
+        # Hot reload for API endpoints
+        - action: sync
+          path: ./backend/api
+          target: /app/api 
+
+  redis: 
+    container_name: nn-redis-dev
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
+# Sync schemas for Pydantic models
+# - action: sync
+#   path: ./back-end/schemas
+#   target: /app/schemas
+
+# # Sync services with restart for business logic changes
+# - action: sync
+#   path: ./back-end/services
+#   target: /app/services
+
+# # Sync models and trigger model changes and migrations if needed
+# - action: sync+restart
+#   path: ./back-end/models
+#   target: /app/models
+
+# - action: sync+restart
+#   path: ./back-end/migrations
+#   target: /app/migrations
+
+# # Sync core configurations
+# - action: sync+restart
+#   path: ./back-end/core
+#   target: /app/core
+
+# # Rebuild on dependency changes
+# - action: rebuild
+#   path: pyproject.toml
+# - action: rebuild
+#   path: uv.lock
+
+volumes:
+  postgres_data:

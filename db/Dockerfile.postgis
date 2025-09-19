@@ -1,0 +1,15 @@
+# Not specifying the platform so that it can build from different architectures, 
+# by doing this though it should be optimized for amd64 and arm64 builds.
+FROM postgres:17.5
+
+# gdal will probably be useful for bathymetry data processing in the future 
+# proj could be useful for coordinate transformations as well 
+
+RUN apt-get update && \
+    apt-get install -y \
+    postgis \
+    postgresql-17-postgis-3 \
+    postgresql-17-postgis-3-scripts \
+    gdal-bin \
+    proj-bin \
+    && rm -rf /var/lib/apt/lists/*
