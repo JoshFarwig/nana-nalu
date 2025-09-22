@@ -1,9 +1,19 @@
+import os
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-
 from alembic import context
+from dotenv import load_dotenv
+
+from core.config import get_settings
+
+# Load ENV's
+load_dotenv()
+
+# Get settings object, use it's database url
+settings = get_settings(os.getenv("FASTAPI_CONFIG", "dev"))
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -18,7 +28,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from backend.models.base_model import Base
+from models.base_model import Base
 
 target_metadata = Base.metadata
 
@@ -40,7 +50,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = config.get_main_option("sqlalchemy.url", settings.database_url)
     context.configure(
         url=url,
         target_metadata=target_metadata,
