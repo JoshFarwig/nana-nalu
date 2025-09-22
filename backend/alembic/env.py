@@ -13,6 +13,8 @@ from core.config import get_settings
 load_dotenv()
 
 # Get settings object, use it's database url
+# NOTE: Alembic will auto convert async postgres driver to sync driver
+# hence, the sync driver needs to be installed as well as a dev dependency
 settings = get_settings(os.getenv("FASTAPI_CONFIG", "dev"))
 
 # this is the Alembic Config object, which provides

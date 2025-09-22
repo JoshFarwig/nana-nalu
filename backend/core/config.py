@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class BaseConfig(BaseSettings):
     # general application settings
+    fastapi_config: str
     app_name: str = "nānā-nalu-backend"
     app_version: str = "0.1.0"
     log_level: str = "INFO"
@@ -68,6 +69,7 @@ class DevelopmentConfig(BaseConfig):
 
 
 class ProductionConfig(BaseConfig):
+
     model_config = SettingsConfigDict(
         env_file=".env.prod",
         env_file_encoding="utf-8",
