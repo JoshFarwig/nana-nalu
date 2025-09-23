@@ -25,19 +25,20 @@ class ColorFormatter(logging.Formatter):
 
 
 def init_logger(
-    level: str = "INFO", logger_type: str | None = "default"
+    name: str,
+    level: str = "INFO",
 ) -> logging.Logger:
-
+    # Simplified format without logger_type
     fmt = (
-        "%(levelname)s %(asctime)s - %(logger_type)s "
+        "%(levelname)s %(asctime)s - "
         "%(filename)s:%(lineno)d %(funcName)s(): %(message)s"
     )
     formatter = ColorFormatter(fmt=fmt, datefmt="%Y-%m-%d %H:%M:%S")
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
 
-    logger = logging.getLogger(logger_type)
-    logger.handlers.clear()  # could this cause race condition? if lru locks itself should be fine.
+    logger = logging.getLogger(name)
+    logger.handlers.clear()
     logger.addHandler(handler)
     logger.setLevel(level)
     logger.propagate = False
@@ -46,5 +47,5 @@ def init_logger(
 
 
 # default logger
-def get_logger(name: str | None = "default") -> logging.Logger:
+def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)

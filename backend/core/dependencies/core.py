@@ -1,58 +1,40 @@
 from functools import lru_cache
 import logging
 import os
-from fastapi import Depends
+from fastapi import Depends, Request
 from typing import Annotated, AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.config import BaseConfig, get_settings
-from backend.core.database import DatabaseManager
-from backend.core.redis import RedisManager
-from backend.core.logging import init_logger
+from core.config import BaseConfig
+from core.database import DatabaseManager
+from core.redis import RedisManager
+from core.logging import init_logger
 
 
-# Singleton dependencies with @lru_cache
-@lru_cache()
-def get_settings_dependency() -> BaseConfig:
-    """Get singleton settings from environment."""
-
-    # Read configuration from environment variable or default to 'dev'
-    config = os.getenv("FASTAPI_CONFIG", "dev")
-    return get_settings(config)
+# Simple singleton DI extractors from app.state
+def get_settings(request: Request) -> BaseConfig:
+    """Get settings from app state."""
+    return request.app.state.settings
 
 
-@lru_cache()
-def get_logger_dependency(
-    settings: BaseConfig = Depends(get_settings_dependency),
-) -> logging.Logger:
-    """Get singleton logger."""
-
-    # Initialize logger with settings, this will be cached so
-    # only initialized once per application run and should
-    # return the same logger instance
-    return init_logger(settings.log_level, settings.app_name)
+def get_logger(request: Request) -> logging.Logger:
+    """Get logger from app state."""
+    return request.app.state.logger
 
 
-@lru_cache()
-def get_db_manager(
-    settings: BaseConfig = Depends(get_settings_dependency),
-) -> DatabaseManager:
-    """Get singleton database manager."""
-    return DatabaseManager(settings)  # Add logger if needed
+def get_db_manager(request: Request) -> DatabaseManager:
+    """Get database manager from app state."""
+    return request.app.state.db_manager
 
 
-@lru_cache()
-def get_redis_manager(
-    settings: BaseConfig = Depends(get_settings_dependency),
-    logger: logging.Logger = Depends(get_logger_dependency),
-) -> RedisManager:
-    """Get singleton Redis manager."""
-    return RedisManager(settings, logger)
+def get_redis_manager(request: Request) -> RedisManager:
+    """Get Redis manager from app state."""
+    return request.app.state.redis_manager
 
 
-# Session dependency - NOT cached, creates new session per request
+# Session dependency for endpoints
 async def get_db_session(
-    db_manager: Annotated[DatabaseManager, Depends(get_db_manager)],
+    db_manager: DatabaseManager = Depends(get_db_manager),
 ) -> AsyncGenerator[AsyncSession, None]:
     """Get database session for use in endpoints."""
     async for session in db_manager.get_session():

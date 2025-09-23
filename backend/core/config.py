@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class BaseConfig(BaseSettings):
     # general application settings
+    fastapi_config: str
     app_name: str = "nānā-nalu-backend"
     app_version: str = "0.1.0"
     log_level: str = "INFO"
@@ -31,7 +32,13 @@ class BaseConfig(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        """Async driver database url for all database operations in API"""
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
+    @property
+    def sync_database_url(self) -> str:
+        """Sync driver database URL for Alembic migrations"""
+        return f"postgresql+psycopg2://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     # redis settings
     redis_host: str
@@ -68,6 +75,7 @@ class DevelopmentConfig(BaseConfig):
 
 
 class ProductionConfig(BaseConfig):
+
     model_config = SettingsConfigDict(
         env_file=".env.prod",
         env_file_encoding="utf-8",
