@@ -16,7 +16,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.0",  
 ]
 
-[project.optional-dependencies] 
+[dependency-groups] 
 
 dev = [
     "alembic>=1.16.1",          

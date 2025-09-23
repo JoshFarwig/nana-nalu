@@ -32,7 +32,13 @@ class BaseConfig(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        """Async driver database url for all database operations in API"""
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
+    @property
+    def sync_database_url(self) -> str:
+        """Sync driver database URL for Alembic migrations"""
+        return f"postgresql+psycopg2://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     # redis settings
     redis_host: str

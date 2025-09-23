@@ -1,10 +1,12 @@
-from typing import Optional
-from sqlalchemy import String, Float, Boolean, ForeignKey, Integer
+from typing import TYPE_CHECKING
+from sqlalchemy import String, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geometry
 from .base_model import Base
-from .user_model import User
-from models.spot_observation_model import SpotObservation
+
+if TYPE_CHECKING:
+    from .user_model import User
+    from .spot_observation_model import SpotObservation
 
 
 class SurfSpot(Base):

@@ -1,10 +1,13 @@
+from typing import TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
 from sqlalchemy import String, Float, Integer, ForeignKey, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base_model import Base
-from .surf_spot_model import SurfSpot
-from .user_model import User
+
+if TYPE_CHECKING:
+    from .user_model import User
+    from .surf_spot_model import SurfSpot
 
 
 class WindConditionEnum(Enum):
