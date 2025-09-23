@@ -13,11 +13,14 @@ services:
       POSTGRES_USER: nn-db-dev-user
       # TODO: change this to a more secure password? Pass via secrets
       POSTGRES_PASSWORD: nn-db-dev-pass
-      POSTGRES_DB: nn-db-dev
+      POSTGRES_DB: nn-db-dev 
+    # TODO: change host port to env var if you want to expose db to host
+    ports: 
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data  
       # Initialize the database with custom scripts 
-      - ../db/init:/docker-entrypoint-initdb.d
+      - ./db/init:/docker-entrypoint-initdb.d
 
   backend: 
     container_name: nn-backend-dev
