@@ -6,7 +6,6 @@ from models.surf_spot_model import SurfSpot
 
 
 class SurfSpotRepository:
-
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
@@ -39,7 +38,7 @@ class SurfSpotRepository:
     async def get_by_location(
         self, surf_spot_latitude: float, surf_spot_longitude: float
     ) -> SurfSpot | None:
-        """Unclear user requirement for now, implement later"""
+        """Unclear requirement as of now, implement later"""
         raise NotImplementedError
 
     async def update(self, surf_spot_id: int, surf_spot_data: dict) -> SurfSpot | None:

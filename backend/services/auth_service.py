@@ -1,4 +1,4 @@
-from backend.schemas.user_schema import UserCreate, UserResponse
+from schemas.user_schema import UserCreate, UserResponse
 
 
 class AuthService:

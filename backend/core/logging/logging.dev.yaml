@@ -1,0 +1,32 @@
+version: 1
+disable_existing_loggers: False
+
+formatters:
+  colored:
+    (): core.logging.formatters.ColoredConsoleFormatter
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s - %(message)s"
+    datefmt: "%H:%M:%S"
+
+filters:
+  context:
+    (): core.logging.filters.ContextFilter
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: colored
+    stream: ext://sys.stdout
+    filters: [context]
+
+loggers:
+
+  uvicorn:
+    level: INFO
+
+  sqlalchemy:
+    level: WARNING 
+
+root:
+  level: INFO
+  handlers: [console]

@@ -15,13 +15,19 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    """Schema for updating a user."""
+    """Schema for updating a user (excludes password - use UserPasswordUpdate for that)."""
 
     username: str | None = Field(None, min_length=3, max_length=50)
     email: EmailStr | None = None
     first_name: str | None = Field(None, max_length=50)
     last_name: str | None = Field(None, max_length=50)
-    password: str | None = Field(None, min_length=8)
+
+
+class UserPasswordUpdate(BaseModel):
+    """Schema for updating a user's password."""
+
+    current_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=8, max_length=256)
 
 
 class UserResponse(UserBase):

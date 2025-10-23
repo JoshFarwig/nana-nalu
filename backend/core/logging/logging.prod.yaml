@@ -1,0 +1,35 @@
+version: 1
+disable_existing_loggers: False
+
+formatters:
+  json:
+    (): pythonjsonlogger.jsonlogger.JsonFormatter
+    format: "%(asctime)s %(name)s %(levelname)s %(funcName)s %(message)s"
+    rename_fields:
+      levelname: level
+      asctime: timestamp
+      funcName: func_name
+
+filters:
+  context:
+    (): core.logging.filters.ContextFilter
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: json
+    stream: ext://sys.stdout
+    filters: [context]
+
+loggers:
+
+  uvicorn: 
+    level: INFO
+
+  sqlalchemy:
+    level: WARNING 
+  
+root:
+  level: INFO
+  handlers: [console]

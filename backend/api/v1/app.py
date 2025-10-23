@@ -1,73 +1,126 @@
-import os
+import logging
 from contextlib import asynccontextmanager
-from typing import Union
 from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi.exceptions import RequestValidationError
 
-from core.config import get_settings
-from core.logging import init_logger
+from core.exceptions import (
+    NanaNaluException,
+    StartupError,
+    generic_exception_handler,
+    validation_exception_handler,
+    nana_nalu_exception_handler,
+)
 
-from core.database import DatabaseManager
-from core.redis import RedisManager
+from .startup import cleanup_app, init_app
 
 
-def create_lifespan(config_override: str | None = None):
-    """Create lifespan function with optional config override."""
+logger = logging.getLogger(__name__)
+
+
+# ======================================================
+# App Lifespan
+# ======================================================
+
+
+def create_lifespan(config: str):
+    """
+    Create lifespan context manager with configuration.
+
+    Args:
+        config: Environment configuration ("dev", "prod", etc.)
+
+    Returns:
+        Async context manager for app lifecycle
+    """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Use override if provided, otherwise fall back to env var, then default
-        config = config_override or os.getenv("FASTAPI_CONFIG", "dev")
-        settings = get_settings(config)
+        try:
+            # startup phase
+            await init_app(app, config)
+            logger.info(
+                "Application started successfully",
+                extra={
+                    "config": config,
+                    "api_name": app.state.settings.api.name,
+                    "api_version": app.state.setings.api.version,
+                },
+            )
 
-        # Initialize core services
-        logger = init_logger(
-            settings.app_name,
-            settings.log_level,
-        )
-        db_manager = DatabaseManager(settings)
-        redis_manager = RedisManager(settings, logger)
+            yield
 
-        # Store in app state for singletone pattern
-        app.state.settings = settings
-        app.state.logger = logger
-        app.state.db_manager = db_manager
-        app.state.redis_manager = redis_manager
-
-        logger.info(f"Application {settings.app_name} started with config: {config}")
-
-        yield
-
-        # Cleanup
-        await db_manager.close()
-        await redis_manager.close()
-        logger.info("Application shutdown complete")
+        except StartupError as e:
+            logger.critical(
+                "Application startup failed - cannot start server",
+                extra={"error": str(e), "config": config},
+            )
+            raise  # re-raise to prevent app from starting
+        finally:
+            # shutdown phase (always runs, even if startup failed)
+            await cleanup_app(app)
 
     return lifespan
 
 
+# ======================================================
+# App Factory
+# ======================================================
+
+
 def create_app(config: str | None = None) -> FastAPI:
     """
-    Factory function to create and configure the FastAPI application.
+    Factory function to create and configure FastAPI application.
 
     Args:
-        config: Configuration environment ("dev", "prod", "test").
-                If None, uses FASTAPI_CONFIG env var or defaults to "dev".
+        config: Environment configuration ("dev", "prod").
+                If None, uses API_ENV env var or defaults to "dev".
+
+    Returns:
+        Configured FastAPI application instance
     """
+    import os
+
+    config = config or os.getenv("API_ENV", "dev")
+    api_name = os.getenv("API_NAME", "nānā_nalu_api")
+    api_version = os.getenv("API_VERSION", "0.1.0")
 
     app = FastAPI(
-        title="nānā nalu API",
-        version="0.1.0",
-        lifespan=create_lifespan(config),  # Pass config to lifespan
+        title=api_name,
+        version=api_version,
+        description="Surf forecasting and spot management API",
+        lifespan=create_lifespan(config),
     )
 
-    @app.get("/")
+    # exception handlers
+    app.add_exception_handler(NanaNaluException, nana_nalu_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(Exception, generic_exception_handler)
+
+    # ======================================================
+    # Routes
+    # ======================================================
+
+    @app.get("/", tags=["root"])
     def read_root():
-        return {"message": "nānā nalu surf forecasting API"}
+        """Root endpoint - basic API information."""
+        return {
+            "message": "nānā-nalu surf forecasting API",
+            "api_version": app.version,
+            "docs": "/docs",
+        }
+
+    @app.get("/health", tags=["health"])
+    async def health_check():
+        """
+        Basic health check endpoint.
+
+        Returns 200 if the application is running. For more detailed
+        infrastructure health checks, use /health/detailed endpoint.
+        """
+        return {"status": "healthy", "service": "nānā-nalu-api"}
 
     # TODO: Include routers
     # from backend.api.v1.routes import users, spots, forecasts
-
     # app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
     # app.include_router(spots.router, prefix="/api/v1/spots", tags=["spots"])
     # app.include_router(forecasts.router, prefix="/api/v1/forecasts", tags=["forecasts"])

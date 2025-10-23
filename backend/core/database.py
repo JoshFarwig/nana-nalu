@@ -1,39 +1,42 @@
-import os
 import logging
 from typing import AsyncGenerator
 from contextlib import asynccontextmanager
-
-from backend.core.config import BaseConfig
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
     AsyncSession,
     AsyncEngine,
 )
-from sqlalchemy import text
+
+from .configs import DatabaseConfig
 
 
-class DatabaseManager:
+class AsyncDatabaseManager:
     """
-    DatabaseManager class to handle database connections and sessions.
-    This class is designed to be used with SQLAlchemy's async capabilities.
-    It provides methods to create and manage database sessions.
+    Database Manager with asynchronous SQLAlchemy Engine and Sessions.
     """
 
-    def __init__(self, settings: BaseConfig):
+    def __init__(self, settings: DatabaseConfig):
         self.settings = settings
-        self.database_url = settings.database_url
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.database_url = settings.async_url.get_secret_value()
         self._engine: AsyncEngine | None = None
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
 
+    # TODO: Consider settings a idle_session_duration or whatever pg field it is to the database
     def _create_engine(self) -> AsyncEngine:
         """Create and configure the async database engine."""
         return create_async_engine(
             self.database_url,
-            echo=self.settings.engine_echo,  # logs SQL queries
-            pool_size=self.settings.engine_pool_size,  # controls how many connections in pool
-            max_overflow=self.settings.engine_max_overflow,  # extra connections allowed temporarily
-            pool_timeout=self.settings.engine_pool_timeout,  # seconds to wait before error if pool is full
+            # controls how many connections in pool
+            pool_size=self.settings.async_pool_size,
+            # extra connections allowed temporarily
+            max_overflow=self.settings.async_max_overflow,
+            # seconds to wait before error if pool is full
+            pool_timeout=self.settings.async_pool_timeout,
+            # a pool pre ping to ensure non-stale connections: https://docs.sqlalchemy.org/en/20/core/pooling.html#dealing-with-disconnects
+            pool_pre_ping=self.settings.async_pool_pre_ping,
         )
 
     def _create_session_factory(self) -> async_sessionmaker[AsyncSession]:
@@ -41,7 +44,7 @@ class DatabaseManager:
         return async_sessionmaker(
             self.engine,
             class_=AsyncSession,
-            expire_on_commit=self.settings.session_expire_on_commit,
+            expire_on_commit=False,  # set false for async sessions: https://github.com/sqlalchemy/sqlalchemy/discussions/11495
         )
 
     @property
@@ -63,6 +66,7 @@ class DatabaseManager:
         Get a database session using async context manager.
         Use this with FastAPI Depends() for dependency injection.
         """
+
         async with self.session_factory() as session:
             try:
                 yield session
@@ -103,23 +107,3 @@ class DatabaseManager:
             await self._engine.dispose()
             self._engine = None
             self._session_factory = None
-
-    async def create_tables(self, metadata) -> None:
-        """Create all tables defined in metadata."""
-        if not self.settings.debug and os.getenv("FASTAPI_CONFIG") == "prod":
-            raise RuntimeError(
-                "Cannot create tables via the DatabaseManager in production environment"
-            )
-
-        async with self.engine.begin() as conn:
-            await conn.run_sync(metadata.create_all)
-
-    async def drop_tables(self, metadata) -> None:
-        """Drop all tables defined in metadata."""
-        if not self.settings.debug and os.getenv("FASTAPI_CONFIG") == "prod":
-            raise RuntimeError(
-                "Cannot drop tables via the DatabaseManager in production environment"
-            )
-
-        async with self.engine.begin() as conn:
-            await conn.run_sync(metadata.drop_all)
