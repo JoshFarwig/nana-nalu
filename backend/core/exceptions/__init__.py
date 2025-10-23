@@ -1,39 +1,23 @@
-"""Exception handling module exports."""
+# TODO: After setting up spot forecast pipeline (retrieve via celery and set in redis)
+# Start drafting out endpoint for surfspots and forecasts for surfspots, then add
+# needed exception handles and/or custom classes here.
+#
 
-# Base exceptions
-from .base_exceptions import (
-    AppException,
-    ValidationError,
-    NotFoundError,
-    AlreadyExistsError,
-    AuthenticationError,
-    AuthorizationError,
+from .base import NanaNaluException, StartupError, DependencyError
+from .handlers import (
+    generic_exception_handler,
+    validation_exception_handler,
+    nana_nalu_exception_handler,
 )
 
-# User-specific exceptions
-from .user_exceptions import (
-    UserNotFoundError,
-    UserAlreadyExistsError,
-    InvalidCredentialsError,
-    WeakPasswordError,
-)
-
-# Exception handlers
-from .handlers import setup_exception_handlers
 
 __all__ = [
-    # Base exceptions
-    "AppException",
-    "ValidationError",
-    "NotFoundError",
-    "AlreadyExistsError",
-    "AuthenticationError",
-    "AuthorizationError",
-    # User exceptions
-    "UserNotFoundError",
-    "UserAlreadyExistsError",
-    "InvalidCredentialsError",
-    "WeakPasswordError",
-    # Handler setup
-    "setup_exception_handlers",
+    # Base Exceptions
+    "NanaNaluException",
+    "StartupError",
+    "DependencyError",
+    # Handlers
+    "generic_exception_handler",
+    "validation_exception_handler",
+    "nana_nalu_exception_handler",
 ]

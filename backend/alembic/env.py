@@ -14,7 +14,7 @@ from core.config import get_settings
 load_dotenv()
 
 # Get settings object, use it's database url
-settings = get_settings(os.getenv("FASTAPI_CONFIG", "dev"))
+settings = get_settings(os.getenv("API_ENV", "dev"))
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

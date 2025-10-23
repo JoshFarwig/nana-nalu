@@ -1,6 +1,7 @@
 from typing import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from passlib.context import CryptContext
 
 from models.user_model import User
 
@@ -8,12 +9,38 @@ from models.user_model import User
 class UserRepository:
     """Repository for User database operations."""
 
+    # Password hashing context
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    def hash_password(self, password: str) -> str:
+        """Hash a password using bcrypt."""
+        return self.pwd_context.hash(password)
+
+    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        """Verify a password against a hash."""
+        return self.pwd_context.verify(plain_password, hashed_password)
+
     async def add(self, user_data: dict) -> User:
-        """Add a new user to the session (no commit)"""
-        user = User(**user_data)
+        """
+        Add a new user to the session (no commit).
+
+        If user_data contains a 'password' field, it will be automatically hashed.
+        To provide a pre-hashed password, use 'hashed_password' field instead.
+        """
+        user_data_copy = user_data.copy()
+
+        # Handle password hashing
+        if "password" in user_data_copy:
+            plain_password = user_data_copy.pop("password")
+            user_data_copy["password"] = self.hash_password(plain_password)
+        elif "hashed_password" in user_data_copy:
+            # If already hashed, just rename the field
+            user_data_copy["password"] = user_data_copy.pop("hashed_password")
+
+        user = User(**user_data_copy)
         self.session.add(user)
         await self.session.flush()
         return user
@@ -41,7 +68,12 @@ class UserRepository:
         return result.scalars().all()
 
     async def update(self, user_id: int, user_data: dict) -> User | None:
-        """Update user by ID (no commit)."""
+        """
+        Update user by ID (no commit).
+
+        Note: For updating passwords, use update_password() method instead.
+        This method will NOT automatically hash password fields.
+        """
         user = await self.get_by_id(user_id)
         if not user:
             return None
@@ -50,6 +82,20 @@ class UserRepository:
             if hasattr(user, key):
                 setattr(user, key, value)
 
+        await self.session.flush()
+        return user
+
+    async def update_password(self, user_id: int, new_password: str) -> User | None:
+        """
+        Update a user's password by ID (no commit).
+
+        The password will be automatically hashed before storage.
+        """
+        user = await self.get_by_id(user_id)
+        if not user:
+            return None
+
+        user.password = self.hash_password(new_password)
         await self.session.flush()
         return user
 

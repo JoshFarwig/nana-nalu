@@ -22,5 +22,6 @@ class User(Base):
     # NOTE: Consider for future use how to handle SQLalchemy's lazy loading
     # for relationships. Either specify on relation to selectin or via query
     # https://stackoverflow.com/questions/74252768/missinggreenlet-greenlet-spawn-has-not-been-called
+
     spots: Mapped[list["SurfSpot"]] = relationship(back_populates="created_by")
     observations: Mapped[list["SpotObservation"]] = relationship(back_populates="user")

@@ -1,111 +1,58 @@
-# app/config.py
-import os
-from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from .configs import APIConfig, DatabaseConfig, RedisConfig
 
 
 class BaseConfig(BaseSettings):
-    # general application settings
-    fastapi_config: str
-    app_name: str = "nānā-nalu-backend"
-    app_version: str = "0.1.0"
-    log_level: str = "INFO"
-    debug: bool = False  # whether to run in debug mode
+    """
+    Nana Nalu's Configuration, includes all primary configurations for
+    the python backend.
+    """
 
-    # db settings
-    db_host: str
-    db_port: int
-    db_name: str
-    db_user: str
-    db_password: str
+    # nested configurations will only load
+    # such that their var names match
+    # ENV file prefixes, i.e.
+    # # i.e. API_ADMIN_PASSWORD for APIConfig
+    # with var name api
 
-    # sqlalchemy settings
-    engine_echo: bool = False  # whether to log SQL queries
-    engine_pool_size: int = 5  # number of connections in the pool
-    engine_max_overflow: int = (
-        10  # number of connections allowed to exceed the pool size
-    )
-    engine_pool_timeout: int = (
-        30  # seconds to wait before giving up on getting a connection from the pool
-    )
-    session_expire_on_commit: bool = False  # whether to expire session after commit
-
-    @property
-    def database_url(self) -> str:
-        """Async driver database url for all database operations in API"""
-        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
-
-    @property
-    def sync_database_url(self) -> str:
-        """Sync driver database URL for Alembic migrations"""
-        return f"postgresql+psycopg2://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
-
-    # redis settings
-    redis_host: str
-    redis_port: int
-    redis_name: str
-    redis_password: str
-
-    redis_max_connections: int = 10  # max connections to Redis
-    redis_connect_timeout: int = 5  # seconds to wait for Redis connection
-    redis_socket_timeout: int = 5  # seconds to wait for Redis socket operations
-
-    @property
-    def redis_url(self) -> str:
-        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_name}"
-
-    # note: no default env_file here, subclasses override it
-    # and all vars will be loaded from that file.
-    # can add a default value .env file for base configurations if needed
-    model_config = SettingsConfigDict(env_file=None)
+    api: APIConfig
+    # celery: CeleryConfig
+    db: DatabaseConfig
+    redis: RedisConfig
 
 
 class DevelopmentConfig(BaseConfig):
-    # general application settings
-    log_level: str = "DEBUG"
-    debug: bool = True
-
-    # sqlalchemy settings
-    engine_echo: bool = True  # log SQL queries in development
-
     model_config = SettingsConfigDict(
         env_file=".env.dev",
         env_file_encoding="utf-8",
+        env_nested_delimiter="_",
+        env_nested_max_split=1,
     )
 
 
 class ProductionConfig(BaseConfig):
-
     model_config = SettingsConfigDict(
         env_file=".env.prod",
         env_file_encoding="utf-8",
-    )
-
-
-class TestConfig(BaseConfig):
-    # general application settings
-    log_level: str = "DEBUG"
-    debug: bool = False
-
-    # db settings
-    # TODO: use a test database URL or mock the database? or sqlite for unit tests?
-    model_config = SettingsConfigDict(
-        env_file=".env.test",
-        env_file_encoding="utf-8",
+        env_nested_delimiter="_",
+        env_nested_max_split=1,
     )
 
 
 def get_settings(config: str) -> BaseConfig:
     """
-    Reads FASTAPI_CONFIG to pick which .env to load
+    Reads config (typically the API_ENV os ENV) to pick which .env to load
     """
 
     mapping = {
         "dev": DevelopmentConfig,
         "prod": ProductionConfig,
-        "test": TestConfig,
     }
+
     cfg_cls = mapping.get(config)
     if not cfg_cls:
-        raise RuntimeError(f"Unknown FASTAPI_CONFIG='{config}'")
+        raise RuntimeError(
+            f"Unknown config type='{config}'"
+            f"Available config types are {','.join(mapping.keys())}"
+        )
     return cfg_cls()
