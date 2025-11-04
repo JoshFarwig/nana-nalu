@@ -10,10 +10,10 @@ services:
     restart: always
     environment:
       # TODO: change this to a more secure user? Pass via secrets
-      POSTGRES_USER: nn-db-dev-user
+      POSTGRES_USER: nn_db_dev_user
       # TODO: change this to a more secure password? Pass via secrets
-      POSTGRES_PASSWORD: nn-db-dev-pass
-      POSTGRES_DB: nn-db-dev 
+      POSTGRES_PASSWORD: nn_db_dev_password
+      POSTGRES_DB: nn_db_dev 
     # TODO: change host port to env var if you want to expose db to host
     ports: 
       - "5432:5432"
