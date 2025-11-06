@@ -1,0 +1,57 @@
+# Base Docker Compose file
+# Use with environment-specific overrides:
+#   Dev: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   Prod: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+services:
+  db:
+    # NOTE: uses a dockerfile to build the PostGIS image, primarily because
+    # the official postgis image doesn't have any arm64 builds (for macos)
+    build:
+      context: ./db
+      dockerfile: Dockerfile.postgis
+    environment:
+      POSTGRES_USER: ${DB__USERNAME}
+      POSTGRES_PASSWORD: ${DB__PASSWORD}
+      POSTGRES_DB: ${DB__NAME}
+    restart: always
+    volumes: 
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+
+  redis:
+    image: redis:latest
+    restart: always
+
+  api:
+    build:
+      context: ./backend 
+    depends_on:
+      - db 
+
+volumes:
+  postgres_data:
+
+# NOTE: Using __ nested delimiter syntax for pydantic so 
+# api.admin_username can be resolved from API__ADMIN_USERNAME
+# as a secret or a env variable (secret safer though) 
+# unforunately though this will not be rolled out until 
+# pydantic-settings v2.12, so in the mean time, will wait and pass 
+# secrets as env vars (which is less secure, but this will change later) 
+#
+# secrets: 
+#   db__username:  
+#     environment: "DB__USERNAME"
+#   db__password: 
+#     environment: "DB__PASSWORD"
+#   redis__password: 
+#     environment: "REDIS__PASSWORD"
+#   api__admin_username: 
+#     environment: "API__ADMIN_USERNAME" 
+#   api__admin_password: 
+#     enviroment: "API__ADMIN_PASSWORD" 
+#   api__admin_email:
+#     enviroment: "API__ADMIN_EMAIL"
+  
+
+

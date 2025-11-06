@@ -38,7 +38,7 @@ class ColoredConsoleFormatter(logging.Formatter):
         if extra_fields:
             extra_str = " | ".join(f"{k}={v}" for k, v in extra_fields.items())
             # inject extra fields into stdout log
-            formatted = f"{formatted} [{self.BOLD}{extra_str}{self.RESET}]"
+            formatted = f"{formatted} \n extra: [{self.BOLD}{extra_str}{self.RESET}]"
 
         return formatted
 

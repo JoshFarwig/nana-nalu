@@ -1,79 +1,56 @@
-services:
-  db: 
-    container_name: nn-db-dev
-    # NOTICE: This is deployment uses a dockerfile to build the PostGIS image, primarily because  
-    # the official postgis image doesn't have any arm64 builds. 
-    build: 
-      context: ./db
-      dockerfile: Dockerfile.postgis
-    image: nn-db:dev
-    restart: always
-    environment:
-      # TODO: change this to a more secure user? Pass via secrets
-      POSTGRES_USER: nn_db_dev_user
-      # TODO: change this to a more secure password? Pass via secrets
-      POSTGRES_PASSWORD: nn_db_dev_password
-      POSTGRES_DB: nn_db_dev 
-    # TODO: change host port to env var if you want to expose db to host
-    ports: 
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data  
-      # Initialize the database with custom scripts 
-      - ./db/init:/docker-entrypoint-initdb.d
+# Development environment overrides
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev up
 
-  backend: 
-    container_name: nn-backend-dev
+services:
+  db:
+    container_name: nn-db-dev
+    image: nn-db:dev
+    environment:
+      POSTGRES_USER: ${DB__USERNAME}
+      POSTGRES_PASSWORD: ${DB__PASSWORD}
+      POSTGRES_DB: ${DB__NAME}
+      ports:
+      - "5432:5432"
+
+  redis:
+    container_name: nn-redis-dev
+    ports:
+      - "6379:6379"
+
+  api:
+    container_name: nn-api-dev
     build:
-      context: ./backend
       dockerfile: Dockerfile.dev
-    image: nn-backend:dev
-    depends_on:
-      - db
+    image: nn-api:dev
+    enviroment: 
+      API_ENV: ${API_ENV} 
+      # TODO: remove these from enviroment once 
+      # pydantic-settings releases
+      API__ADMIN_USERNAME: ${API__ADMIN_USERNAME}
     ports:
       - "8000:80"
     develop:
       watch:
-        # Hot reload for API endpoints
         - action: sync
           path: ./backend/api
-          target: /app/api 
+          target: /app/api
+        - action: sync
+          path: ./backend/schemas
+          target: /app/schemas
+        - action: sync
+          path: ./backend/services
+          target: /app/services
+        - action: sync+restart
+          path: ./backend/models
+          target: /app/models
+        - action: sync+restart
+          path: ./backend/migrations
+          target: /app/migrations
+        - action: sync+restart
+          path: ./backend/core
+          target: /app/core
+        - action: rebuild
+          path: ./backend/pyproject.toml
+        - action: rebuild
+          path: ./backend/uv.lock
 
-  redis: 
-    container_name: nn-redis-dev
-    image: redis:latest
-    restart: always
-    ports:
-      - "6379:6379"
-# Sync schemas for Pydantic models
-# - action: sync
-#   path: ./back-end/schemas
-#   target: /app/schemas
-
-# # Sync services with restart for business logic changes
-# - action: sync
-#   path: ./back-end/services
-#   target: /app/services
-
-# # Sync models and trigger model changes and migrations if needed
-# - action: sync+restart
-#   path: ./back-end/models
-#   target: /app/models
-
-# - action: sync+restart
-#   path: ./back-end/migrations
-#   target: /app/migrations
-
-# # Sync core configurations
-# - action: sync+restart
-#   path: ./back-end/core
-#   target: /app/core
-
-# # Rebuild on dependency changes
-# - action: rebuild
-#   path: pyproject.toml
-# - action: rebuild
-#   path: uv.lock
-
-volumes:
-  postgres_data:

@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict, Nested
 
 from .configs import APIConfig, DatabaseConfig, RedisConfig
 
@@ -23,19 +23,24 @@ class BaseConfig(BaseSettings):
 
 class DevelopmentConfig(BaseConfig):
     model_config = SettingsConfigDict(
-        env_file=".env.dev",
+        env_file=".env.dev",  # TODO: remove so that docker compose injects
         env_file_encoding="utf-8",
-        env_nested_delimiter="_",
+        env_nested_delimiter="__",
         env_nested_max_split=1,
+        secrets_dir="/run/secrets",
+        # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
+        # secrets_
     )
 
 
 class ProductionConfig(BaseConfig):
     model_config = SettingsConfigDict(
-        env_file=".env.prod",
+        env_file=".env.prod",  # TODO: remove so that docker compose injects
         env_file_encoding="utf-8",
-        env_nested_delimiter="_",
+        env_nested_delimiter="__",
         env_nested_max_split=1,
+        secrets_dir="/run/secrets",
+        # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
     )
 
 

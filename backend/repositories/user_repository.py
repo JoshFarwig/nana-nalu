@@ -1,27 +1,40 @@
 from typing import Sequence
+import bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from passlib.context import CryptContext
 
+from core import BaseConfig
 from models.user_model import User
 
 
 class UserRepository:
     """Repository for User database operations."""
 
-    # Password hashing context
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, settings: BaseConfig):
         self.session = session
+        self.settings = settings
 
+    # NOTE: this could be moved to a seperate util with DI support?
+    # figure out later down the road
     def hash_password(self, password: str) -> str:
         """Hash a password using bcrypt."""
-        return self.pwd_context.hash(password)
+        salt = bcrypt.gensalt(rounds=self.settings.api.bcrypt_rounds)
+        hashed = bcrypt.hashpw(password.encode(), salt)
+        return hashed.decode()
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against a hash."""
-        return self.pwd_context.verify(plain_password, hashed_password)
+        return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
+
+    def password_needs_rehash(self, hashed_password: str) -> bool:
+        """Determine if password needs update (bcrypt_rounds were increased)"""
+        try:
+            # bcrypt hashes use $version$cost$salt+hash
+            parts = hashed_password.split("$")
+            current_cost = int(parts[1])
+            return current_cost < self.settings.api.bcrypt_rounds
+        except (ValueError, IndexError):
+            return True
 
     async def add(self, user_data: dict) -> User:
         """
@@ -32,12 +45,12 @@ class UserRepository:
         """
         user_data_copy = user_data.copy()
 
-        # Handle password hashing
+        # handle password hashing
         if "password" in user_data_copy:
             plain_password = user_data_copy.pop("password")
             user_data_copy["password"] = self.hash_password(plain_password)
         elif "hashed_password" in user_data_copy:
-            # If already hashed, just rename the field
+            # if already hashed, just rename the field
             user_data_copy["password"] = user_data_copy.pop("hashed_password")
 
         user = User(**user_data_copy)

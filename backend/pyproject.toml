@@ -1,33 +1,39 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "Data gathering, processing, and presentation for nānā-nalu"
 readme = "README.md"
+# TODO: Pin dependencies to latest versions / compatability
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi[standard]>=0.115.12",
-    "fastapi-cli>=0.0.7",
-    "geoalchemy2>=0.17.1",
-    "pydantic-settings>=2.9.1",
-    "uvicorn>=0.34.3",
-    "alembic>=1.16.1",
-    "redis>=6.2.0",
-    "asyncpg>=0.29.0",
-    "sqlalchemy[asyncio]>=2.0.0",
-    "passlib[bcrypt]>=1.7.4",
-    "python-json-logger>=4.0.0",
+  "sqlalchemy[asyncio]~=2.0.44",
+  "geoalchemy2~=0.18.0",
+  "asyncpg>=0.29.0",
+  "pydantic~=2.12.4",
+  "pydantic-settings~=2.11.0",
+  "redis~=7.0.1",
+  "bcrypt~=5.0.0",
+  "python-json-logger>=4.0.0",
 ]
 
-[dependency-groups] 
+[dependency-groups]
+
+api = [
+  "fastapi[standard]>=0.115.12",
+  "fastapi-cli>=0.0.7",
+  "uvicorn>=0.34.3",
+] 
+
+celery = [
+  "celery~=5.5.3"
+]
 
 dev = [
-    "alembic>=1.16.1",          
-    "psycopg2-binary>=2.9.0",  
-    "pytest>=7.0.0",            
-    "pytest-asyncio>=0.21.0",         
-    "ruff>=0.1.0",             
-    "mypy>=1.0.0",              
+  "psycopg2-binary>=2.9.0",
+  "alembic>=1.16.1",
+  "pytest>=7.0.0",
+  "pytest-asyncio>=0.21.0",
+  "ruff>=0.1.0",
+  "mypy>=1.0.0",
 ]
-
-test = []
 

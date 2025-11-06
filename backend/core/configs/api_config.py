@@ -12,5 +12,6 @@ class APIConfig(BaseModel):
 
     admin_username: SecretStr
     admin_password: SecretStr
-    # NOTE: Consider the EmailStr Type? But would be nice to also keep it secret as well
     admin_email: SecretStr
+
+    bcrypt_rounds: int = 12
