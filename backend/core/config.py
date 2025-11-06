@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict, Nested
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .configs import APIConfig, DatabaseConfig, RedisConfig
 
@@ -27,9 +27,10 @@ class DevelopmentConfig(BaseConfig):
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
-        secrets_dir="/run/secrets",
+        secrets_dir="/run/secrets",  # NOTE: docker container secrets
         # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
-        # secrets_
+        # once pydantic-settings v2.12 is out, can use secrets via SettingsConfigDict
+        # secrets_nested_delimiter="__"
     )
 
 
@@ -39,8 +40,10 @@ class ProductionConfig(BaseConfig):
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
-        secrets_dir="/run/secrets",
+        secrets_dir="/run/secrets",  # NOTE: docker container secrets
         # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
+        # once pydantic-settings v2.12 is out, can use secrets via SettingsConfigDict
+        # secrets_nested_delimiter="__"
     )
 
 
