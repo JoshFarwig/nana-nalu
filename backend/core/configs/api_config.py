@@ -4,7 +4,7 @@ from pydantic import BaseModel, SecretStr
 class APIConfig(BaseModel):
     """Configuration for API"""
 
-    name: str = "nānā_nalu_api"
+    name: str = "nānā-nalu-api"
     version: str = "0.1.0"
 
     log_level: str = "INFO"

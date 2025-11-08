@@ -72,16 +72,16 @@ def create_app(config: str | None = None) -> FastAPI:
     Factory function to create and configure FastAPI application.
 
     Args:
-        config: Environment configuration ("dev", "prod").
-                If None, uses API_ENV env var or defaults to "dev".
+        config: Environment configuration ("local", "dev", "prod").
+                If None, uses API_ENV env var or defaults to "local".
 
     Returns:
         Configured FastAPI application instance
     """
     import os
 
-    config = config or os.getenv("API_ENV", "dev")
-    api_name = os.getenv("API_NAME", "nānā_nalu_api")
+    config = config or os.getenv("API_ENV", "local")
+    api_name = os.getenv("API_NAME", "nānā-nalu-api")
     api_version = os.getenv("API_VERSION", "0.1.0")
 
     app = FastAPI(

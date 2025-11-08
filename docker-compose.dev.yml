@@ -17,6 +17,7 @@ services:
     container_name: nn-api-dev
     build:
       dockerfile: Dockerfile.dev
+      target: api
     image: nn-api:dev
     ports:
       - "8000:80"

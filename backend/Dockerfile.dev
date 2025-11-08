@@ -1,33 +1,44 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim as base
 WORKDIR /backend
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy 
+# flags applied to all uv sync commands
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_LOCKED=1 UV_NO_DEV=1
+# https://docs.astral.sh/uv/guides/integration/docker/#getting-started
 
 # install the backend's base dependencies using the lockfile and pyproject
 RUN --mount=type=cache,target=/root/.cache/uv \
   --mount=type=bind,source=uv.lock,target=uv.lock \
   --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-  uv sync --locked --no-install-project --no-dev
+  uv sync --no-install-project
 
 # then, add the rest of the project source code and install it
-# installing separately from its dependencies allows optimal layer caching
+# separately from its dependencies, allows optimal layer caching
 COPY . /backend
 RUN --mount=type=cache,target=/root/.cache/uv \
-  uv sync --locked --no-dev
+  uv sync
 
 FROM base as api
 RUN --mount=type=cache,target=/root/.cache/uv \ 
-  uv sync --locked --no-dev --group api 
+  uv sync --group api 
 
-ENV PATH = "/backend/.venv/bin:$PATH" PYTHONPATH=/backend
+ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
 ENTRYPOINT []
 CMD ["fastapi", "dev", "--port", "81", "--app", "api.v1.main:app"]
 
+# TODO: refactor these targets once basic celery pipeline is setup
 FROM base as worker 
 RUN --mount=type=cache,target=/root/.cache/uv \ 
-  uv sync --locked --no-dev --group celery
+  uv sync --group celery
 
+ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
+ENTRYPOINT []
+CMD ["celery", "-A", "celery.app", "worker"]
+
+# TODO: refactor these targets once basic celery pipeline is setup
 FROM base as beat
 RUN --mount=type=cache,target=/root/.cache/uv \ 
-  uv sync --locked --no-dev --group celery
+  uv sync --group celery
 
+ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
+ENTRYPOINT []
+CMD ["celery", "-A", "celery.app", "worker"]
 

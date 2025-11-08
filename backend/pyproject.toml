@@ -17,17 +17,14 @@ dependencies = [
 ]
 
 [dependency-groups]
-
 api = [
   "fastapi[standard]>=0.115.12",
   "fastapi-cli>=0.0.7",
   "uvicorn>=0.34.3",
 ] 
-
 celery = [
   "celery~=5.5.3"
 ]
-
 dev = [
   "psycopg2-binary>=2.9.0",
   "alembic>=1.16.1",

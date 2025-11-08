@@ -21,6 +21,15 @@ class BaseConfig(BaseSettings):
     redis: RedisConfig
 
 
+class LocalConfig(BaseConfig):
+    model_config = SettingsConfigDict(
+        env_file=".env.local",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        env_nested_max_split=1,
+    )
+
+
 class DevelopmentConfig(BaseConfig):
     model_config = SettingsConfigDict(
         env_file=".env.dev",  # TODO: remove so that docker compose injects
@@ -53,6 +62,7 @@ def get_settings(config: str) -> BaseConfig:
     """
 
     mapping = {
+        "local": LocalConfig,
         "dev": DevelopmentConfig,
         "prod": ProductionConfig,
     }

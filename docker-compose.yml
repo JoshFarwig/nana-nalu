@@ -29,19 +29,39 @@ services:
     enviroment: 
       API_ENV: ${API_ENV} 
       # use __ nested env delimiter syntax for nested pydantic-settings objects
-      API__ADMIN_USERNAME: ${API__ADMIN_USERNAME} # TODO: remove and set as secret w/ pydantic-settings v2.12
-      API__ADMIN_PASSWORD: ${API__ADMIN_PASSWORD} # TODO: remove and set as secret w/ pydantic-settings v2.12
-      API__ADMIN_EMAIL: ${API__ADMIN_EMAIL} # TODO: remove and set as secret w/ pydantic-settings v2.12
-      DB__HOST:  ${DB__HOST}
-      DB__PORT: ${DB__PORT}
-      DB__USERNAME:  ${DB__USERNAME} # TODO: remove and set as secret w/ pydantic-settings v2.12
-      DB__PASSWORD:  ${DB__PASSWORD} # TODO: remove and set as secret w/ pydantic-settings v2.12
-      DB__NAME: ${DB__NAME}
-      REDIS__HOST: ${REDIS__HOST}
-      REDIS__PORT:  ${REDIS__PORT}
-      REDIS__PASSWORD: ${REDIS__PASSWORD}  # TODO: remove and set as secret w/ pydantic-settings v2.12
+      # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12
+      API__ADMIN_USERNAME: ${API__ADMIN_USERNAME}
+      API__ADMIN_PASSWORD: ${API__ADMIN_PASSWORD}
+      API__ADMIN_EMAIL: ${API__ADMIN_EMAIL}
+      DB__HOST:  ${DB__HOST} 
+      DB__PORT: ${DB__PORT} 
+      DB__USERNAME:  ${DB__USERNAME}
+      DB__PASSWORD:  ${DB__PASSWORD}
+      DB__NAME: ${DB__NAME} 
+      REDIS__HOST: ${REDIS__HOST} 
+      REDIS__PORT:  ${REDIS__PORT} 
+      REDIS__PASSWORD: ${REDIS__PASSWORD}
     depends_on:
       - db 
+      - redis
+      # - worker
+  
+  # Celery setup
+  # worker: 
+  #   build: 
+  #     context: ./backend 
+  #   environment: 
+  #   depends_on: 
+  #     - db 
+  #     - redis 
+
+
+  #   build: 
+  #     context: ./backend 
+  #   environment: 
+  #   depends_on: 
+  #     - db 
+  #     - redis
 
 volumes:
   postgres_data:

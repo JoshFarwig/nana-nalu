@@ -16,7 +16,8 @@ services:
   api:
     container_name: nn-api-prod
     build:
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.prod 
+      target: api
     image: nn-api:prod
     ports:
       - "8000:80"
