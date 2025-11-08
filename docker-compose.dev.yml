@@ -5,14 +5,10 @@ services:
   db:
     container_name: nn-db-dev
     image: nn-db:dev
-    environment:
-      POSTGRES_USER: ${DB__USERNAME}
-      POSTGRES_PASSWORD: ${DB__PASSWORD}
-      POSTGRES_DB: ${DB__NAME}
-      ports:
+    ports:
       - "5432:5432"
 
-  redis:
+  redis:  
     container_name: nn-redis-dev
     ports:
       - "6379:6379"
@@ -22,11 +18,6 @@ services:
     build:
       dockerfile: Dockerfile.dev
     image: nn-api:dev
-    enviroment: 
-      API_ENV: ${API_ENV} 
-      # TODO: remove these from enviroment once 
-      # pydantic-settings releases
-      API__ADMIN_USERNAME: ${API__ADMIN_USERNAME}
     ports:
       - "8000:80"
     develop:

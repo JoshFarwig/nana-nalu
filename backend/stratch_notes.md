@@ -33,6 +33,11 @@ noaa provides a global wave-model forcasting option, this or surfline should act
 
 - [x] complete startup.py and integate it into app.py
 - [x] validate new model structure works, refactor to include dev / prod configs
+
+- [ ] create base dockerfile with targets for backend
+- [ ] double check pyproject dep groups are working as intended
+- [ ] attempt build with only api w/ target set  
+
 - [ ] add entrypoint for container to execute seed script and add spots
 
 - [ ] add celery/ folder for worker + beat

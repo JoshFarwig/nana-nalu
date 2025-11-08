@@ -1,15 +1,8 @@
-# using a Python image with uv pre-installed
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
-
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim as base
 WORKDIR /backend
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy 
 
-# enable bytecode compilation
-ENV UV_COMPILE_BYTECODE=1
-
-# copy from the cache instead of linking since it's a mounted volume for development
-ENV UV_LINK_MODE=copy 
-
-# install the project's dependencies using the lockfile and pyproject
+# install the backend's base dependencies using the lockfile and pyproject
 RUN --mount=type=cache,target=/root/.cache/uv \
   --mount=type=bind,source=uv.lock,target=uv.lock \
   --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -21,14 +14,20 @@ COPY . /backend
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --locked --no-dev
 
-# Place executables in the environment at the front of the path
-ENV PATH="/backend/.venv/bin:$PATH"
-ENV PYTHONPATH=/backend
+FROM base as api
+RUN --mount=type=cache,target=/root/.cache/uv \ 
+  uv sync --locked --no-dev --group api 
 
-# reset the entrypoint, don't invoke `uv`
+ENV PATH = "/backend/.venv/bin:$PATH" PYTHONPATH=/backend
 ENTRYPOINT []
+CMD ["fastapi", "dev", "--port", "81", "--app", "api.v1.main:app"]
 
-# run the FastAPI application by default
-# uses fastapi cli to enable hot-reloading when the `watch` sync occurs
-# uses loop back address to allow local access from outside the container
-CMD ["fastapi", "dev", "--port", "80", "--app", "api.v1.main:app"]
+FROM base as worker 
+RUN --mount=type=cache,target=/root/.cache/uv \ 
+  uv sync --locked --no-dev --group celery
+
+FROM base as beat
+RUN --mount=type=cache,target=/root/.cache/uv \ 
+  uv sync --locked --no-dev --group celery
+
+
