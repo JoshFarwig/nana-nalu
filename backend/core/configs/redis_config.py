@@ -30,12 +30,12 @@ class RedisConfig(BaseModel):
     @property
     def broker_url(self) -> SecretStr:
         """Build connection url to the celery broker database in the Redis Server"""
-        url = f"redis//:{self._get_encoded_password()}@{self.host}:{self.port}/{self.broker_db}"
+        url = f"redis://:{self._get_encoded_password()}@{self.host}:{self.port}/{self.broker_db}"
         return SecretStr(url)
 
     @computed_field
     @property
     def cache_url(self) -> SecretStr:
         """Build connection url to the app cache database in the Redis Server"""
-        url = f"redis//:{self._get_encoded_password()}@{self.host}:{self.port}/{self.cache_db}"
+        url = f"redis://:{self._get_encoded_password()}@{self.host}:{self.port}/{self.cache_db}"
         return SecretStr(url)

@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
 ENTRYPOINT []
-CMD ["fastapi", "dev", "--port", "81", "--app", "api.v1.main:app"]
+CMD uvicorn api.v1.main:app --reload --host ${API_HOST:-127.0.0.1} --port ${API_PORT:-8015}
 
 # TODO: refactor these targets once basic celery pipeline is setup
 FROM base as worker 

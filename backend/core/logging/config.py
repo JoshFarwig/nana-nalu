@@ -27,7 +27,7 @@ def configure_logging(env: str | None = None) -> None:
             config = yaml.safe_load(f.read())
             logging.config.dictConfig(config)
 
-        env = EnvironmentMapper.normalize(env)
+        env = EnvironmentMapper.normalize(env).value
         logger = logging.getLogger(__name__)
         logger.info(
             f"Successfully set up logger with configuation {config_filepath} for enviroment {env}"

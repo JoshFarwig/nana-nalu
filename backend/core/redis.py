@@ -9,7 +9,7 @@ class AsyncRedisManager:
     def __init__(self, settings: RedisConfig, db_url: SecretStr):
         self.settings = settings
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-        self.redis_url = db_url
+        self.redis_url = db_url.get_secret_value()
         self._client: aioredis.Redis | None = None
 
     def _create_client(self) -> aioredis.Redis:

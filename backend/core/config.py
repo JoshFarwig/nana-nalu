@@ -11,9 +11,9 @@ class BaseConfig(BaseSettings):
 
     # nested configurations will only load
     # such that their var names match
-    # ENV file prefixes, i.e.
-    # # i.e. API_ADMIN_PASSWORD for APIConfig
-    # with var name api
+    # the named prefix and the nested delimiter i.e.
+    # API__ADMIN_PASSWORD for api.admin_password
+    # of APIConfig object.
 
     api: APIConfig
     # celery: CeleryConfig
@@ -32,11 +32,10 @@ class LocalConfig(BaseConfig):
 
 class DevelopmentConfig(BaseConfig):
     model_config = SettingsConfigDict(
-        env_file=".env.dev",  # TODO: remove so that docker compose injects
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
-        secrets_dir="/run/secrets",  # NOTE: docker container secrets
+        # secrets_dir="/run/secrets",  # NOTE: docker container secrets
         # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
         # once pydantic-settings v2.12 is out, can use secrets via SettingsConfigDict
         # secrets_nested_delimiter="__"
@@ -45,11 +44,10 @@ class DevelopmentConfig(BaseConfig):
 
 class ProductionConfig(BaseConfig):
     model_config = SettingsConfigDict(
-        env_file=".env.prod",  # TODO: remove so that docker compose injects
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
-        secrets_dir="/run/secrets",  # NOTE: docker container secrets
+        # secrets_dir="/run/secrets",  # NOTE: docker container secrets
         # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
         # once pydantic-settings v2.12 is out, can use secrets via SettingsConfigDict
         # secrets_nested_delimiter="__"

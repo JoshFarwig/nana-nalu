@@ -1,10 +1,13 @@
-# Not specifying the platform so that it can build from different architectures, 
+# not specifying the platform so that it can build from different architectures, 
 # by doing this though it should be optimized for amd64 and arm64 builds.
 FROM postgres:18-trixie
 
 RUN apt-get update && \
+  apt-cache search postgis | grep postgresql-18 && \
+  apt-cache policy postgresql-18-postgis-3
+
+RUN apt-get update && \
   apt-get install -y \
-  postgis=3.5.* \
-  postgresql-18-postgis-3=3.5.* \
-  postgresql-18-postgis-3-scripts=3.5.* \
+  postgresql-18-postgis-3 \
+  postgresql-18-postgis-3-scripts \
   && rm -rf /var/lib/apt/lists/*

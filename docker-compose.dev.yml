@@ -1,26 +1,28 @@
-# Development environment overrides
-# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev up
+# development environment overrides
+# usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev up
 
 services:
   db:
-    container_name: nn-db-dev
+    container_name: nn_db_dev
     image: nn-db:dev
     ports:
-      - "5432:5432"
+      - "${DB__H_PORT:-5432}:${DB__PORT:-5432}"
+    networks: [nn_network]
 
-  redis:  
-    container_name: nn-redis-dev
+  redis:
+    container_name: nn_redis_dev
     ports:
-      - "6379:6379"
+      - "${REDIS__H_PORT:-6379}:${REDIS__PORT:-6379}"
+    networks: [nn_network]
 
   api:
-    container_name: nn-api-dev
-    build:
+    container_name: nn_api_dev
+    build: 
       dockerfile: Dockerfile.dev
       target: api
-    image: nn-api:dev
+    image: nn_api:dev
     ports:
-      - "8000:80"
+      - "${API__H_PORT:-8000}:${API__PORT:-8000}"
     develop:
       watch:
         - action: sync
@@ -45,4 +47,8 @@ services:
           path: ./backend/pyproject.toml
         - action: rebuild
           path: ./backend/uv.lock
+    networks: [nn_network]
 
+networks: 
+  nn_network: 
+    name: nn_dev_network

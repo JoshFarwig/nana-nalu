@@ -43,7 +43,7 @@ def create_lifespan(config: str):
                 extra={
                     "config": config,
                     "api_name": app.state.settings.api.name,
-                    "api_version": app.state.setings.api.version,
+                    "api_version": app.state.settings.api.version,
                 },
             )
 

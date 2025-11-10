@@ -1,0 +1,9 @@
+FROM redis:8.2.3-bookworm
+
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+# NOTE: create a redis config and copy here if needed
+
+RUN chmod +x /docker-entrypoint.sh
+ENTRYPOINT [ "/docker-entrypoint.sh" ]
+
+
