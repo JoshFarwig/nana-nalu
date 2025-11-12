@@ -1,4 +1,4 @@
-from pydantic import BaseModel, SecretStr, computed_field
+from pydantic import BaseModel, SecretStr
 from urllib.parse import quote
 
 
@@ -13,6 +13,10 @@ class RedisConfig(BaseModel):
     broker_db: int = 0
     cache_db: int = 1
 
+    # redis conn scheme (can be redis://, rediss://, or unix://)
+    # https://redis.readthedocs.io/en/stable/examples/connection_examples.html#Connecting-to-Redis-instances-by-specifying-a-URL-scheme.
+    conn_scheme: str = "redis"
+
     # async redis manager settings
     async_max_connections: int = 8
     async_connect_timeout: int = 5
@@ -26,16 +30,10 @@ class RedisConfig(BaseModel):
         """Process any special characters in the db password for Redis"""
         return quote(self.password.get_secret_value())
 
-    @computed_field
-    @property
-    def broker_url(self) -> SecretStr:
+    def get_broker_url(self) -> str:
         """Build connection url to the celery broker database in the Redis Server"""
-        url = f"redis://:{self._get_encoded_password()}@{self.host}:{self.port}/{self.broker_db}"
-        return SecretStr(url)
+        return f"{self.conn_scheme}://:{self._get_encoded_password()}@{self.host}:{self.port}/{self.broker_db}"
 
-    @computed_field
-    @property
-    def cache_url(self) -> SecretStr:
+    def get_cache_url(self) -> str:
         """Build connection url to the app cache database in the Redis Server"""
-        url = f"redis://:{self._get_encoded_password()}@{self.host}:{self.port}/{self.cache_db}"
-        return SecretStr(url)
+        return f"{self.conn_scheme}://:{self._get_encoded_password()}@{self.host}:{self.port}/{self.cache_db}"

@@ -20,11 +20,12 @@ class AsyncDatabaseManager:
     def __init__(self, settings: DatabaseConfig):
         self.settings = settings
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-        self.database_url = settings.async_url.get_secret_value()
+        # NOTE: use async_url by default, sync used for alembic migrations
+        self.database_url = settings.get_async_url()
         self._engine: AsyncEngine | None = None
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
 
-    # TODO: Consider settings a idle_session_duration or whatever pg field it is to the database
+    # TODO: consider settings a idle_session_duration or whatever pg field it is to the database
     def _create_engine(self) -> AsyncEngine:
         """Create and configure the async database engine."""
         return create_async_engine(

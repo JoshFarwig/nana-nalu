@@ -134,7 +134,7 @@ async def main():
     """Run the seeder."""
     import os
 
-    config = os.getenv("API_ENV", "dev")
+    config = os.getenv("ENV", "dev")
     settings = get_settings(config)
     seeder = SeedManager(settings)
     await seeder.seed_database()

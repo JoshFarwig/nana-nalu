@@ -10,18 +10,18 @@ from dotenv import load_dotenv
 
 from core.config import get_settings
 
-# Load ENV's
+# load ENV's
 load_dotenv()
 
-# Get settings object, use it's database url
-settings = get_settings(os.getenv("API_ENV", "dev"))
+# get settings object, use it's database url
+settings = get_settings(os.getenv("ENV", "dev"))
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# interpret the config file for Python logging,
+# this line sets up loggers for alembic
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
@@ -29,7 +29,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 from models.base_model import Base
 
-# IMPORTANT: Import all your models so they register with Base.metadata
+# IMPORTANT: import all your models so they register with Base.metadata
 from models.user_model import User
 from models.surf_spot_model import SurfSpot
 from models.spot_observation_model import SpotObservation
@@ -71,8 +71,8 @@ def run_migrations_offline() -> None:
 
     """
 
-    # Use sync URL for Alembic
-    url = config.set_main_option("sqlalchemy.url", settings.sync_database_url)
+    # use sync URL for Alembic
+    url = config.set_main_option("sqlalchemy.url", settings.db.get_sync_url())
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -94,8 +94,8 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    # Create engine with sync URL
-    config.set_main_option("sqlalchemy.url", settings.sync_database_url)
+    # create engine with sync URL
+    config.set_main_option("sqlalchemy.url", settings.db.get_sync_url())
 
     connectable = engine_from_config(
         config.get_section(config.config_ini_section) or {},

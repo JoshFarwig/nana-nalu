@@ -115,13 +115,12 @@ async def _init_infrastructure(app: FastAPI, settings: BaseConfig) -> None:
     )
 
     # initialize Redis manager (using cache_url for caching)
-    redis_manager = AsyncRedisManager(settings.redis, settings.redis.cache_url)
+    redis_manager = AsyncRedisManager(settings.redis, settings.redis.get_cache_url())
     app.state.redis_manager = redis_manager
     logger.debug(
         "Redis manager created",
         extra={
             "max_connections": settings.redis.async_max_connections,
-            "connnection_url": settings.redis.cache_url.get_secret_value(),
         },
     )
 

@@ -1,22 +1,23 @@
-from pydantic import BaseModel, SecretStr, computed_field
+from pydantic import BaseModel, SecretStr
 from urllib.parse import quote
 
 
 class DatabaseConfig(BaseModel):
     """Configuration for SQLAlchemy Engine"""
 
-    # SQLAlchemy connection address
+    # sqlalchemy connection address
     host: str | None
     port: str | None
     username: str
     password: SecretStr
     name: str
 
-    # postgres engine drivers
+    # sqlalchemy engine dialect / drivers
+    dialect: str = "postgresql"
     async_driver: str = "asyncpg"
     sync_driver: str = "psycopg2"
 
-    # async SQLAlchemy engine config
+    # async sqlalchemy engine config
     # # set higher pool size / overflow depending on estimated traffic
     async_pool_size: int = 3
     async_max_overflow: int = 5
@@ -27,22 +28,16 @@ class DatabaseConfig(BaseModel):
         """Process any special characters in the db password for SQLAlchemy"""
         return quote(self.password.get_secret_value())
 
-    @computed_field
-    @property
-    def async_url(self) -> SecretStr:
+    def get_async_url(self) -> str:
         """Build async database connection url"""
-        url = (
-            f"postgresql+{self.async_driver}://{self.username}:{self._get_encoded_password()}"
+        return (
+            f"{self.dialect}+{self.async_driver}://{self.username}:{self._get_encoded_password()}"
             f"@{self.host}:{self.port}/{self.name}"
         )
-        return SecretStr(url)
 
-    @computed_field
-    @property
-    def sync_url(self) -> SecretStr:
+    def get_sync_url(self) -> str:
         """Build sync database connection url"""
-        url = (
-            f"postgresql+{self.sync_driver}://{self.username}:{self._get_encoded_password()}"
+        return (
+            f"{self.dialect}+{self.sync_driver}://{self.username}:{self._get_encoded_password()}"
             f"@{self.host}:{self.port}/{self.name}"
         )
-        return SecretStr(url)

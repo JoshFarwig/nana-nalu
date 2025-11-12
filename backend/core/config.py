@@ -56,7 +56,7 @@ class ProductionConfig(BaseConfig):
 
 def get_settings(config: str) -> BaseConfig:
     """
-    Reads config (typically the API_ENV os ENV) to pick which .env to load
+    Reads config (typically the ENV os ENV) to pick which .env to load
     """
 
     mapping = {

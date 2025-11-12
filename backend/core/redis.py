@@ -1,15 +1,14 @@
 import logging
-from pydantic import SecretStr
 import redis.asyncio as aioredis
 
 from core.configs.redis_config import RedisConfig
 
 
 class AsyncRedisManager:
-    def __init__(self, settings: RedisConfig, db_url: SecretStr):
+    def __init__(self, settings: RedisConfig, db_url: str):
         self.settings = settings
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-        self.redis_url = db_url.get_secret_value()
+        self.redis_url = db_url
         self._client: aioredis.Redis | None = None
 
     def _create_client(self) -> aioredis.Redis:
@@ -34,7 +33,7 @@ class AsyncRedisManager:
     async def health_check(self) -> bool:
         """Check Redis connection health."""
         try:
-            await self.client.ping()
+            await self.client.ping()  # type: ignore[] (pyright not recognizing | Awaitable(bool))
             return True
         except Exception as e:
             self.logger.error("Health check failed", exc_info=e)

@@ -29,10 +29,10 @@ class EnvironmentMapper:
         """Normalize enviroment type and map to Enum"""
 
         if env is None:
-            env = os.getenv("API_ENV")
+            env = os.getenv("ENV")
             if env is None:
                 raise ValueError(
-                    "API_ENV variable is not set, and cannot normalize. "
+                    "ENV variable is not set, and cannot normalize. "
                     "Please set it to one of " + ", ".join(cls._ENV_MAP.keys())
                 )
 
