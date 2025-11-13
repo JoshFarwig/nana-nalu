@@ -3,6 +3,7 @@ from fastapi import FastAPI
 
 from core import AsyncDatabaseManager, AsyncRedisManager, BaseConfig
 from core.logging.config import configure_logging
+from utils import Environment, EnvironmentMapper
 
 from core.exceptions import StartupError
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 # ======================================================
 
 
-async def init_app(app: FastAPI, config: str) -> None:
+async def init_app(app: FastAPI, config: Environment | str) -> None:
     """
     Initialize FastAPI application with all required resources.
 
@@ -26,41 +27,46 @@ async def init_app(app: FastAPI, config: str) -> None:
 
     Args:
         app: FastAPI application instance
-        config: Environment configuration ("dev", "prod", etc.)
+        config: Environment configuration (Environment enum or string like "dev", "prod", etc.)
 
     Raises:
         StartupError: If any initialization step fails
     """
+    # Normalize config to Environment enum
+    if isinstance(config, str):
+        env = EnvironmentMapper.normalize(config)
+    else:
+        env = config
 
     # configure logging first
-    configure_logging(config)
-    logger.info("Starting application initialization", extra={"config": config})
+    configure_logging(env)
+    logger.info("Starting application initialization", extra={"config": env.value})
 
     # load settings
     from core.config import get_settings
 
     try:
-        settings = get_settings(config)
+        settings = get_settings(env)
         app.state.settings = settings
         logger.info(
             "Settings loaded successfully",
             extra={
-                "config": config,
+                "config": env.value,
                 "api_name": settings.api.name,
                 "api_version": settings.api.version,
             },
         )
     except Exception as e:
-        logger.exception("Failed to load settings", extra={"config": config})
+        logger.exception("Failed to load settings", extra={"config": env.value})
         raise StartupError(f"Settings initialization failed: {e}") from e
 
     # initialize infrastructure managers
     try:
         await _init_infrastructure(app, settings)
-        logger.info("Infrastructure managers initialized", extra={"config": config})
+        logger.info("Infrastructure managers initialized", extra={"config": env.value})
     except Exception as e:
         logger.exception(
-            "Failed to initialize infrastructure", extra={"config": config}
+            "Failed to initialize infrastructure", extra={"config": env.value}
         )
         await _cleanup_infrastructure(app)
         raise StartupError(f"Infrastructure initialization failed: {e}") from e
@@ -68,15 +74,15 @@ async def init_app(app: FastAPI, config: str) -> None:
     # perform health checks
     try:
         await _health_check_infrastructure(app)
-        logger.info("All infrastructure health checks passed", extra={"config": config})
+        logger.info("All infrastructure health checks passed", extra={"config": env.value})
     except Exception as e:
-        logger.exception("Infrastructure health check failed", extra={"config": config})
+        logger.exception("Infrastructure health check failed", extra={"config": env.value})
         await _cleanup_infrastructure(app)
         raise StartupError(f"Health check failed: {e}") from e
 
     logger.info(
         "Application initialization complete",
-        extra={"config": config, "api_name": settings.api.name},
+        extra={"config": env.value, "api_name": settings.api.name},
     )
 
 

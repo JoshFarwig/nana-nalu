@@ -132,10 +132,10 @@ class SeedManager:
 
 async def main():
     """Run the seeder."""
-    import os
+    from utils import EnvironmentMapper
 
-    config = os.getenv("ENV", "dev")
-    settings = get_settings(config)
+    env = EnvironmentMapper.normalize()
+    settings = get_settings(env)
     seeder = SeedManager(settings)
     await seeder.seed_database()
 

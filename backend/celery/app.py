@@ -1,5 +1,3 @@
-import os
-
 from celery import Celery
 
 from core import get_settings
@@ -8,8 +6,7 @@ from core import get_settings
 def create_celery_app() -> Celery:
     """Create and configure Celery app"""
 
-    env = os.getenv("ENV", "local")
-    settings = get_settings(env)
+    settings = get_settings()
 
     # create celery app
     app = Celery(

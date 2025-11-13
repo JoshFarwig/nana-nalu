@@ -73,14 +73,23 @@ def create_app(config: str | None = None) -> FastAPI:
 
     Args:
         config: Environment configuration ("local", "dev", "prod").
-                If None, uses ENV env var or defaults to "local".
+                If None, reads from ENV variable.
+                String will be normalized using EnvironmentMapper.
 
     Returns:
         Configured FastAPI application instance
     """
     import os
+    from utils import EnvironmentMapper
 
-    config = config or os.getenv("ENV", "local")
+    # Normalize config if provided as string, otherwise use ENV variable
+    if config:
+        env = EnvironmentMapper.normalize(config)
+        config = env.value
+    else:
+        env = EnvironmentMapper.normalize()
+        config = env.value
+
     api_name = os.getenv("API_NAME", "nānā-nalu-api")
     api_version = os.getenv("API_VERSION", "0.1.0")
 

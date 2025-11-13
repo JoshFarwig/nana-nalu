@@ -3,22 +3,23 @@ import logging
 import logging.config
 from pathlib import Path
 
-from utils.env import EnvironmentMapper
+from utils import Environment, EnvironmentMapper
 
 
-def _get_logging_config_path(env: str | None = None) -> Path:
+def _get_logging_config_path(env: Environment | str | None = None) -> Path:
     """Get Path to logging config files"""
 
-    normalized_env = EnvironmentMapper.normalize(env).value
-    if EnvironmentMapper.is_local(env):
+    normalized_env = EnvironmentMapper.normalize(env) if isinstance(env, str) or env is None else env
+
+    if normalized_env == Environment.LOCAL:
         filename = "logging.dev.yaml"  # default to development configuration if running locally
     else:
-        filename = f"logging.{normalized_env}.yaml"
+        filename = f"logging.{normalized_env.value}.yaml"
 
     return Path(__file__).parent / filename
 
 
-def configure_logging(env: str | None = None) -> None:
+def configure_logging(env: Environment | str | None = None) -> None:
     """Configure logging via yaml files, else fallback"""
 
     config_filepath = _get_logging_config_path(env)
@@ -28,10 +29,10 @@ def configure_logging(env: str | None = None) -> None:
             config = yaml.safe_load(f.read())
             logging.config.dictConfig(config)
 
-        env = EnvironmentMapper.normalize(env).value
+        normalized_env = EnvironmentMapper.normalize(env) if isinstance(env, str) or env is None else env
         logger = logging.getLogger(__name__)
         logger.info(
-            f"Successfully set up logger with configuation {config_filepath} for enviroment {env}"
+            f"Successfully set up logger with configuation {config_filepath} for enviroment {normalized_env.value}"
         )
     else:
         logging.basicConfig(level=logging.INFO)

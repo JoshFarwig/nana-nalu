@@ -1,5 +1,3 @@
-import os
-
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
@@ -9,12 +7,14 @@ from alembic import context
 from dotenv import load_dotenv
 
 from core.config import get_settings
+from utils import EnvironmentMapper
 
 # load ENV's
 load_dotenv()
 
 # get settings object, use it's database url
-settings = get_settings(os.getenv("ENV", "dev"))
+env = EnvironmentMapper.normalize()
+settings = get_settings(env)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

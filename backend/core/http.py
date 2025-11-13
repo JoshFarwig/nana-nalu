@@ -27,7 +27,7 @@ def retry_on_failure(func):
                     logger.warning(
                         "Network error, retrying",
                         extra={
-                            "function": operation_name,
+                            "method": operation_name,
                             "attempt": attempt + 1,
                             "max_retries": self._max_retries,
                             "error": str(e),
@@ -40,7 +40,7 @@ def retry_on_failure(func):
                     logger.error(
                         "Failed after retries",
                         extra={
-                            "function": operation_name,
+                            "method": operation_name,
                             "max_retries": self._max_retries,
                             "error": str(e),
                         },
@@ -54,7 +54,7 @@ def retry_on_failure(func):
                         logger.warning(
                             f"HTTP {e.response.status_code}, retrying",
                             extra={
-                                "function": operation_name,
+                                "method": operation_name,
                                 "status_code": e.response.status_code,
                                 "attempt": attempt + 1,
                                 "max_retries": self._max_retries,
@@ -63,16 +63,16 @@ def retry_on_failure(func):
                         )
                         await asyncio.sleep(delay)
                         continue
-
-                logger.error(
-                    "HTTP error",
-                    extra={
-                        "function": operation_name,
-                        "status_code": e.response.status_code,
-                        "error": str(e),
-                    },
-                )
-                raise
+                    else:
+                        logger.error(
+                            "HTTP error",
+                            extra={
+                                "method": operation_name,
+                                "status_code": e.response.status_code,
+                                "error": str(e),
+                            },
+                        )
+                        raise
 
         if last_exception:
             raise last_exception
@@ -162,6 +162,7 @@ class AsyncHTTPManager:
 
             total_bytes = 0
             with open(file_path, "wb") as f:
+                # stream bytes into memory w/ aiter_bytes to lower memory pressure
                 async for chunk in response.aiter_bytes(chunk_size=chunk_size):
                     f.write(chunk)
                     total_bytes += len(chunk)

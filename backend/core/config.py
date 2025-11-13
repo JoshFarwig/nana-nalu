@@ -1,5 +1,7 @@
+from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from utils import Environment, EnvironmentMapper
 from .configs import APIConfig, CeleryConfig, DatabaseConfig, HTTPConfig, RedisConfig
 
 
@@ -56,21 +58,31 @@ class ProductionConfig(BaseConfig):
     )
 
 
-def get_settings(config: str) -> BaseConfig:
+@lru_cache()
+def get_settings(env: Environment | str | None = None) -> BaseConfig:
     """
-    Reads config (typically the ENV os ENV) to pick which .env to load
+    Get application settings based on environment.
+
+    Args:
+        env: Environment to load. If None, reads from ENV variable.
+             Can be Environment enum or string that will be normalized.
+
+    Returns:
+        Configuration object for the specified environment
     """
+    # normalize environment using EnvironmentMapper
+    if isinstance(env, str):
+        environment = EnvironmentMapper.normalize(env)
+    elif env is None:
+        environment = EnvironmentMapper.normalize()
+    else:
+        environment = env
 
     mapping = {
-        "local": LocalConfig,
-        "dev": DevelopmentConfig,
-        "prod": ProductionConfig,
+        Environment.LOCAL: LocalConfig,
+        Environment.DEV: DevelopmentConfig,
+        Environment.PROD: ProductionConfig,
     }
 
-    cfg_cls = mapping.get(config)
-    if not cfg_cls:
-        raise RuntimeError(
-            f"Unknown config type='{config}'"
-            f"Available config types are {','.join(mapping.keys())}"
-        )
+    cfg_cls = mapping[environment]
     return cfg_cls()

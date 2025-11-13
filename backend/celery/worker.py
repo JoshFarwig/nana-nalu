@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 class WorkerState:
     """Singleton resources for a worker instance"""
 
-    # NOTE: this singleton is process-isolated and thread-safe when using
+    # NOTE: this singleton is process-isolated when using
     # prefork pool as each worker process gets its own instance.
     # with eventlet/gevent, greenlets run in a single thread (no race conditions),
     # but mixing asyncio with greenlets requires careful locking mechanisms
-    # (may implemement this in the future)
+    # (may need implemement this in the future)
 
     _instance = None
 
@@ -54,20 +54,14 @@ class WorkerState:
 @worker_init.connect
 def init_worker(**kwargs):
     """Initialize worker resources"""
-    import os
-
-    env = os.getenv("ENV", "local")
-    settings = get_settings(env)
+    settings = get_settings()
     WorkerState().initialize(settings)
 
 
 @setup_logging.connect
 def setup_celery_logging(**kwargs):
     """Override celery's logging configuration"""
-    import os
-
-    env = os.getenv("ENV", "local")
-    configure_logging(env)
+    configure_logging()
 
 
 @worker_shutdown.connect
