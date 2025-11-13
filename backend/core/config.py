@@ -58,6 +58,13 @@ class ProductionConfig(BaseConfig):
     )
 
 
+ENVIRONMENT_CONFIG_REGISTRY: dict[Environment, type[BaseConfig]] = {
+    Environment.LOCAL: LocalConfig,
+    Environment.DEV: DevelopmentConfig,
+    Environment.PROD: ProductionConfig,
+}
+
+
 @lru_cache()
 def get_settings(env: Environment | str | None = None) -> BaseConfig:
     """
@@ -78,11 +85,5 @@ def get_settings(env: Environment | str | None = None) -> BaseConfig:
     else:
         environment = env
 
-    mapping = {
-        Environment.LOCAL: LocalConfig,
-        Environment.DEV: DevelopmentConfig,
-        Environment.PROD: ProductionConfig,
-    }
-
-    cfg_cls = mapping[environment]
-    return cfg_cls()
+    cfg_cls = ENVIRONMENT_CONFIG_REGISTRY[environment]
+    return cfg_cls()  # type: ignore[call-arg] BaseSettings loads from environment

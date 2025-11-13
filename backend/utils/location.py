@@ -1,0 +1,62 @@
+import os
+import logging
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+
+class Location(str, Enum):
+    MAUI = "maui"
+    OAHU = "oahu"
+
+
+class LocationMapper:
+    # normalization map
+    _LOCATION_MAP = {
+        "maui": Location.MAUI,
+        "oahu": Location.OAHU,
+    }
+
+    @classmethod
+    def normalize(cls, location: str | None = None) -> Location:
+        """Normalize location type and map to Enum"""
+
+        if location is None:
+            location = os.getenv("LOCATION")
+            if location is None:
+                # default to Maui if not set
+                logger.warning("No LOCATION set in environment, defaulting to maui")
+                return Location.MAUI
+
+        normalized_location = cls._LOCATION_MAP.get(location.lower())
+
+        if normalized_location is None:
+            raise ValueError(
+                f"Unknown location value: {location.lower()}. "
+                "Please pass a valid value: " + ", ".join(cls._LOCATION_MAP.keys())
+            )
+
+        return normalized_location
+
+    @classmethod
+    def is_maui(cls, location: str | None = None) -> bool:
+        """Helper method to check if location is Maui"""
+        return cls.normalize(location) == Location.MAUI
+
+    @classmethod
+    def is_oahu(cls, location: str | None = None) -> bool:
+        """Helper method to check if location is Oahu"""
+        return cls.normalize(location) == Location.OAHU
+
+
+def get_location() -> Location:
+    """Get current location from environment"""
+    return LocationMapper.normalize()
+
+
+def is_maui() -> bool:
+    return LocationMapper.is_maui()
+
+
+def is_oahu() -> bool:
+    return LocationMapper.is_oahu()

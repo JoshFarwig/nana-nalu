@@ -25,9 +25,16 @@ example url for dumps:
 
 - <https://services.surfline.com/kbyg/spots/forecasts/wave?spotId=5842041f4e65fad6a7708b2b>
 
+example spot hashes:
+
+- dumps: 5842041f4e65fad6a7708b2b
+- cove: 5842041f4e65fad6a7708de1  
+- honolua bay: 5842041f4e65fad6a7708de4
+
 ## NOAA WaveWatcher III  
 
-noaa provides a global wave-model forcasting option, this or surfline should act as a fall-back
+www3 regional or non-regional could be a good shout for the larger knowledge scope for primary / secondary / tertiary swell data
+since NWPS does not provide this (SWAN model).
 
 ## todos
 

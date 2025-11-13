@@ -1,24 +1,37 @@
 import asyncio
 import logging
 from sqlalchemy import select, func
-from geoalchemy2.elements import WKTElement
 from core import AsyncDatabaseManager, BaseConfig, get_settings
+from core.configs.location_config import get_location_config
 from models.user_model import User
 from models.surf_spot_model import SurfSpot
 from repositories.user_repository import UserRepository
+from scripts.seed.seed_factory import SeedFactory
+from utils.location import get_location
 
 
 class SeedManager:
     def __init__(self, settings: BaseConfig):
-        self.settings: BaseConfig = settings
+        self.settings = settings
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.db_manager = AsyncDatabaseManager(settings.db)
+
+        # get location configuration
+        self.location = get_location()
+        self.location_config = get_location_config()
+
+        self.logger.info(
+            "SeedManager initialized",
+            extra={
+                "location": self.location.value,
+            },
+        )
 
     async def get_admin(self) -> User:
         """Get existing admin user or seed admin user and return reference."""
 
         async with self.db_manager.session_context() as session:
-            user_repo = UserRepository(session)
+            user_repo = UserRepository(session, self.settings)
 
             # return existing admin or seed and return new admin user
             admin_user = await user_repo.get_by_username(
@@ -49,7 +62,7 @@ class SeedManager:
                 return admin_user
 
     async def seed_surf_spots(self, admin_user: User) -> None:
-        """Seed initial surf spots."""
+        """Seed initial surf spots based on location configuration."""
 
         async with self.db_manager.session_context() as session:
             # check if surf spots already exist using SQLAlchemy select
@@ -60,56 +73,24 @@ class SeedManager:
                 self.logger.info("Surf spots already exist", extra={"count": count})
                 return
 
-            # seed surf spots (change at your preference / location)
-            surf_spots = [
-                SurfSpot(
-                    name="Ho'okipa (Point)",
-                    description="The iconic NSB grom-grounds (Point, Middles, Pavillions)",
-                    location=WKTElement("POINT(-156.3596 20.9342)", srid=4326),
-                    is_active=True,
-                    created_by_id=admin_user.id,
-                ),
-                SurfSpot(
-                    name="Honolua Bay (Coconuts)",
-                    description="The legendary west-side point break",
-                    location=WKTElement("POINT(-156.6410 21.0176)", srid=4326),
-                    is_active=True,
-                    created_by_id=admin_user.id,
-                ),
-                SurfSpot(
-                    name="Olowalu",
-                    description="West-side beach break",
-                    location=WKTElement("POINT(-156.6309 20.8216)", srid=4326),
-                    is_active=True,
-                    created_by_id=admin_user.id,
-                ),
-                SurfSpot(
-                    name="Hamoa beach",
-                    description="Hana's day dream point and beach break (and sandbar one bay over)",
-                    location=WKTElement("POINT(-155.9865 20.7184)", srid=4326),
-                    is_active=True,
-                    created_by_id=admin_user.id,
-                ),
-                SurfSpot(
-                    name="Dumps",
-                    description="Iconic south-side left (and right if you're nutz)",
-                    location=WKTElement("POINT(-156.5480 20.6129)", srid=4326),
-                    is_active=True,
-                    created_by_id=admin_user.id,
-                ),
-                SurfSpot(
-                    name="Shaws",
-                    description="Reefy, super fun south-side left",
-                    location=WKTElement("POINT(-156.4448 20.6734)", srid=4326),
-                    is_active=True,
-                    created_by_id=admin_user.id,
-                ),
-            ]
+            # get location-specific surf spots using factory
+            try:
+                surf_spots = SeedFactory.get_surf_spots(self.location, admin_user)
+            except ValueError as e:
+                self.logger.exception(
+                    f"Failed to load seed data for location: {self.location.value}",
+                    extra={"error": str(e)},
+                )
+                raise
 
             session.add_all(surf_spots)
             self.logger.info(
-                f"Seeded {len(surf_spots)} surf spots",
-                extra={"count": len(surf_spots), "created_by_id": admin_user.id},
+                f"Seeded {len(surf_spots)} surf spots for {self.location.value}",
+                extra={
+                    "count": len(surf_spots),
+                    "location": self.location.value,
+                    "created_by_id": admin_user.id,
+                },
             )
 
     async def seed_database(self) -> None:
@@ -122,9 +103,7 @@ class SeedManager:
             # seed surf spots
             await self.seed_surf_spots(admin_user)
         except Exception as e:
-            self.logger.error(
-                "Error seeding database", extra={"error": str(e)}, exc_info=True
-            )
+            self.logger.exception("Error seeding database", extra={"error": str(e)})
             raise
         finally:
             await self.db_manager.close()
@@ -132,10 +111,8 @@ class SeedManager:
 
 async def main():
     """Run the seeder."""
-    from utils import EnvironmentMapper
 
-    env = EnvironmentMapper.normalize()
-    settings = get_settings(env)
+    settings = get_settings()
     seeder = SeedManager(settings)
     await seeder.seed_database()
 

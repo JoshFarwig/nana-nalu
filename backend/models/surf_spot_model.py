@@ -2,11 +2,11 @@ from typing import TYPE_CHECKING
 from sqlalchemy import String, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geometry
+
 from .base_model import Base
 
 if TYPE_CHECKING:
-    from .user_model import User
-    from .spot_observation_model import SpotObservation
+    from models import User, SpotObservation, SurflineSpot
 
 
 class SurfSpot(Base):
@@ -20,9 +20,13 @@ class SurfSpot(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # Relationships
+    # relationships
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
     created_by: Mapped["User"] = relationship(back_populates="spots")
     observations: Mapped[list["SpotObservation"]] = relationship(
         back_populates="spot", cascade="all, delete-orphan"
+    )
+    surfline_spot: Mapped["SurflineSpot"] = relationship(
+        back_populates="spot", uselist=False, cascade="all, delete-orphan"
     )

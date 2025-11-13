@@ -3,8 +3,6 @@ import os
 
 
 class Environment(str, Enum):
-    """Application environment Types"""
-
     LOCAL = "local"
     DEV = "dev"
     PROD = "prod"
@@ -12,9 +10,7 @@ class Environment(str, Enum):
 
 
 class EnvironmentMapper:
-    """Env Mapper"""
-
-    # Normaliation Map
+    # normaliation map
     _ENV_MAP = {
         "local": Environment.LOCAL,
         "dev": Environment.DEV,
@@ -65,9 +61,6 @@ class EnvironmentMapper:
     def is_test(cls, env: str | None = None) -> bool:
         """Helper method to check if enviroment is test"""
         return cls.normalize(env) == Environment.TEST
-
-
-# Convenience Methods
 
 
 def get_env() -> Environment | None:
