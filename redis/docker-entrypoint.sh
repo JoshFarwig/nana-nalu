@@ -6,10 +6,11 @@ if [ -f /run/secrets/redis__password ]; then
 elif [ -n "$REDIS__PASSWORD" ]; then
   PASSWORD="$REDIS__PASSWORD"
 else
-  # startup redis w/o password
+  # startup redis with out password
+  echo "starting up redis server without password"
   exec redis-server
 fi
 
-# startup redis w/ password
-echo "starting up redis server w/ password: $PASSWORD"
+# startup redis with password
+echo "starting up redis server with password"
 exec redis-server --requirepass "$PASSWORD"
