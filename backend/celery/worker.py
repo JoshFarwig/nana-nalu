@@ -4,6 +4,7 @@ import logging
 from celery.signals import worker_init, worker_shutdown, setup_logging
 
 from core import AsyncDatabaseManager, AsyncRedisManager, get_settings, BaseConfig
+from core.http import AsyncHTTPManager
 from core.logging import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -12,12 +13,11 @@ logger = logging.getLogger(__name__)
 class WorkerState:
     """Singleton resources for a worker instance"""
 
-    # NOTE: the WorkerState singleton is NOT threadsafe.
-    # if celery is initialized / cleaned up with a concurrency option that
-    # uses multithreading, (i.e. -pool=evenlet) this will need
-    # to implement a threading lock to protect race conditions.
-    # refer to https://docs.celeryq.dev/en/v5.5.3/userguide/concurrency/index.html
-    # for concurrency options avaiable to celery.
+    # NOTE: this singleton is process-isolated and thread-safe when using
+    # prefork pool as each worker process gets its own instance.
+    # with eventlet/gevent, greenlets run in a single thread (no race conditions),
+    # but mixing asyncio with greenlets requires careful locking mechanisms
+    # (may implemement this in the future)
 
     _instance = None
 
@@ -34,7 +34,7 @@ class WorkerState:
             self.redis_manager = AsyncRedisManager(
                 settings.redis, settings.redis.get_cache_url()
             )
-            # TODO: create http_manager
+            self.http_manager = AsyncHTTPManager(settings.http)
 
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
@@ -46,7 +46,7 @@ class WorkerState:
         if self.initialized:
             await self.db_manager.close()
             await self.redis_manager.close()
-            # TODO: create http_manager
+            await self.http_manager.close()
             self.initialized = False
 
 
@@ -62,8 +62,8 @@ def init_worker(**kwargs):
 
 
 @setup_logging.connect
-def setup_logging(**kwargs):
-    """Override celery's logging"""
+def setup_celery_logging(**kwargs):
+    """Override celery's logging configuration"""
     import os
 
     env = os.getenv("ENV", "local")

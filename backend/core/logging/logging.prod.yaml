@@ -24,12 +24,21 @@ handlers:
 
 loggers:
 
-  uvicorn: 
+  uvicorn:
     level: INFO
 
   sqlalchemy:
-    level: WARNING 
-  
+    level: WARNING
+
+  celery:
+    level: INFO
+
+  celery.task:
+    level: INFO
+
+  celery.worker:
+    level: WARNING
+
 root:
   level: INFO
   handlers: [console]

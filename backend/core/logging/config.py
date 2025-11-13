@@ -12,7 +12,8 @@ def _get_logging_config_path(env: str | None = None) -> Path:
     normalized_env = EnvironmentMapper.normalize(env).value
     if EnvironmentMapper.is_local(env):
         filename = "logging.dev.yaml"  # default to development configuration if running locally
-    filename = f"logging.{normalized_env}.yaml"
+    else:
+        filename = f"logging.{normalized_env}.yaml"
 
     return Path(__file__).parent / filename
 

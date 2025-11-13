@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .configs import APIConfig, DatabaseConfig, RedisConfig
+from .configs import APIConfig, CeleryConfig, DatabaseConfig, HTTPConfig, RedisConfig
 
 
 class BaseConfig(BaseSettings):
@@ -16,8 +16,10 @@ class BaseConfig(BaseSettings):
     # of APIConfig object.
 
     api: APIConfig
-    # celery: CeleryConfig
+    celery: CeleryConfig
+
     db: DatabaseConfig
+    http: HTTPConfig
     redis: RedisConfig
 
 

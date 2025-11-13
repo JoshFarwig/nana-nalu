@@ -32,6 +32,11 @@ class ContextFilter(logging.Filter):
         return True
 
 
+# TODO: make a context filter for celery tasks?
+class CeleryTaskContextFilter(logging.Filter):
+    pass
+
+
 @contextmanager
 def log_context(**kwargs):
     """
