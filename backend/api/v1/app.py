@@ -73,7 +73,7 @@ def create_app(config: str | None = None) -> FastAPI:
 
     Args:
         config: Environment configuration ("local", "dev", "prod").
-                If None, reads from ENV variable.
+                If None, reads from ENV environment variable.
                 String will be normalized using EnvironmentMapper.
 
     Returns:

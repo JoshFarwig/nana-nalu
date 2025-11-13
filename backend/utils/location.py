@@ -21,12 +21,8 @@ class LocationMapper:
     def normalize(cls, location: str | None = None) -> Location:
         """Normalize location type and map to Enum"""
 
-        if location is None:
-            location = os.getenv("LOCATION")
-            if location is None:
-                # default to Maui if not set
-                logger.warning("No LOCATION set in environment, defaulting to maui")
-                return Location.MAUI
+        # default to maui if no value exists for LOCATION
+        location = os.getenv("LOCATION", Location.MAUI.value)
 
         normalized_location = cls._LOCATION_MAP.get(location.lower())
 

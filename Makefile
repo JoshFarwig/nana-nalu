@@ -6,7 +6,7 @@ RED := \033[31m
 CYAN := \033[36m
 RESET := \033[0m
 
-.PHONY: help seed-dev seed-prod up-dev up-prod down-dev down-prod logs-dev logs-prod restart-dev restart-prod
+.PHONY: help seed-dev seed-prod up-dev up-prod down-dev down-prod logs-dev logs-prod restart-dev restart-prod migrate-dev migrate-prod
 
 help:  ## Show this help message
 	@echo "$(CYAN)Available commands:$(RESET)"
@@ -37,6 +37,11 @@ seed-dev:  ## Seed development database
 	@docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev exec api python -m scripts.seed.seed
 	@echo "$(GREEN)✓ Development database seeded successfully!$(RESET)"
 
+migrate-dev:  ## Apply latest Alembic migration to development database
+	@echo "$(BLUE)Applying migrations to development database...$(RESET)"
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev exec api alembic upgrade head
+	@echo "$(GREEN)✓ Migrations applied successfully!$(RESET)"
+
 # Production environment commands
 up-prod:  ## Start production environment
 	@echo "$(BLUE)Starting production environment...$(RESET)"
@@ -61,3 +66,8 @@ seed-prod:  ## Seed production database
 	@echo "$(BLUE)Seeding production database...$(RESET)"
 	@docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod exec api python -m scripts.seed.seed
 	@echo "$(GREEN)✓ Production database seeded successfully!$(RESET)"
+
+migrate-prod:  ## Apply latest Alembic migration to production database
+	@echo "$(BLUE)Applying migrations to production database...$(RESET)"
+	@docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod exec api alembic upgrade head
+	@echo "$(GREEN)✓ Migrations applied successfully!$(RESET)"

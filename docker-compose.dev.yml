@@ -4,13 +4,14 @@
 services:
   db:
     container_name: nn_db_dev
-    image: nn-db:dev
+    image: nn_db:dev
     ports:
       - "${DB__H_PORT:-5432}:${DB__PORT:-5432}"
     networks: [nn_network]
 
   redis:
     container_name: nn_redis_dev
+    image: nn_redis:dev
     ports:
       - "${REDIS__H_PORT:-6379}:${REDIS__PORT:-6379}"
     networks: [nn_network]
@@ -27,22 +28,25 @@ services:
       watch:
         - action: sync
           path: ./backend/api
-          target: /app/api
+          target: /backend/api
         - action: sync
           path: ./backend/schemas
-          target: /app/schemas
+          target: /backend/schemas
         - action: sync
           path: ./backend/services
-          target: /app/services
+          target: /backend/services
         - action: sync+restart
           path: ./backend/models
-          target: /app/models
+          target: /backend/models
         - action: sync+restart
           path: ./backend/migrations
-          target: /app/migrations
+          target: /backend/migrations
         - action: sync+restart
           path: ./backend/core
-          target: /app/core
+          target: /backend/core
+        - action: sync+restart
+          path: ./backend/utils
+          target: /backend/utils
         - action: rebuild
           path: ./backend/pyproject.toml
         - action: rebuild

@@ -11,18 +11,22 @@ class BaseConfig(BaseSettings):
     the python backend.
     """
 
-    # nested configurations will only load
+    # NOTE: nested configurations will only load
     # such that their var names match
     # the named prefix and the nested delimiter i.e.
     # API__ADMIN_PASSWORD for api.admin_password
     # of APIConfig object.
 
     api: APIConfig
-    celery: CeleryConfig
-
     db: DatabaseConfig
-    http: HTTPConfig
     redis: RedisConfig
+
+    # NOTE: nested configurations with sensible defaults
+    # that do not require any env fields should instantiate
+    # with a default config object, env fields will override
+
+    celery: CeleryConfig = CeleryConfig()
+    http: HTTPConfig = HTTPConfig()
 
 
 class LocalConfig(BaseConfig):
@@ -31,6 +35,7 @@ class LocalConfig(BaseConfig):
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
+        extra="ignore",
     )
 
 
@@ -39,6 +44,7 @@ class DevelopmentConfig(BaseConfig):
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
+        extra="ignore",
         # secrets_dir="/run/secrets",  # NOTE: docker container secrets
         # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
         # once pydantic-settings v2.12 is out, can use secrets via SettingsConfigDict
@@ -51,6 +57,7 @@ class ProductionConfig(BaseConfig):
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
+        extra="ignore",
         # secrets_dir="/run/secrets",  # NOTE: docker container secrets
         # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
         # once pydantic-settings v2.12 is out, can use secrets via SettingsConfigDict
@@ -71,7 +78,7 @@ def get_settings(env: Environment | str | None = None) -> BaseConfig:
     Get application settings based on environment.
 
     Args:
-        env: Environment to load. If None, reads from ENV variable.
+        env: Environment to load. If None, reads from ENV environment variable.
              Can be Environment enum or string that will be normalized.
 
     Returns:
@@ -86,4 +93,4 @@ def get_settings(env: Environment | str | None = None) -> BaseConfig:
         environment = env
 
     cfg_cls = ENVIRONMENT_CONFIG_REGISTRY[environment]
-    return cfg_cls()  # type: ignore[call-arg] BaseSettings loads from environment
+    return cfg_cls()

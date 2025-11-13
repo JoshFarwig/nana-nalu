@@ -50,6 +50,7 @@ services:
       context: ./backend
     environment:
       ENV: ${ENV}
+      LOCATION: ${LOCATION}
       # use __ nested env delimiter syntax for nested pydantic-settings objects
       # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12
       API__ADMIN_USERNAME: ${API__ADMIN_USERNAME}

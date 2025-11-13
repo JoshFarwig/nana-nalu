@@ -21,14 +21,14 @@ class MauiLocationConfig(LocationConfig):
     """Maui location configuration"""
 
     nwps_site_code: str = "HFO"
-    nws_cg_id: int = 4
+    nwps_cg_id: int = 4
 
 
 class OahuLocationConfig(LocationConfig):
     """Oahu location configuration"""
 
     nwps_site_code: str = "HFO"
-    nws_cg_id: int = 2
+    nwps_cg_id: int = 2
 
 
 LOCATION_CONFIG_REGISTRY: dict[Location, type[LocationConfig]] = {
