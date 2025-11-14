@@ -1,0 +1,16 @@
+[project]
+name = "notebooks"
+version = "0.1.0"
+readme = "README.md"
+description = "jupyter-notebooks for research and development"
+requires-python = "~=3.12.10"
+dependencies = [
+    "cfgrib>=0.9.15.1",
+    "ipykernel>=7.1.0",
+    "jupyterlab>=4.4.10",
+    "numpy>=2.3.4",
+    "pandas>=2.3.3",
+    "pygrib>=2.1.8",
+    "xarray>=2025.10.1",
+]
+

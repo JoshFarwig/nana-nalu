@@ -1,0 +1,15 @@
+# any testing files:
+*.grib2
+*.idx
+*.grib2.*.idx
+
+# macOS
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+.jupyter/
+.local/share/jupyter/
+jupyter_notebook_config.py
+*.ipynb_meta
