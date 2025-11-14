@@ -1,6 +1,6 @@
 from datetime import time, timedelta, timezone
 from enum import Enum
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, field_validator
 from utils import Location
 
 from .hawaii import NWPSMauiModel
@@ -15,8 +15,8 @@ def ensure_utc(t: time) -> time:
     return t
 
 
-class WFOCode(str, Enum):
-    """NOAA and NWPS Weather Forecast Office (WFO) codes"""
+class WFO(str, Enum):
+    """NOAA/NWS Weather Forecast Office(s)"""
 
     HONOLULU = "HFO"
 
@@ -37,7 +37,9 @@ class NWPSGridConfig(BaseModel):
 class NWPSModelConfig(BaseModel):
     """Core NWPS model configuration that assists forecast orchestrating"""
 
-    site_code: WFOCode = Field(description="NWPS Weather Forecast Office code")
+    wfo: WFO = Field(
+        description="NOAA/NWS Weather Forecast Office, I assume this is where the model is ran"
+    )
     model_run_times: list[time] = Field(description="UTC times when model runs")
     model_long_wait_time: timedelta = Field(
         description="Initial long expected delay derived from models analysis time (i.e., 00Z, 12Z, etc.)"
@@ -45,7 +47,7 @@ class NWPSModelConfig(BaseModel):
     model_short_wait_time: timedelta = Field(
         description="Short delay to poll for grib2 after initial long delay"
     )
-    grib_filter_base_url: HttpUrl = Field(
+    grib_filter_base_url: str = Field(
         description="NOAA NOMADS GRIB filter service base url"
     )
     grid: NWPSGridConfig = Field(description="Geographic coverage area")

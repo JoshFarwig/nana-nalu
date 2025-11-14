@@ -1,7 +1,6 @@
 from datetime import time, timedelta, timezone
 
-from pydantic import HttpUrl
-from .config import NWPSModelConfig, NWPSGridConfig, WFOCode
+from .config import NWPSModelConfig, NWPSGridConfig, WFO
 
 # NOTE: very important consideration, model time completions are variable
 # i.e. 1-2hrs after start time. AND start time is typically 6-8 hours AFTER
@@ -14,16 +13,18 @@ from .config import NWPSModelConfig, NWPSGridConfig, WFOCode
 # directly and if it returns 404, run the short aggresive delay
 
 
+# NOTE: example grib filter url with this boundingbox config:
+# https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl?dir=%2Fpr.20251114%2Fhfo%2F12%2FCG4&file=hfo_nwps_CG4_20251114_1200.grib2&all_var=on&all_lev=on&subregion=&toplat=21.043&leftlon=203.285&rightlon=204.046&bottomlat=20.553
 class NWPSMauiGrid(NWPSGridConfig):
     cg: str = "CG4"
-    lat_max: float = 0.0
-    lat_min: float = 0.0
-    long_max: float = 0.0
-    long_min: float = 0.0
+    lat_max: float = 21.042
+    lat_min: float = 20.553
+    long_max: float = 204.046
+    long_min: float = 203.285
 
 
 class NWPSMauiModel(NWPSModelConfig):
-    site_code: WFOCode = WFOCode.HONOLULU
+    wfo: WFO = WFO.HONOLULU
 
     # NOTE: after observing run times from the model for Maui,
     # looks like 00Z and 12Z are the most common run times,
@@ -40,10 +41,10 @@ class NWPSMauiModel(NWPSModelConfig):
     model_run_times: list[time] = [
         time(0, 0, tzinfo=timezone.utc),
     ]
-
     model_long_wait_time: timedelta = timedelta(hours=6, minutes=30)
     model_short_wait_time: timedelta = timedelta(minutes=10)
-    grib_filter_base_url: HttpUrl = (
-        "https://nomads.ncep.noaa.gov/gribfilter.php?ds=prnwps"
-    )
-    grid = NWPSMauiGrid()
+    grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl?"
+    grid: NWPSGridConfig = NWPSMauiGrid()
+
+
+# TODO: add an oahu configuration maybe?
