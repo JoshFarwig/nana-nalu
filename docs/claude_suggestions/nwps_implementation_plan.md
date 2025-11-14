@@ -1,1141 +1,948 @@
-# NWPS Forecast Service Implementation Plan
+# Forecast Service Implementation Plan
 
 ## Overview
-Build core forecast service protocols and NWPS GRIB2 provider that fetches regional data and caches in Redis, with location-based provider registration.
+Build a provider-agnostic forecast service supporting multiple providers:
+- **File-Based Providers**: NWPS (GRIB2), PacIOOS GridDAP (NetCDF)
+- **API-Based Providers**: Surfline (per-spot HTTP), Open-Meteo (batch HTTP)
+
+Store raw provider data in Redis, transform into standardized views via API layer.
+
+---
+
+## Architecture Philosophy
+
+### Data Storage: Raw Provider Format
+**Store exactly what providers give you in Redis** - no normalization at cache layer.
+
+```
+Key: forecast:nwps:{spot_id}:{timestamp}
+Value: {"swh": 4.5, "shts": 4.0, "perpw": 12, "dirpw": 270, ...}
+
+Key: forecast:surfline:{spot_id}:{timestamp}
+Value: {"surf_optimal": 14, "swell1_height": 12, "swell1_period": 13, ...}
+
+Key: forecast:pacioos:{spot_id}:{timestamp}
+Value: {"Hsig": 4.2, "Tm01": 11.5, "Pdir01": 285, ...}
+```
+
+**Benefits:**
+- No data loss - preserve provider-specific parameters (NWPS currents, Surfline ratings)
+- Easy to debug - inspect raw Redis values
+- Provider evolution - add new parameters without migrating data
+- Power users - can access raw data if needed
+
+### API Layer: Standardized Views
+**Transform on read** - backend generates UI-friendly views from raw data.
+
+```python
+GET /spots/{spot_id}/forecast/swell
+→ Transforms raw NWPS + Surfline data into structured swell comparison
+
+GET /spots/{spot_id}/forecast/wave-height
+→ Returns nearshore wave height from both providers (handles units, terminology)
+
+GET /spots/{spot_id}/forecast/raw?provider=nwps
+→ Returns unmodified NWPS data for advanced users
+```
+
+**Benefits:**
+- UI stays simple - gets pre-structured data
+- Iterate on views - change presentation without re-fetching provider data
+- Cross-provider queries - backend handles provider differences
 
 ---
 
 ## Phase 1: Core Foundation
 
-### 1.1 Base Protocols & Models (`services/forecast/base.py`)
+### 1.1 Provider Protocols (`services/forecast/base.py`)
 
-Define the core data structures and interfaces that all providers will implement.
+Define interfaces that all providers must implement using **Protocol** (structural typing).
 
-```python
-# backend/services/forecast/base.py
-from typing import Protocol, runtime_checkable, Literal
-from datetime import datetime
-from pathlib import Path
-from pydantic import BaseModel
+**Why Protocol?**
+- No inheritance required - classes just need matching attributes/methods
+- Type checking without coupling
+- Clean interface definitions
 
+**Key Abstractions:**
+- `ForecastProvider` - Base protocol (provider name, update frequency, coverage check)
+- `FileBasedProvider` - Download regional files, extract for multiple spots
+- `APIBasedProvider` - HTTP requests with optional batching
 
-class ForecastData(BaseModel):
-    """Unified forecast data model across all providers"""
-    timestamp: datetime
-    wave_height: float | None = None
-    wave_period: float | None = None
-    wave_direction: float | None = None
-    wind_speed: float | None = None
-    wind_direction: float | None = None
-    water_level: float | None = None  # For NWPS tide+surge+setup
+**FileBasedProvider Flow:**
+1. Download regional file (e.g., 62MB GRIB2 or 50MB NetCDF)
+2. Extract data for many spots from single file using xarray
+3. Store extracted data in Redis
+4. Clean up file after processing
 
+**Examples:**
+- NWPS: GRIB2 files with xarray + cfgrib
+- PacIOOS GridDAP: NetCDF files with xarray (default engine)
 
-@runtime_checkable
-class ForecastProvider(Protocol):
-    """
-    Base protocol for all forecast providers.
-    Supports both per-spot (HTTP) and regional (file-based) processing.
-    """
+**APIBasedProvider Flow:**
+1. Make HTTP request(s) to provider API
+2. Parse response (JSON, binary NetCDF, etc.)
+3. Store raw provider data in Redis
+4. No file cleanup needed (in-memory processing)
 
-    @property
-    def provider_name(self) -> str:
-        """Unique identifier for this provider (e.g., 'nwps', 'surfline')"""
-        ...
-
-    @property
-    def processing_mode(self) -> Literal["per_spot", "regional"]:
-        """
-        Processing strategy:
-        - "per_spot": Fetch data individually per spot (HTTP APIs)
-        - "regional": Fetch once for entire region (GRIB2 files)
-        """
-        ...
-
-    @property
-    def update_frequency_seconds(self) -> int:
-        """How often this provider updates data"""
-        ...
-
-    def is_available_for_spot(self, spot: "SurfSpot") -> bool:
-        """Check if provider covers this spot's location"""
-        ...
-
-
-@runtime_checkable
-class PerSpotProvider(ForecastProvider, Protocol):
-    """
-    Provider that fetches data per-spot via HTTP.
-    Examples: Surfline, Open-Meteo, NOAA APIs
-    """
-
-    async def fetch_forecast(
-        self,
-        spot: "SurfSpot",
-        start: datetime,
-        end: datetime
-    ) -> list[ForecastData]:
-        """Fetch forecast for a single spot"""
-        ...
-
-
-@runtime_checkable
-class RegionalProvider(ForecastProvider, Protocol):
-    """
-    Provider that processes regional data files.
-    Examples: NWPS GRIB2, PacIOOS NetCDF
-
-    Processing flow:
-    1. Download/fetch regional file
-    2. Extract data for all spots in region
-    3. Return dict mapping spot_id → forecast data
-    4. Cleanup file
-    """
-
-    @property
-    def region(self) -> str:
-        """Geographic region this provider covers (e.g., "maui", "oahu")"""
-        ...
-
-    async def fetch_regional_data(
-        self,
-        model_run: datetime
-    ) -> Path:
-        """
-        Download regional data file.
-        Returns path to downloaded file (caller responsible for cleanup).
-        """
-        ...
-
-    async def extract_spot_forecasts(
-        self,
-        data_file: Path,
-        spots: list["SurfSpot"],
-        start: datetime,
-        end: datetime
-    ) -> dict[str, list[ForecastData]]:
-        """
-        Extract forecasts for multiple spots from data file.
-
-        Returns:
-            {spot_id: [ForecastData, ...]}
-        """
-        ...
-```
-
-**Key Concepts:**
-- **ForecastData**: Common format for all providers (wave/wind/water level)
-- **ForecastProvider**: Base protocol with common properties
-- **PerSpotProvider**: For future HTTP-based providers (Surfline, etc.)
-- **RegionalProvider**: For GRIB2/file-based providers (NWPS)
-
----
+**Examples:**
+- Surfline: Per-spot requests (`supports_batching=False`)
+- Open-Meteo: Batch multiple lat/lons (`supports_batching=True`)
+- PacIOOS NCSS: Per-spot NetCDF-3 binary (`supports_batching=False`)
 
 ### 1.2 Provider Registry (`services/forecast/registry.py`)
 
-Registry pattern that manages provider instances and auto-registers based on LOCATION env.
+**Singleton pattern** - manages provider instances, auto-registers based on `LOCATION` env variable.
 
 ```python
-# backend/services/forecast/registry.py
-from typing import Dict, List
-from services.forecast.base import ForecastProvider, PerSpotProvider, RegionalProvider
-import logging
+# At application startup:
+registry = get_registry()
+# → Reads LOCATION env ("maui")
+# → Auto-registers NWPSProvider with Maui config
+# → Auto-registers SurflineProvider (if configured)
 
-
-class ForecastRegistry:
-    """Registry for managing forecast providers with location-aware registration"""
-
-    def __init__(self):
-        self._per_spot_providers: Dict[str, PerSpotProvider] = {}
-        self._regional_providers: Dict[str, RegionalProvider] = {}
-        self.logger = logging.getLogger(__name__)
-
-    def register_per_spot_provider(
-        self,
-        name: str,
-        provider: PerSpotProvider
-    ) -> None:
-        """Register HTTP-based provider (Surfline, Open-Meteo, etc.)"""
-        self._per_spot_providers[name] = provider
-        self.logger.info(f"Registered per-spot provider: {name}")
-
-    def register_regional_provider(
-        self,
-        name: str,
-        provider: RegionalProvider
-    ) -> None:
-        """Register file-based provider (NWPS, PacIOOS NetCDF)"""
-        self._regional_providers[name] = provider
-        self.logger.info(f"Registered regional provider: {name} for region: {provider.region}")
-
-    def get_regional_providers_for_region(
-        self,
-        region: str
-    ) -> List[RegionalProvider]:
-        """Get all regional providers covering a region"""
-        return [
-            provider for provider in self._regional_providers.values()
-            if provider.region == region
-        ]
-
-    def get_provider_by_name(self, name: str) -> ForecastProvider | None:
-        """Get any provider by name"""
-        if name in self._per_spot_providers:
-            return self._per_spot_providers[name]
-        if name in self._regional_providers:
-            return self._regional_providers[name]
-        return None
-
-
-# Module-level singleton
-_registry: ForecastRegistry | None = None
-
-
-def get_registry() -> ForecastRegistry:
-    """Get or create the global forecast registry"""
-    global _registry
-    if _registry is None:
-        _registry = ForecastRegistry()
-        _initialize_providers(_registry)
-    return _registry
-
-
-def _initialize_providers(registry: ForecastRegistry) -> None:
-    """
-    Auto-register providers based on LOCATION env variable.
-    Called once when registry is first accessed.
-    """
-    import os
-    from services.forecast.providers.nwps_config import NWPS_REGIONS
-    from services.forecast.providers.nwps_provider import NWPSProvider
-    from core.http import AsyncHTTPManager
-
-    location = os.getenv("LOCATION", "maui").lower()
-
-    # Register NWPS provider for current location
-    if location in NWPS_REGIONS:
-        http_manager = AsyncHTTPManager()  # TODO: Get from WorkerState in production
-        nwps_provider = NWPSProvider(
-            region_config=NWPS_REGIONS[location],
-            http_client=http_manager.client
-        )
-        registry.register_regional_provider("nwps", nwps_provider)
-
-    # Future: Register other providers (Surfline, Open-Meteo, etc.)
+# In tasks/endpoints:
+provider = registry.get_provider_by_name("nwps")
+regional_providers = registry.get_regional_providers_for_region("maui")
 ```
 
-**Key Concepts:**
-- **Singleton Pattern**: One registry per application lifecycle
-- **Location-Aware**: Auto-registers NWPS provider based on LOCATION env
-- **Extensible**: Easy to add new providers (Surfline, etc.) later
+**Location-Aware Registration:**
+- `LOCATION=maui` → Register NWPS with CG4 grid config
+- `LOCATION=oahu` → Register NWPS with different coverage area
+- Future: `LOCATION=california` → Register different regional models
 
----
+### 1.3 NWPS Configuration (`services/forecast/providers/nwps_config.py`)
 
-### 1.3 Location Configuration (`services/forecast/providers/nwps_config.py`)
+**Per-region GRIB2 configuration:**
+- Grid code (e.g., CG4 for Hawaii)
+- Coverage area (lat/lon bounds)
+- Model run times (00Z, 12Z)
+- Base URL for NOAA NOMADS server
 
-Move NWPS-specific location config from core/configs to forecast providers folder.
-
+**Example:**
 ```python
-# backend/services/forecast/providers/nwps_config.py
-"""
-NWPS (Nearshore Wave Prediction System) configuration per location.
-Defines GRIB2 URLs, coverage areas, and model run times.
-"""
-
 NWPS_REGIONS = {
     "maui": {
-        "code": "CG4",  # Coastal Grid 4
-        "name": "Maui",
-        "site_code": "HFO",  # Honolulu Forecast Office
-        "base_url": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/nwps/prod",
-        "coverage": {
-            "lat_min": 20.5,
-            "lat_max": 21.2,
-            "lon_min": -156.7,
-            "lon_max": -155.9,
-        },
-        "model_runs": [0, 12],  # UTC hours (00Z and 12Z)
-        "forecast_hours": 144,  # 6 days
-    },
-    "oahu": {
-        "code": "CG4",  # Same grid covers Oahu
-        "name": "Oahu",
-        "site_code": "HFO",
-        "base_url": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/nwps/prod",
-        "coverage": {
-            "lat_min": 21.2,
-            "lat_max": 21.7,
-            "lon_min": -158.3,
-            "lon_max": -157.6,
-        },
-        "model_runs": [0, 12],
-        "forecast_hours": 144,
-    },
+        "code": "CG4",
+        "coverage": {"lat_min": 20.5, "lat_max": 21.2, ...},
+        "model_runs": [0, 12],  # UTC hours
+        ...
+    }
+}
+```
+
+**Why separate file?**
+- Location configs are NWPS-specific, not global
+- Easy to add new regions without touching provider code
+- Keeps `core/configs` for app-wide settings
+
+---
+
+## Phase 2: File-Based Providers
+
+### 2.1 NWPS Provider (`services/forecast/providers/nwps_provider.py`)
+
+**Implements FileBasedProvider protocol** - processes GRIB2 files with xarray + cfgrib.
+
+**Key Responsibilities:**
+1. **Download GRIB2 file** (62MB, ~5-20 sec)
+2. **Extract point data** using xarray + cfgrib (lazy loading, efficient)
+3. **Return raw parameter names** - preserve NOAA's native format
+
+**xarray vs pygrib:**
+- ✅ xarray: Cleaner API, lazy loading, easy lat/lon selection
+- ❌ pygrib: More boilerplate, loads entire file into memory
+
+**Example extraction:**
+```python
+ds = xr.open_dataset(grib_file, engine='cfgrib', filter_by_keys={'dataType': 'fc'})
+spot_data = ds.sel(latitude=20.93, longitude=203.64, method='nearest')
+
+# Return raw GRIB variable names
+return {
+    "swh": float(spot_data["swh"].values[0]),  # Significant wave height
+    "shts": float(spot_data["shts"].values[0]),  # Swell height (no wind waves)
+    "perpw": float(spot_data["perpw"].values[0]),  # Period
+    "dirpw": float(spot_data["dirpw"].values[0]),  # Direction
+    "spc": float(spot_data["spc"].values[0]),  # Current speed (unique!)
+    "dirc": float(spot_data["dirc"].values[0]),  # Current direction
+    "zos": float(spot_data["zos"].values[0]),  # Water level (tide+surge+setup)
+    ...
+}
+```
+
+**GRIB2 Variable Reference:**
+- `swh` - Significant wave height (total: swell + wind waves) - **nearshore height**
+- `shts` - Significant height total swell (swell only) - **offshore swell component**
+- `perpw` - Primary wave mean period
+- `dirpw` - Primary wave direction
+- `ws` - Wind speed
+- `wdir` - Wind direction
+- `spc` - Current speed (**NWPS exclusive**)
+- `dirc` - Current direction (**NWPS exclusive**)
+- `zos` - Sea surface height (**NWPS exclusive**: tide + storm surge + wave setup)
+
+**Why these variables matter:**
+- `swh` - What actually hits the beach (physics-based nearshore transformation)
+- `shts` - Offshore swell (comparable to Surfline's deep-water swell)
+- Currents - Safety + paddling effort (no other provider shows this!)
+- Water level - Time your session (reef spots need depth)
+
+### 2.2 NWPS Architecture Notes
+
+**NWPS Model Components:**
+- **Boundary conditions**: WAVEWATCH III (offshore waves)
+- **Wind forcing**: AWIPS forecaster-developed grids (human-refined)
+- **Wave model**: SWAN (nearshore transformation with bathymetry)
+- **Currents**: RTOFS-Global (Real-Time Ocean Forecast System)
+- **Water level**: ESTOFS (tides + surge) or P-SURGE (tropical storms)
+- **Resolution**: 1.8km to 500m nearshore
+
+**This is a physics-based model** - not statistical like most surf forecasts. It accounts for:
+- Reef/bathymetry effects (wave shoaling, refraction)
+- Wave-current interaction
+- Local wind effects
+- Total water level (critical for shallow reef spots)
+
+### 2.3 PacIOOS GridDAP Provider (`services/forecast/providers/pacioos_griddap_provider.py`)
+
+**Implements FileBasedProvider protocol** - processes NetCDF files from ERDDAP GridDAP service.
+
+**Why GridDAP vs NCSS?**
+- **GridDAP**: Download regional NetCDF grid covering many spots (file-based workflow)
+- **NCSS**: Per-spot queries via HTTP API (API-based workflow)
+- Use GridDAP when you have many spots in a region (more efficient)
+
+**Key Responsibilities:**
+1. **Download NetCDF file** from ERDDAP GridDAP (~20-50MB, depends on region/time range)
+2. **Extract point data** using xarray (same as NWPS, but no cfgrib engine needed)
+3. **Return raw PacIOOS variable names** - preserve native format
+
+**Example extraction:**
+```python
+# Download NetCDF from GridDAP
+url = "https://pae-paha.pacioos.hawaii.edu/erddap/griddap/swan_oahu.nc"
+params = {
+    "Hsig[(2025-11-14T00:00:00Z):1:(2025-11-20T00:00:00Z)][(20.5):(21.5)][(-158.5):(-157.5)]",
+    "Tm01[(2025-11-14T00:00:00Z):1:(2025-11-20T00:00:00Z)][(20.5):(21.5)][(-158.5):(-157.5)]",
+    ...
 }
 
+# Open with xarray (NetCDF is default engine)
+ds = xr.open_dataset(nc_file)
 
-def get_nwps_grib_url(region: str, model_run: datetime) -> str:
-    """
-    Build GRIB2 download URL for a specific region and model run.
+# Extract point data (identical to NWPS workflow)
+spot_data = ds.sel(latitude=20.93, longitude=-157.86, method='nearest')
 
-    Example URL:
-    https://nomads.ncep.noaa.gov/pub/data/nccf/com/nwps/prod/nwps.20251113/CG4/nwps.t00z.cg4.grib2
-    """
-    config = NWPS_REGIONS[region]
-    run_date = model_run.strftime("%Y%m%d")
-    model_hour = model_run.hour  # 0 or 12
-
-    code = config["code"]
-    url = (
-        f"{config['base_url']}/nwps.{run_date}/"
-        f"{code}/nwps.t{model_hour:02d}z.{code.lower()}.grib2"
-    )
-    return url
+# Return raw PacIOOS variable names
+return {
+    "Hsig": spot_data["Hsig"].values.tolist(),  # Significant wave height
+    "Tm01": spot_data["Tm01"].values.tolist(),  # Mean period
+    "Pdir01": spot_data["Pdir01"].values.tolist(),  # Primary direction
+    "TPsmoo": spot_data["TPsmoo"].values.tolist(),  # Smoothed peak period
+    "watlev": spot_data["watlev"].values.tolist(),  # Water level
+    "times": [t.isoformat() for t in spot_data["time"].values],
+    ...
+}
 ```
 
-**Key Concepts:**
-- **Per-Location Config**: Each location has GRIB URLs, coverage areas
-- **URL Builder**: Helper function to construct GRIB2 download URLs
-- **Extensible**: Easy to add new regions (California, East Coast, etc.)
+**NetCDF Variable Reference (PacIOOS SWAN):**
+- `Hsig` - Significant wave height (meters)
+- `Tm01` - Mean wave period (seconds)
+- `Pdir01` - Primary wave direction (degrees)
+- `TPsmoo` - Smoothed peak period (seconds)
+- `watlev` - Water level above MSL (meters)
+
+**GRIB2 vs NetCDF Comparison:**
+
+| Aspect | NWPS (GRIB2) | PacIOOS GridDAP (NetCDF) |
+|--------|--------------|--------------------------|
+| **Engine** | `engine='cfgrib'` | Default (native NetCDF) |
+| **File size** | ~62MB | ~20-50MB (compressed) |
+| **Variables** | GRIB abbreviations (`swh`, `perpw`) | Descriptive names (`Hsig`, `Tm01`) |
+| **Workflow** | Identical | Identical |
+| **xarray code** | Nearly identical | Nearly identical |
+
+Both use the same `FileBasedProvider` workflow:
+1. Download regional file
+2. Extract with `ds.sel(latitude=..., longitude=..., method='nearest')`
+3. Cache extracted data
+4. Clean up file
 
 ---
 
-## Phase 2: NWPS Provider (Core Implementation)
+## Phase 3: API-Based Providers
 
-### 2.1 NWPS Provider Class (`services/forecast/providers/nwps_provider.py`)
+### 3.1 Surfline Provider (`services/forecast/providers/surfline_provider.py`)
 
-Implements RegionalProvider protocol with GRIB2 extraction logic.
+**Implements APIBasedProvider protocol** - fetches via HTTP API (per-spot).
+
+**Batch Request Strategy:**
+Surfline doesn't have official batch API, but you can:
+
+**Option A: Sequential requests with rate limiting**
+```python
+async def fetch_many(spots: list[SurfSpot]) -> dict[str, dict]:
+    results = {}
+    async with self.semaphore:  # Limit concurrent requests
+        for spot in spots:
+            if spot.surfline_spot_id:
+                data = await self._fetch_single(spot.surfline_spot_id)
+                results[str(spot.id)] = data
+                await asyncio.sleep(0.1)  # Rate limit
+    return results
+```
+
+**Option B: Gather with concurrency limit**
+```python
+semaphore = asyncio.Semaphore(10)  # Max 10 concurrent requests
+
+async def fetch_with_limit(spot):
+    async with semaphore:
+        return await self._fetch_single(spot.surfline_spot_id)
+
+tasks = [fetch_with_limit(spot) for spot in spots]
+results = await asyncio.gather(*tasks, return_exceptions=True)
+```
+
+**Return raw Surfline format:**
+```python
+{
+    "surf_min": 12,
+    "surf_max": 15,
+    "surf_optimal": 14,
+    "swell_height": 12,  # Offshore deep-water swell
+    "swell_period": 13,
+    "swell_direction": 265,
+    "swell2_height": 3,  # Secondary swell
+    "wind_speed": 10,
+    "rating": 3,  # Stars
+    "condition_human": "Fair - Bumpy",
+    ...
+}
+```
+
+**Surfline Data Characteristics:**
+- Statistical model (buoy-calibrated)
+- Offshore swell predictions (deep water, no nearshore transformation)
+- `surf_optimal` is their guess at beach height
+- Multiple swell components (primary, secondary, tertiary)
+- Subjective ratings (★ stars, conditions text)
+
+### 3.2 Batching Strategy for 200+ Spots
+
+**Problem:** If you have 150 spots with Surfline data, sequential requests take ~15+ seconds.
+
+**Solutions:**
+
+**1. Smart Scheduling (Recommended)**
+Don't fetch all spots every time:
+```python
+# Celery beat schedule
+'fetch-surfline-priority-spots': {
+    'schedule': crontab(minute='*/10'),  # Every 10 min
+    'task': 'fetch_surfline_batch',
+    'kwargs': {'priority': 'high'}  # Top 20 spots only
+}
+
+'fetch-surfline-all-spots': {
+    'schedule': crontab(minute='0', hour='*/3'),  # Every 3 hours
+    'task': 'fetch_surfline_batch',
+    'kwargs': {'priority': 'all'}  # All 150 spots
+}
+```
+
+**2. Concurrent Fetching with Throttling**
+```python
+# Fetch 10 spots at a time (1-2 seconds per batch)
+async def fetch_surfline_batch(spots: list[SurfSpot]):
+    semaphore = asyncio.Semaphore(10)
+    tasks = [fetch_with_limit(spot, semaphore) for spot in spots]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    # 150 spots / 10 concurrent = 15 waves ≈ 15-30 seconds total
+```
+
+**3. Incremental Updates**
+```python
+# Only fetch spots with stale data
+async def fetch_stale_spots():
+    for spot in spots:
+        last_update = await redis.get(f"forecast:surfline:{spot.id}:updated")
+        if not last_update or (now - last_update) > timedelta(hours=1):
+            await fetch_surfline(spot)
+```
+
+**4. User-Triggered Fetching**
+```python
+# When user views a spot, trigger fresh fetch if stale
+@router.get("/spots/{spot_id}/forecast")
+async def get_forecast(spot_id: str):
+    # Return cached data immediately
+    cached = await get_cached_forecast(spot_id)
+
+    # Trigger background refresh if stale (fire-and-forget)
+    if is_stale(cached):
+        refresh_forecast_task.delay(spot_id)
+
+    return cached
+```
+
+**Recommended Approach:** Combination of #1 + #2
+- High-traffic spots: Fetch every 10 minutes (small batch)
+- All spots: Fetch every 3-6 hours (large batch with throttling)
+- On-demand: User views trigger background refresh if >1 hour old
+
+**Network Load Estimation:**
+- 150 spots × ~50KB response = ~7.5MB per full refresh
+- Every 3 hours = 60MB/day (negligible)
+- With smart scheduling (priority spots every 10min): ~100MB/day
+
+### 3.2 Open-Meteo Provider (`services/forecast/providers/open_meteo_provider.py`)
+
+**Implements APIBasedProvider protocol** - fetches via HTTP API with **batching support**.
+
+**Key Feature: Batch Requests**
+Open-Meteo supports multiple lat/lon pairs in a single request:
 
 ```python
-# backend/services/forecast/providers/nwps_provider.py
-from services.forecast.base import RegionalProvider, ForecastData
-from pathlib import Path
-from datetime import datetime, timezone
-import pygrib
-import httpx
-from typing import Literal
-import logging
+class OpenMeteoProvider:
+    provider_name = "open_meteo"
+    processing_mode = "api_based"
+    supports_batching = True  # Can batch multiple spots!
+    update_frequency_hours = 1
 
+    async def fetch_forecast(
+        self, spots: list[SurfSpot], timestamp: datetime
+    ) -> dict[str, dict]:
+        # Batch all spots into one request
+        lats = [str(spot.latitude) for spot in spots]
+        lons = [str(spot.longitude) for spot in spots]
 
-class NWPSProvider:
-    """
-    NOAA Nearshore Wave Prediction System (NWPS) provider.
+        url = "https://marine-api.open-meteo.com/v1/marine"
+        params = {
+            "latitude": ",".join(lats),
+            "longitude": ",".join(lons),
+            "hourly": "wave_height,wave_direction,wave_period,wind_wave_height",
+            "timezone": "UTC",
+        }
 
-    Data source: GRIB2 files containing wave, wind, and water level forecasts.
-    Update frequency: Twice daily at 00Z and 12Z.
-    Coverage: Regional grids (Hawaii = CG4).
-    """
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params)
+            data = response.json()
 
-    def __init__(self, region_config: dict, http_client: httpx.AsyncClient):
-        """
-        Args:
-            region_config: Configuration dict from nwps_config.NWPS_REGIONS
-            http_client: Shared HTTP client for downloads (from WorkerState)
-        """
-        self.region_config = region_config
-        self.http_client = http_client
-        self.logger = logging.getLogger(__name__)
-
-    # Protocol properties
-    provider_name = "nwps"
-    processing_mode: Literal["regional"] = "regional"
-    update_frequency_seconds = 43200  # 12 hours
-
-    @property
-    def region(self) -> str:
-        return self.region_config["name"].lower()
-
-    def is_available_for_spot(self, spot) -> bool:
-        """Check if spot is within NWPS grid coverage"""
-        coverage = self.region_config["coverage"]
-        return (
-            coverage["lat_min"] <= spot.latitude <= coverage["lat_max"]
-            and coverage["lon_min"] <= spot.longitude <= coverage["lon_max"]
-        )
-
-    async def fetch_regional_data(self, model_run: datetime) -> Path:
-        """
-        Download NWPS GRIB2 file for a model run.
-
-        Args:
-            model_run: Model initialization time (must be 00Z or 12Z)
-
-        Returns:
-            Path to downloaded GRIB2 file
-        """
-        from services.forecast.providers.nwps_config import get_nwps_grib_url
-
-        url = get_nwps_grib_url(self.region, model_run)
-
-        # Download to temp location
-        run_date = model_run.strftime("%Y%m%d")
-        code = self.region_config["code"]
-        output_file = Path(f"/tmp/nwps_{run_date}_{model_run.hour:02d}z_{code.lower()}.grib2")
-
-        self.logger.info(f"Downloading GRIB2: {url}")
-
-        # Streaming download (efficient for 62MB file)
-        async with self.http_client.stream("GET", url) as response:
-            response.raise_for_status()
-
-            with open(output_file, "wb") as f:
-                async for chunk in response.aiter_bytes(chunk_size=8192):
-                    f.write(chunk)
-
-        file_size_mb = output_file.stat().st_size / (1024 * 1024)
-        self.logger.info(f"Downloaded {file_size_mb:.2f} MB to {output_file}")
-
-        return output_file
-
-    async def extract_spot_forecasts(
-        self,
-        data_file: Path,
-        spots: list,
-        start: datetime,
-        end: datetime
-    ) -> dict[str, list[ForecastData]]:
-        """
-        Extract forecast data for all spots from GRIB2 file.
-
-        This is the core extraction logic - reads file once,
-        extracts data for all spots.
-        """
-        # Open GRIB2 file
-        grbs = pygrib.open(str(data_file))
-
-        # Build index of all messages by parameter and forecast hour
-        # Structure: {param_name: {forecast_datetime: grib_message}}
-        index = self._build_grib_index(grbs)
-
-        grbs.close()
-
-        # Extract data for each spot
+        # Parse response into spot_id -> forecast dict
         results = {}
-
-        for spot in spots:
-            timeseries = []
-
-            # Get all unique forecast hours
-            forecast_hours = self._get_forecast_hours(index)
-
-            for forecast_hour in forecast_hours:
-                if not (start <= forecast_hour <= end):
-                    continue
-
-                # Extract point data at spot's lat/lon
-                forecast_data = ForecastData(
-                    timestamp=forecast_hour,
-                    wave_height=self._extract_value(
-                        index.get("wave_height", {}).get(forecast_hour),
-                        spot.geometry.y,  # PostGIS Point latitude
-                        spot.geometry.x   # PostGIS Point longitude
-                    ),
-                    wave_period=self._extract_value(
-                        index.get("wave_period", {}).get(forecast_hour),
-                        spot.geometry.y,
-                        spot.geometry.x
-                    ),
-                    wave_direction=self._extract_value(
-                        index.get("wave_direction", {}).get(forecast_hour),
-                        spot.geometry.y,
-                        spot.geometry.x
-                    ),
-                    wind_speed=self._extract_value(
-                        index.get("wind_speed", {}).get(forecast_hour),
-                        spot.geometry.y,
-                        spot.geometry.x
-                    ),
-                    wind_direction=self._extract_value(
-                        index.get("wind_direction", {}).get(forecast_hour),
-                        spot.geometry.y,
-                        spot.geometry.x
-                    ),
-                    water_level=self._extract_value(
-                        index.get("water_level", {}).get(forecast_hour),
-                        spot.geometry.y,
-                        spot.geometry.x
-                    ),
-                )
-
-                timeseries.append(forecast_data)
-
-            results[str(spot.id)] = timeseries
-
-        return results
-
-    def _build_grib_index(self, grbs) -> dict:
-        """
-        Build index of GRIB messages by parameter and time.
-
-        Returns:
-            {
-                "wave_height": {datetime(...): grib_message, ...},
-                "wave_period": {...},
+        for i, spot in enumerate(spots):
+            results[str(spot.id)] = {
+                "wave_height": data[i]["hourly"]["wave_height"],
+                "wave_period": data[i]["hourly"]["wave_period"],
+                "wave_direction": data[i]["hourly"]["wave_direction"],
                 ...
             }
-        """
-        index = {}
 
-        # Map GRIB parameter names to our standardized names
-        param_mapping = {
-            "Significant height of combined wind waves and swell": "wave_height",
-            "Primary wave mean period": "wave_period",
-            "Primary wave direction": "wave_direction",
-            "Wind speed": "wind_speed",
-            "Wind direction": "wind_direction",
-            "Water Surface Elevation": "water_level",  # tide+surge+setup
-        }
-
-        for grb in grbs:
-            param_name = grb.name
-
-            if param_name in param_mapping:
-                standardized_name = param_mapping[param_name]
-                forecast_time = grb.validDate  # Forecast valid time
-
-                if standardized_name not in index:
-                    index[standardized_name] = {}
-
-                index[standardized_name][forecast_time] = grb
-
-        return index
-
-    def _get_forecast_hours(self, index: dict) -> list[datetime]:
-        """Extract all unique forecast hours from index"""
-        hours = set()
-        for param_data in index.values():
-            hours.update(param_data.keys())
-        return sorted(hours)
-
-    def _extract_value(
-        self,
-        grb_message,
-        lat: float,
-        lon: float
-    ) -> float | None:
-        """
-        Extract value from GRIB message at specific lat/lon.
-        Uses nearest neighbor (can be enhanced with bilinear interpolation).
-        """
-        if grb_message is None:
-            return None
-
-        try:
-            # Get grid data and coordinates
-            data, lats, lons = grb_message.data()
-
-            # Find nearest grid point
-            dist_sq = (lats - lat)**2 + (lons - lon)**2
-            idx = dist_sq.argmin()
-            value = data.flat[idx]
-
-            # Check for missing values (GRIB2 uses large numbers)
-            if value > 1e10 or value < -1e10:
-                return None
-
-            return float(value)
-
-        except Exception as e:
-            self.logger.warning(f"Failed to extract value at ({lat}, {lon}): {e}")
-            return None
+        return results
 ```
 
-**Key Concepts:**
-- **Streaming Download**: Efficient handling of 62MB GRIB2 files
-- **GRIB Indexing**: Build in-memory index for fast lookup
-- **Nearest Neighbor**: Extract point data at spot lat/lon
-- **Error Handling**: Graceful degradation if extraction fails
+**Benefits of Open-Meteo:**
+- ✅ Free, no API key required
+- ✅ Batch 100+ locations in one request
+- ✅ Hourly updates (vs Surfline's 3-6 hour delays)
+- ✅ Global coverage
+- ⚠️ Offshore forecast only (no nearshore transformation like NWPS)
 
 ---
 
-## Phase 3: Celery Tasks (Orchestration)
+## Phase 4: API View Layer
 
-### 3.1 Task Base Class (`tasks/base.py`)
+### 4.1 Forecast Views (`services/forecast/views.py`)
 
-Base class that enables async tasks with access to WorkerState resources.
+Transform raw provider data into UI-friendly formats.
+
+**View Examples:**
 
 ```python
-# backend/tasks/base.py
-from celery import Task
-from celery_app.worker import WorkerState
-import asyncio
+class ForecastViews:
+    @staticmethod
+    def get_swell_comparison(nwps_raw: dict, surfline_raw: dict) -> dict:
+        """
+        Standardize swell data across providers.
+        NWPS: Single primary swell (shts, perpw, dirpw)
+        Surfline: Multiple swells (swell1, swell2, swell3)
+        """
+        return {
+            "nwps": [{
+                "type": "primary",
+                "height_m": nwps_raw["shts"],
+                "period_s": nwps_raw["perpw"],
+                "direction_deg": nwps_raw["dirpw"]
+            }],
+            "surfline": [
+                {
+                    "type": "primary",
+                    "height_ft": surfline_raw["swell1_height"],
+                    "period_s": surfline_raw["swell1_period"],
+                    "direction_deg": surfline_raw["swell1_direction"]
+                },
+                {
+                    "type": "secondary",
+                    "height_ft": surfline_raw.get("swell2_height"),
+                    ...
+                }
+            ]
+        }
 
+    @staticmethod
+    def get_nearshore_wave_height(nwps_raw: dict, surfline_raw: dict) -> dict:
+        """
+        Compare predicted beach wave height.
+        NWPS: Physics-based (swh = nearshore transformation)
+        Surfline: Statistical estimate (surf_optimal)
+        """
+        return {
+            "nwps": {
+                "height_m": nwps_raw["swh"],
+                "source": "SWAN physics model",
+                "type": "nearshore_transformed"
+            },
+            "surfline": {
+                "height_ft": surfline_raw["surf_optimal"],
+                "height_range_ft": [
+                    surfline_raw["surf_min"],
+                    surfline_raw["surf_max"]
+                ],
+                "source": "statistical_model",
+                "type": "estimated"
+            }
+        }
 
+    @staticmethod
+    def get_unique_to_provider(nwps_raw: dict, surfline_raw: dict) -> dict:
+        """
+        Highlight provider-exclusive data.
+        """
+        return {
+            "nwps_exclusive": {
+                "current_speed_ms": nwps_raw["spc"],
+                "current_direction_deg": nwps_raw["dirc"],
+                "water_level_m": nwps_raw["zos"],  # tide + surge + setup
+                "components": "RTOFS currents + ESTOFS water level"
+            },
+            "surfline_exclusive": {
+                "rating_stars": surfline_raw["rating"],
+                "conditions_text": surfline_raw["condition_human"],
+                "surf_range": [surfline_raw["surf_min"], surfline_raw["surf_max"]]
+            }
+        }
+```
+
+### 4.2 API Endpoints (`routers/forecast.py`)
+
+```python
+@router.get("/spots/{spot_id}/forecast")
+async def get_spot_forecast(spot_id: str, timestamp: datetime | None = None):
+    """
+    Combined forecast view - all providers for a timestamp.
+    Default: current time (nearest hour).
+    """
+    ts = timestamp or datetime.now(timezone.utc).replace(minute=0, second=0)
+
+    # Fetch raw data from Redis
+    nwps_raw = await redis.hgetall(f"forecast:nwps:{spot_id}:{ts.isoformat()}")
+    surfline_raw = await redis.hgetall(f"forecast:surfline:{spot_id}:{ts.isoformat()}")
+
+    # Generate views
+    return {
+        "timestamp": ts,
+        "swell": ForecastViews.get_swell_comparison(nwps_raw, surfline_raw),
+        "wave_height": ForecastViews.get_nearshore_wave_height(nwps_raw, surfline_raw),
+        "wind": ForecastViews.get_wind_comparison(nwps_raw, surfline_raw),
+        "unique_data": ForecastViews.get_unique_to_provider(nwps_raw, surfline_raw),
+        "raw": {
+            "nwps": nwps_raw,
+            "surfline": surfline_raw
+        }
+    }
+
+@router.get("/spots/{spot_id}/forecast/swell")
+async def get_swell_forecast(spot_id: str):
+    """Just swell data (6-day timeseries)."""
+    ...
+
+@router.get("/spots/{spot_id}/forecast/raw")
+async def get_raw_forecast(spot_id: str, provider: str):
+    """Power user endpoint - raw provider data."""
+    ...
+```
+
+---
+
+## Phase 5: Celery Tasks (Orchestration)
+
+### 5.1 Task Base Class (`tasks/base.py`)
+
+Simple async task wrapper with WorkerState access.
+
+```python
 class AsyncTask(Task):
-    """Base task with async support and resource access"""
-
     def __call__(self, *args, **kwargs):
-        """Run task in async context"""
         state = WorkerState()
-        return state.loop.run_until_complete(
-            self.run_async(*args, **kwargs)
-        )
+        return state.loop.run_until_complete(self.run_async(*args, **kwargs))
 
     async def run_async(self, *args, **kwargs):
-        """Override this in subclasses"""
         raise NotImplementedError
-
-    @property
-    def db_manager(self):
-        return WorkerState().db_manager
-
-    @property
-    def redis_manager(self):
-        return WorkerState().redis_manager
-
-    @property
-    def http_manager(self):
-        return WorkerState().http_manager
 ```
 
-**Key Concepts:**
-- **Async Support**: Run async code in Celery tasks
-- **Resource Access**: Easy access to DB, Redis, HTTP managers
-- **Reusable**: All forecast tasks extend this base class
+### 5.2 File-Based Provider Tasks (`tasks/file_based.py`)
 
----
+**Three-task orchestration pattern** - used by both NWPS and PacIOOS GridDAP:
 
-### 3.2 NWPS Tasks (`tasks/nwps.py`)
+**1. `FetchRegionalFileTask` (Orchestrator)**
+- Download regional file (GRIB2 or NetCDF)
+- Store file metadata in Redis (path, model run, size, provider)
+- Query DB for all spots in region
+- Fan out extraction tasks (one per spot)
+- Schedule cleanup task (+30 min buffer)
 
-Three tasks: Download → Extract → Cleanup
+**2. `ExtractSpotDataTask` (Worker)**
+- Read file path and provider from Redis
+- Load spot from DB
+- Extract point data using xarray (with appropriate engine)
+  - NWPS: `xr.open_dataset(path, engine='cfgrib')`
+  - PacIOOS: `xr.open_dataset(path)`  # default NetCDF engine
+- Store raw provider variables in Redis: `forecast:{provider}:{spot_id}:{timestamp}`
+- Set TTL (provider-specific)
+
+**3. `CleanupFileTask` (Cleanup)**
+- Delete file from `/tmp`
+- Delete file metadata from Redis
+
+**Parallelization:**
+- Main task: 1 (download)
+- Extraction tasks: N (one per spot, run concurrently)
+- Example: 20 spots × 5 sec = 100 sec total (vs 100 sec sequential)
+
+**Provider-Specific Implementations:**
 
 ```python
-# backend/tasks/nwps.py
-from celery import shared_task, group
-from tasks.base import AsyncTask
-from services.forecast.registry import get_registry
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-import json
+# tasks/nwps.py
+@shared_task(base=FetchRegionalFileTask)
+def fetch_nwps(region: str):
+    provider = registry.get_provider("nwps")
+    # Uses provider.download_regional_file()
+    ...
 
-
-@shared_task(
-    bind=True,
-    base=AsyncTask,
-    max_retries=3,
-    default_retry_delay=300,  # 5 min
-)
-class FetchNWPSRegionalTask(AsyncTask):
-    """
-    Orchestrator task for NWPS data.
-
-    Responsibilities:
-    1. Download GRIB2 file
-    2. Get all spots in region
-    3. Fan out extraction tasks
-    4. Schedule cleanup
-    """
-
-    async def run_async(self, region: str = "maui"):
-        self.logger.info(f"Starting NWPS fetch for region: {region}")
-
-        # Determine current model run (00Z or 12Z)
-        now = datetime.now(timezone.utc)
-        model_hour = 0 if now.hour < 12 else 12
-        model_run = now.replace(hour=model_hour, minute=0, second=0, microsecond=0)
-
-        # Get NWPS provider from registry
-        registry = get_registry()
-        provider = registry.get_provider_by_name("nwps")
-
-        if not provider:
-            raise ValueError("NWPS provider not registered")
-
-        # Download GRIB2 file
-        try:
-            grib_file = await provider.fetch_regional_data(model_run)
-            file_size_mb = grib_file.stat().st_size / (1024 * 1024)
-            self.logger.info(f"Downloaded GRIB2 file: {file_size_mb:.2f} MB")
-        except Exception as e:
-            self.logger.error(f"Failed to download GRIB2: {e}")
-            raise
-
-        # Store file metadata in Redis (for coordination)
-        file_key = f"nwps:grib_file:{region}:{model_run.isoformat()}"
-        await self.redis_manager.hset(
-            file_key,
-            mapping={
-                "file_path": str(grib_file),
-                "model_run": model_run.isoformat(),
-                "region": region,
-                "downloaded_at": datetime.utcnow().isoformat(),
-                "file_size_mb": file_size_mb,
-            }
-        )
-        await self.redis_manager.expire(file_key, 3600)  # 1 hour
-
-        # Get all spots in region
-        spots = await self._get_spots_in_region(region)
-        self.logger.info(f"Found {len(spots)} spots in {region}")
-
-        # Create extraction tasks for all spots
-        extraction_tasks = [
-            extract_nwps_spot_data.s(
-                spot_id=str(spot.id),
-                file_key=file_key,
-                region=region
-            )
-            for spot in spots
-        ]
-
-        # Execute tasks in parallel
-        job = group(extraction_tasks)
-        result = job.apply_async()
-
-        # Schedule cleanup after tasks complete
-        cleanup_nwps_file.apply_async(
-            args=[file_key],
-            countdown=1800  # 30 min buffer
-        )
-
-        return {
-            "status": "success",
-            "region": region,
-            "model_run": model_run.isoformat(),
-            "file_size_mb": round(file_size_mb, 2),
-            "spots_queued": len(spots),
-            "file_key": file_key
-        }
-
-    async def _get_spots_in_region(self, region: str) -> list:
-        """Get all active spots in region from database"""
-        async with self.db_manager.get_session() as session:
-            from models.surf_spot_model import SurfSpot
-            from sqlalchemy import select
-
-            # Simple query - adjust based on your SurfSpot model
-            result = await session.execute(
-                select(SurfSpot).where(SurfSpot.active == True)
-            )
-            return result.scalars().all()
-
-
-@shared_task(
-    bind=True,
-    base=AsyncTask,
-    max_retries=2,
-)
-class ExtractNWPSSpotDataTask(AsyncTask):
-    """
-    Extract forecast data for a single spot from GRIB2 file.
-    Lightweight task - many can run in parallel.
-    """
-
-    async def run_async(self, spot_id: str, file_key: str, region: str):
-        # Get file metadata from Redis
-        file_info = await self.redis_manager.hgetall(file_key)
-
-        if not file_info:
-            raise ValueError(f"File metadata not found: {file_key}")
-
-        file_path = Path(file_info["file_path"])
-
-        if not file_path.exists():
-            raise FileNotFoundError(f"GRIB2 file not found: {file_path}")
-
-        # Load spot from DB
-        spot = await self._get_spot(spot_id)
-
-        # Get provider from registry
-        from services.forecast.registry import get_registry
-        registry = get_registry()
-        provider = registry.get_provider_by_name("nwps")
-
-        # Extract forecast data
-        start = datetime.now(timezone.utc)
-        end = start + timedelta(days=5)
-
-        forecasts = await provider.extract_spot_forecasts(
-            data_file=file_path,
-            spots=[spot],
-            start=start,
-            end=end
-        )
-
-        spot_forecasts = forecasts.get(spot_id, [])
-
-        # Store in Redis (hash format)
-        stored_hours = 0
-        for forecast_data in spot_forecasts:
-            hour = forecast_data.timestamp.replace(minute=0, second=0, microsecond=0)
-            redis_key = f"forecast:{spot_id}:{hour.isoformat()}"
-
-            # Store wave data
-            await self.redis_manager.hset(
-                redis_key,
-                "nwps:wave",
-                json.dumps({
-                    "height": forecast_data.wave_height,
-                    "period": forecast_data.wave_period,
-                    "direction": forecast_data.wave_direction,
-                })
-            )
-
-            # Store wind data
-            await self.redis_manager.hset(
-                redis_key,
-                "nwps:wind",
-                json.dumps({
-                    "speed": forecast_data.wind_speed,
-                    "direction": forecast_data.wind_direction,
-                })
-            )
-
-            # Store water level (tide+surge+setup)
-            await self.redis_manager.hset(
-                redis_key,
-                "nwps:water_level",
-                json.dumps({
-                    "height": forecast_data.water_level,
-                    "type": "total",  # tide + surge + wave setup
-                })
-            )
-
-            # Metadata
-            await self.redis_manager.hset(
-                redis_key,
-                "nwps:wave:updated_at",
-                datetime.utcnow().isoformat()
-            )
-
-            # TTL: 14 hours (covers 12hr gap + buffer)
-            await self.redis_manager.expire(redis_key, 50400)
-
-            stored_hours += 1
-
-        self.logger.info(f"Stored {stored_hours} forecast hours for spot {spot_id}")
-
-        return {
-            "spot_id": spot_id,
-            "hours_stored": stored_hours
-        }
-
-    async def _get_spot(self, spot_id: str):
-        """Load spot from database"""
-        async with self.db_manager.get_session() as session:
-            from models.surf_spot_model import SurfSpot
-            spot = await session.get(SurfSpot, spot_id)
-            if not spot:
-                raise ValueError(f"Spot not found: {spot_id}")
-            return spot
-
-
-@shared_task(bind=True, base=AsyncTask)
-class CleanupNWPSFileTask(AsyncTask):
-    """
-    Cleanup GRIB2 file after all extraction tasks complete.
-    """
-
-    async def run_async(self, file_key: str):
-        # Get file metadata
-        file_info = await self.redis_manager.hgetall(file_key)
-
-        if not file_info:
-            self.logger.warning(f"File metadata already deleted: {file_key}")
-            return {"status": "already_cleaned"}
-
-        file_path = Path(file_info["file_path"])
-
-        # Delete file
-        if file_path.exists():
-            file_path.unlink()
-            self.logger.info(f"Deleted GRIB2 file: {file_path}")
-
-        # Delete metadata from Redis
-        await self.redis_manager.delete(file_key)
-
-        return {"status": "cleaned", "file_path": str(file_path)}
-
-
-# Task name exports for celery autodiscovery
-fetch_nwps_regional = FetchNWPSRegionalTask()
-extract_nwps_spot_data = ExtractNWPSSpotDataTask()
-cleanup_nwps_file = CleanupNWPSFileTask()
+# tasks/pacioos.py
+@shared_task(base=FetchRegionalFileTask)
+def fetch_pacioos_griddap(region: str):
+    provider = registry.get_provider("pacioos_griddap")
+    # Uses provider.download_regional_file()
+    ...
 ```
 
-**Key Concepts:**
-- **Orchestration**: Main task downloads GRIB2, fans out extraction
-- **Parallel Extraction**: Each spot processed independently
-- **Coordination via Redis**: File metadata stored for task communication
-- **Cleanup**: Scheduled with countdown buffer to ensure extraction completes
+### 5.3 API-Based Provider Tasks (`tasks/api_based.py`)
+
+**Single-task pattern** - simpler than file-based (no download/cleanup):
+
+**`FetchAPIProviderTask`**
+- Query DB for spots (filter by provider availability)
+- Call provider's `fetch_forecast()` method
+  - If `supports_batching=True`: One request for all spots (Open-Meteo)
+  - If `supports_batching=False`: N requests with rate limiting (Surfline)
+- Parse responses
+- Store in Redis: `forecast:{provider}:{spot_id}:{timestamp}`
+- Set TTL (provider-specific)
+
+**Provider-Specific Implementations:**
+
+```python
+# tasks/surfline.py
+@shared_task(base=FetchAPIProviderTask)
+async def fetch_surfline_batch(priority: str = "all"):
+    provider = registry.get_provider("surfline")
+    spots = get_spots_for_priority(priority)
+
+    # Surfline: supports_batching=False → sequential with rate limiting
+    results = await provider.fetch_forecast(spots, datetime.now())
+    await cache_results(results, provider_name="surfline")
+
+# tasks/open_meteo.py
+@shared_task(base=FetchAPIProviderTask)
+async def fetch_open_meteo(region: str):
+    provider = registry.get_provider("open_meteo")
+    spots = get_spots_for_region(region)
+
+    # Open-Meteo: supports_batching=True → single request for all spots
+    results = await provider.fetch_forecast(spots, datetime.now())
+    await cache_results(results, provider_name="open_meteo")
+```
+
+**Rate Limiting (for non-batching providers):**
+```python
+# Inside provider implementation
+async def fetch_forecast(self, spots: list[SurfSpot], timestamp: datetime):
+    if not self.supports_batching:
+        # Use Redis-based rate limiter
+        results = {}
+        for spot in spots:
+            # Check rate limit
+            count = await redis.incr(f"{self.provider_name}:requests:minute")
+            if count == 1:
+                await redis.expire(f"{self.provider_name}:requests:minute", 60)
+            if count > 60:
+                await asyncio.sleep(1)
+
+            # Fetch single spot
+            results[str(spot.id)] = await self._fetch_single(spot)
+        return results
+    else:
+        # Batch request
+        return await self._fetch_batch(spots)
+```
 
 ---
 
-### 3.3 Redis Cache Format
+## Redis Storage Format
 
-Example of what gets stored in Redis:
-
+### Key Structure
 ```
-Key: forecast:550e8400-e29b-41d4-a716-446655440000:2025-11-13T12:00:00
+forecast:{provider}:{spot_id}:{timestamp}
+```
 
-Hash Fields:
-├─ nwps:wave → '{"height": 4.5, "period": 12, "direction": 270}'
-├─ nwps:wind → '{"speed": 15, "direction": 90}'
-├─ nwps:water_level → '{"height": 1.2, "type": "total"}'
-└─ nwps:wave:updated_at → "2025-11-13T12:05:32Z"
+### NWPS Example
+```
+Key: forecast:nwps:550e8400-e29b-41d4-a716-446655440000:2025-11-14T12:00:00
+
+Value (JSON string):
+{
+  "swh": 4.5,        // Total wave height (nearshore)
+  "shts": 4.0,       // Swell height only (offshore)
+  "perpw": 12,       // Period
+  "dirpw": 270,      // Direction
+  "ws": 15,          // Wind speed
+  "wdir": 90,        // Wind direction
+  "spc": 0.5,        // Current speed
+  "dirc": 180,       // Current direction
+  "zos": 1.2,        // Water level
+  "updated_at": "2025-11-14T06:30:00Z",
+  "model_run": "2025-11-14T00:00:00Z"
+}
 
 TTL: 50400 seconds (14 hours)
 ```
 
-**Benefits:**
-- One key per spot/hour
-- Atomic updates (HSET operations)
-- Easy retrieval (HGETALL for all data, HGET for specific provider)
-- Single TTL per forecast hour
-
----
-
-## Phase 4: Integration & Testing
-
-### 4.1 Dependency Installation
-
-Add pygrib to your dependencies:
-
-```toml
-# backend/pyproject.toml
-[project]
-dependencies = [
-    # ... existing dependencies ...
-    "pygrib>=2.1.4",
-]
+### Surfline Example
 ```
+Key: forecast:surfline:550e8400-e29b-41d4-a716-446655440000:2025-11-14T12:00:00
 
-Install with:
-```bash
-cd backend
-uv add pygrib
-```
-
----
-
-### 4.2 Manual Testing
-
-Test the implementation step-by-step:
-
-```python
-# Test script: backend/scripts/test_nwps.py
-import asyncio
-from datetime import datetime, timezone
-from services.forecast.registry import get_registry
-from core.database import AsyncDatabaseManager
-from core import get_settings
-
-
-async def test_nwps():
-    """Test NWPS provider end-to-end"""
-
-    # Get provider from registry
-    registry = get_registry()
-    provider = registry.get_provider_by_name("nwps")
-
-    print(f"Provider: {provider.provider_name}")
-    print(f"Region: {provider.region}")
-    print(f"Update frequency: {provider.update_frequency_seconds}s")
-
-    # Determine current model run
-    now = datetime.now(timezone.utc)
-    model_hour = 0 if now.hour < 12 else 12
-    model_run = now.replace(hour=model_hour, minute=0, second=0, microsecond=0)
-
-    print(f"\nModel run: {model_run}")
-
-    # Download GRIB2 file
-    print("\nDownloading GRIB2 file...")
-    grib_file = await provider.fetch_regional_data(model_run)
-    print(f"Downloaded to: {grib_file}")
-
-    # Get a test spot from database
-    settings = get_settings()
-    db_manager = AsyncDatabaseManager(settings.db)
-    async with db_manager.get_session() as session:
-        from models.surf_spot_model import SurfSpot
-        from sqlalchemy import select
-
-        result = await session.execute(select(SurfSpot).limit(1))
-        test_spot = result.scalars().first()
-
-    if not test_spot:
-        print("No spots found in database")
-        return
-
-    print(f"\nTest spot: {test_spot.name} ({test_spot.geometry.y}, {test_spot.geometry.x})")
-
-    # Extract forecasts
-    print("\nExtracting forecasts...")
-    start = datetime.now(timezone.utc)
-    end = start + timedelta(days=1)
-
-    forecasts = await provider.extract_spot_forecasts(
-        data_file=grib_file,
-        spots=[test_spot],
-        start=start,
-        end=end
-    )
-
-    spot_forecasts = forecasts.get(str(test_spot.id), [])
-    print(f"\nExtracted {len(spot_forecasts)} forecast hours")
-
-    # Show first 3 forecasts
-    for forecast in spot_forecasts[:3]:
-        print(f"\n{forecast.timestamp}:")
-        print(f"  Wave: {forecast.wave_height}m @ {forecast.wave_period}s from {forecast.wave_direction}°")
-        print(f"  Wind: {forecast.wind_speed}m/s from {forecast.wind_direction}°")
-        print(f"  Water Level: {forecast.water_level}m")
-
-    # Cleanup
-    grib_file.unlink()
-    print(f"\nCleaned up GRIB2 file")
-
-
-if __name__ == "__main__":
-    asyncio.run(test_nwps())
-```
-
-Run with:
-```bash
-cd backend
-python -m scripts.test_nwps
-```
-
----
-
-### 4.3 Celery Task Testing
-
-Test the full Celery task orchestration:
-
-```bash
-# Terminal 1: Start Celery worker
-cd backend
-celery -A celery_app.app worker -l info
-
-# Terminal 2: Trigger task manually
-python -c "from tasks.nwps import fetch_nwps_regional; fetch_nwps_regional.delay('maui')"
-```
-
-Check Redis for cached data:
-```bash
-redis-cli
-> KEYS forecast:*
-> HGETALL forecast:550e8400-e29b-41d4-a716-446655440000:2025-11-13T12:00:00
-```
-
----
-
-### 4.4 Celery Beat Schedule (Future)
-
-Add to Celery app config for automated scheduling:
-
-```python
-# backend/celery_app/app.py
-from celery.schedules import crontab
-
-app.conf.beat_schedule = {
-    # NWPS runs at 00Z and 12Z
-    # Add 30min delay for NOAA processing time
-    'fetch-nwps-maui-00z': {
-        'task': 'tasks.nwps.fetch_nwps_regional',
-        'schedule': crontab(hour=0, minute=30),  # 00:30 UTC
-        'kwargs': {'region': 'maui'}
-    },
-    'fetch-nwps-maui-12z': {
-        'task': 'tasks.nwps.fetch_nwps_regional',
-        'schedule': crontab(hour=12, minute=30),  # 12:30 UTC
-        'kwargs': {'region': 'maui'}
-    },
+Value (JSON string):
+{
+  "surf_min": 12,
+  "surf_max": 15,
+  "surf_optimal": 14,
+  "swell1_height": 12,
+  "swell1_period": 13,
+  "swell1_direction": 265,
+  "swell2_height": 3,
+  "swell2_period": 8,
+  "wind_speed": 10,
+  "wind_direction": 85,
+  "rating": 3,
+  "condition_human": "Fair - Bumpy",
+  "updated_at": "2025-11-14T06:00:00Z"
 }
+
+TTL: 21600 seconds (6 hours)
 ```
+
+### PacIOOS GridDAP Example
+```
+Key: forecast:pacioos:550e8400-e29b-41d4-a716-446655440000:2025-11-14T12:00:00
+
+Value (JSON string):
+{
+  "Hsig": [4.2, 4.3, 4.1, ...],  // 144 hourly values
+  "Tm01": [11.5, 11.6, 11.4, ...],
+  "Pdir01": [285, 286, 284, ...],
+  "TPsmoo": [13.2, 13.3, 13.1, ...],
+  "watlev": [0.3, 0.4, 0.2, ...],
+  "times": ["2025-11-14T00:00:00Z", "2025-11-14T01:00:00Z", ...],
+  "updated_at": "2025-11-14T06:30:00Z",
+  "model_run": "2025-11-14T00:00:00Z"
+}
+
+TTL: 50400 seconds (14 hours)
+```
+
+### Open-Meteo Example
+```
+Key: forecast:open_meteo:550e8400-e29b-41d4-a716-446655440000:2025-11-14T12:00:00
+
+Value (JSON string):
+{
+  "wave_height": [4.1, 4.2, 4.0, ...],
+  "wave_period": [11.0, 11.2, 10.9, ...],
+  "wave_direction": [280, 281, 279, ...],
+  "wind_wave_height": [1.5, 1.6, 1.4, ...],
+  "times": ["2025-11-14T00:00:00Z", ...],
+  "updated_at": "2025-11-14T12:00:00Z"
+}
+
+TTL: 7200 seconds (2 hours)
+```
+
+**Why this format:**
+- Simple key structure (easy to query all providers for a spot/time)
+- Raw JSON preserves all provider fields
+- Individual TTLs per forecast hour
+- Can add new providers without migration (`forecast:open-meteo:...`)
 
 ---
 
 ## Implementation Order
 
-Follow this sequence for minimal friction:
+**Phase 1: Foundation (Week 1)**
+1. Create `services/forecast/base.py` - Protocol definitions
+2. Create `services/forecast/registry.py` - Provider registry
+3. Create `services/forecast/providers/nwps_config.py` - NWPS regions
 
-1. **Base protocols** (`base.py`) - Foundation for everything
-2. **NWPS config** (`nwps_config.py`) - Defines GRIB URLs per location
-3. **Registry** (`registry.py`) - Manages provider instances
-4. **NWPS provider** (`nwps_provider.py`) - GRIB2 extraction logic
-5. **AsyncTask base** (`tasks/base.py`) - Task foundation
-6. **NWPS tasks** (`tasks/nwps.py`) - Orchestration logic
-7. **Test script** - Validate provider works
-8. **Manual Celery test** - Validate tasks work
-9. **Beat schedule** - Automate (once confident)
+**Phase 2: File-Based Providers (Week 1-2)**
+4. Create `services/forecast/providers/nwps_provider.py` - GRIB2 extraction
+5. Create `services/forecast/providers/pacioos_griddap_provider.py` - NetCDF extraction
+6. Create test script `scripts/test_file_providers.py` - Validate both work
+7. Install dependencies: `uv add xarray cfgrib netCDF4`
+
+**Phase 3: Tasks (Week 2)**
+8. Create `tasks/base.py` - AsyncTask base class
+9. Create `tasks/file_based.py` - Shared file-based orchestration (3 tasks)
+10. Create `tasks/nwps.py` - NWPS-specific task wrappers
+11. Create `tasks/pacioos.py` - PacIOOS-specific task wrappers
+12. Test Celery execution manually
+
+**Phase 4: API Layer (Week 3)**
+13. Create `services/forecast/views.py` - View transformations
+14. Create `routers/forecast.py` - API endpoints
+15. Test with Swagger UI
+
+**Phase 5: API-Based Providers (Week 3-4)**
+16. Create `services/forecast/providers/surfline_provider.py` - Per-spot HTTP
+17. Create `services/forecast/providers/open_meteo_provider.py` - Batch HTTP
+18. Create `tasks/api_based.py` - Shared API task orchestration
+19. Create `tasks/surfline.py` - Surfline-specific wrappers
+20. Create `tasks/open_meteo.py` - Open-Meteo-specific wrappers
+21. Add to registry initialization
+
+**Phase 6: Automation (Week 4)**
+22. Add Celery Beat schedules:
+    - NWPS: 2x/day (00Z, 12Z model runs)
+    - PacIOOS GridDAP: 4x/day (every 6 hours)
+    - Surfline: Priority spots every 10min, all spots every 3 hours
+    - Open-Meteo: Every hour (free tier allows frequent updates)
+23. Add monitoring/alerting
 
 ---
 
-## Files to Create/Modify
+## Files to Create
 
-### Create:
-- `services/forecast/providers/nwps_config.py` - NWPS location config
-- `services/forecast/providers/nwps_provider.py` - NWPS provider implementation
-- `tasks/__init__.py` - Tasks package
-- `tasks/base.py` - AsyncTask base class
-- `tasks/nwps.py` - NWPS orchestration tasks
-- `scripts/test_nwps.py` - Test script
+**Core Services:**
+- `backend/services/forecast/base.py` - Protocols (FileBasedProvider, APIBasedProvider)
+- `backend/services/forecast/registry.py` - Provider registry
+- `backend/services/forecast/views.py` - View transformations
 
-### Modify:
-- `services/forecast/base.py` - Add protocols and ForecastData model (currently empty)
-- `services/forecast/registry.py` - Add ForecastRegistry class (currently empty)
-- `pyproject.toml` - Add pygrib dependency
+**File-Based Providers:**
+- `backend/services/forecast/providers/__init__.py`
+- `backend/services/forecast/providers/nwps_config.py` - NWPS regional configs
+- `backend/services/forecast/providers/nwps_provider.py` - GRIB2 extraction
+- `backend/services/forecast/providers/pacioos_config.py` - PacIOOS regional configs
+- `backend/services/forecast/providers/pacioos_griddap_provider.py` - NetCDF extraction
 
-### Optional Cleanup:
-- Consider removing/deprecating `core/configs/location_config.py` (NWPS config now in providers)
+**API-Based Providers:**
+- `backend/services/forecast/providers/surfline_provider.py` - Per-spot HTTP API
+- `backend/services/forecast/providers/open_meteo_provider.py` - Batch HTTP API
+
+**Tasks:**
+- `backend/tasks/__init__.py`
+- `backend/tasks/base.py` - AsyncTask base class
+- `backend/tasks/file_based.py` - Shared file-based orchestration (download, extract, cleanup)
+- `backend/tasks/nwps.py` - NWPS task wrappers
+- `backend/tasks/pacioos.py` - PacIOOS task wrappers
+- `backend/tasks/api_based.py` - Shared API-based orchestration
+- `backend/tasks/surfline.py` - Surfline task wrappers
+- `backend/tasks/open_meteo.py` - Open-Meteo task wrappers
+
+**API:**
+- `backend/routers/forecast.py` - API endpoints
+
+**Testing:**
+- `backend/scripts/test_file_providers.py` - Test NWPS + PacIOOS extraction
+- `backend/scripts/test_api_providers.py` - Test Surfline + Open-Meteo fetching
+
+**Dependencies:**
+- Modify `backend/pyproject.toml` - Add xarray, cfgrib, netCDF4, httpx
 
 ---
 
 ## Key Design Decisions
 
-1. **Location Config Placement**: Move from `core/configs` to `services/forecast/providers` since it's NWPS-specific
-2. **Provider Registration**: Registry auto-registers based on LOCATION env variable
-3. **Storage Strategy**: Redis cache only (no database persistence)
-4. **Scope**: Core protocols + NWPS provider that caches data (API endpoint deferred)
-5. **GRIB Processing**: Download → extract for all spots → cache → cleanup file
-6. **Task Pattern**: Three-task orchestration (fetch → extract → cleanup)
-7. **Error Handling**: Per-spot extraction failures don't block other spots
+1. **Storage: Raw provider data** - No normalization at cache layer (preserve all fields)
+2. **Transformation: API layer** - Generate views on read (flexible, no data loss)
+3. **Protocol-based typing** - Structural typing, no inheritance required
+4. **Two provider types** - FileBasedProvider (regional files) vs APIBasedProvider (HTTP)
+5. **xarray for all gridded data** - GRIB2 (cfgrib engine) and NetCDF (default engine)
+6. **Batching support flag** - API providers declare batching capability
+7. **Surfline: Smart batching** - Priority spots frequently, full refresh periodically
+8. **Registry: Location-aware** - Auto-registers providers based on LOCATION env
+9. **Tasks: Shared orchestration** - Reusable patterns for file-based and API-based providers
+10. **Error handling: Per-spot isolation** - One spot failure doesn't block others
+11. **PacIOOS flexibility** - GridDAP for regional (file-based), NCSS for on-demand (API-based)
 
 ---
 
 ## Performance Expectations
 
-**Per Model Run (2x/day):**
+**File-Based Providers:**
+
+**NWPS (GRIB2) - 2x/day:**
 - Download: 62MB in 5-20 sec
-- Extraction: ~20 spots × 144 hours = ~2880 data points
-  - GRIB2 read: ~5-10 sec per spot
-  - Total extraction: 2-5 min (parallelized)
-- Storage: ~500KB in Redis (JSON data only)
-- Cleanup: Instant
-
-**Resource Impact:**
+- Extraction: 20 spots × 144 hours in 2-5 min (parallel)
+- Storage: ~500KB Redis per model run
 - Network: 124MB/day
-- Disk: 62MB temporary (deleted after ~30 min)
-- CPU: ~2-5 min processing 2x/day
-- RAM: ~150MB peak during GRIB2 processing per worker
 
-✅ **Well within your Optiplex 7050 capabilities!**
+**PacIOOS GridDAP (NetCDF) - 4x/day:**
+- Download: 20-50MB in 5-15 sec (varies by region/time range)
+- Extraction: 20 spots × 144 hours in 2-5 min (parallel)
+- Storage: ~400KB Redis per model run
+- Network: ~80-200MB/day
 
----
+**API-Based Providers:**
 
-## Next Steps After Implementation
+**Surfline - Variable frequency:**
+- Priority spots (20): Every 10 min = ~50KB × 144/day = 7MB/day
+- All spots (150): Every 3 hours = 7.5MB × 8/day = 60MB/day
+- Total: ~70MB/day
 
-Once this foundation is working:
+**Open-Meteo - Hourly (batched):**
+- All spots (150): One request = ~200KB × 24/day = ~5MB/day
+- Extremely efficient due to batching
 
-1. **Add API endpoint** to retrieve cached forecasts
-2. **Implement Surfline provider** (PerSpotProvider example)
-3. **Add Open-Meteo provider** (another HTTP API)
-4. **Implement provider priority/fallback** logic
-5. **Add monitoring/alerting** for failed tasks
-6. **Optimize GRIB extraction** (bilinear interpolation, caching)
-7. **Scale to more regions** (Oahu, California, etc.)
-
----
-
-## Questions to Consider
-
-1. **Spot Model**: Does your `SurfSpot` model have `active` field for filtering?
-2. **Region Filtering**: How should tasks filter spots by region? (geometry check, or explicit region field?)
-3. **HTTP Manager**: Should registry use WorkerState's HTTP manager or create its own?
-4. **Error Notifications**: Want Slack/email alerts for failed GRIB downloads?
-5. **Data Validation**: Should we validate extracted values (e.g., wave height < 30m)?
+**Total Resource Impact:**
+- Network: ~300-400MB/day (negligible on home internet)
+- Redis: ~10-20MB active forecast data (all providers)
+- CPU: 5-10 min processing 4-6x/day (file-based) + minimal for HTTP requests
+- Disk: ~100MB temporary during file-based processing (deleted after 30min)
 
 ---
 
-This plan provides a solid foundation for building out your forecast service layer! Start small with the base protocols, then implement NWPS step-by-step. Each phase builds on the previous, allowing you to test incrementally.
+## Next Steps After MVP
+
+1. **Monitoring** - Track task failures, stale data, API latency
+2. **Unit conversion** - Backend handles ft↔m, mph↔m/s conversions
+3. **More providers**:
+   - NOAA NDBC buoys (observations for forecast validation)
+   - Windy.com API (alternative global forecasts)
+   - Regional models (RTOFS for currents, NAM for wind)
+4. **Forecast quality** - Compare predictions vs actual conditions (learn which provider is best per spot)
+5. **User preferences** - Let users choose default provider or blend multiple
+6. **Alerts** - "Notify me when Ho'okipa hits 15ft+ with offshore winds"
+7. **Historical analysis** - Store forecasts in DB for accuracy tracking
+8. **Provider comparison views** - Side-by-side NWPS vs Surfline vs PacIOOS vs Open-Meteo
+9. **Smart caching** - Cache API layer views for frequently accessed endpoints
+10. **PacIOOS NCSS fallback** - Use NCSS API for on-demand spot queries when GridDAP is stale
