@@ -12,11 +12,11 @@ from .location import (
     LocationMapper,
     get_location,
     is_maui,
-    is_oahu,
 )
+from .geo import longitude_to_180, longitude_to_360
 
 __all__ = [
-    # Environment
+    # environment
     "Environment",
     "EnvironmentMapper",
     "get_env",
@@ -24,10 +24,12 @@ __all__ = [
     "is_dev",
     "is_prod",
     "is_test",
-    # Location
+    # location
     "Location",
     "LocationMapper",
     "get_location",
     "is_maui",
-    "is_oahu",
+    # geo
+    "longitude_to_180",
+    "longitude_to_360",
 ]

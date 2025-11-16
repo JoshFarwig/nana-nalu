@@ -3,7 +3,8 @@ from enum import Enum
 from functools import lru_cache
 from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from utils.location import Location, LocationMapper
+
+from utils import Location, LocationMapper, longitude_to_360
 
 # =======================
 # CORE CONFIGURATIONS
@@ -37,12 +38,12 @@ class NWPSGridConfig(BaseModel):
         le=90,
     )
     long_max: float = Field(
-        ge=0,
-        le=360,
+        ge=-180,
+        le=180,
     )
     long_min: float = Field(
-        ge=0,
-        le=360,
+        ge=-180,
+        le=180,
     )
 
     @model_validator(mode="after")
@@ -159,8 +160,8 @@ class NWPSModelConfig(BaseModel):
             *[f"{level}=on" for level in self.levels],
             "subregion=",
             f"toplat={self.grid.lat_max}",
-            f"leftlon={self.grid.long_min}",
-            f"rightlon={self.grid.long_max}",
+            f"leftlon={longitude_to_360(self.grid.long_min, precision=3)}",
+            f"rightlon={longitude_to_360(self.grid.long_max, precision=3)}",
             f"bottomlat={self.grid.lat_min}",
         ]
 
@@ -179,8 +180,8 @@ class NWPSMauiGridConfig(NWPSGridConfig):
     cg: str = "CG4"
     lat_max: float = 21.042
     lat_min: float = 20.553
-    long_max: float = 204.046
-    long_min: float = 203.285
+    long_max: float = -155.954
+    long_min: float = -156.71
 
 
 class NWPSMauiModelConfig(NWPSModelConfig):
