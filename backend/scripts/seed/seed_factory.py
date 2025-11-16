@@ -4,8 +4,6 @@ from utils.location import Location
 
 
 class SeedFactory:
-    """Factory for creating location-specific seed data"""
-
     @staticmethod
     def get_surf_spots(location: Location, admin_user: User) -> list[SurfSpot]:
         """
@@ -21,11 +19,10 @@ class SeedFactory:
         Raises:
             ValueError: If no seed data is available for the location
         """
-        from scripts.seed.surf_spots import maui, oahu
+        from scripts.seed.surf_spots import maui
 
         seed_map = {
             Location.MAUI: maui.get_maui_spots,
-            Location.OAHU: oahu.get_oahu_spots,
         }
 
         seed_func = seed_map.get(location)

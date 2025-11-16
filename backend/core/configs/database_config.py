@@ -1,9 +1,11 @@
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 from urllib.parse import quote
 
 
 class DatabaseConfig(BaseModel):
     """Configuration for SQLAlchemy Engine"""
+
+    model_config = ConfigDict(frozen=True)
 
     # sqlalchemy connection address
     host: str | None

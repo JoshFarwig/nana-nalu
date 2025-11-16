@@ -1,8 +1,10 @@
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class APIConfig(BaseModel):
     """Configuration for API"""
+
+    model_config = ConfigDict(frozen=True)
 
     name: str = "nānā-nalu-api"
     version: str = "0.1.0"

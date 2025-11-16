@@ -7,14 +7,12 @@ logger = logging.getLogger(__name__)
 
 class Location(str, Enum):
     MAUI = "maui"
-    OAHU = "oahu"
 
 
 class LocationMapper:
     # normalization map
     _LOCATION_MAP = {
         "maui": Location.MAUI,
-        "oahu": Location.OAHU,
     }
 
     @classmethod
@@ -39,11 +37,6 @@ class LocationMapper:
         """Helper method to check if location is Maui"""
         return cls.normalize(location) == Location.MAUI
 
-    @classmethod
-    def is_oahu(cls, location: str | None = None) -> bool:
-        """Helper method to check if location is Oahu"""
-        return cls.normalize(location) == Location.OAHU
-
 
 def get_location() -> Location:
     """Get current location from environment"""
@@ -52,7 +45,3 @@ def get_location() -> Location:
 
 def is_maui() -> bool:
     return LocationMapper.is_maui()
-
-
-def is_oahu() -> bool:
-    return LocationMapper.is_oahu()

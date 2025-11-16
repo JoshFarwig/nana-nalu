@@ -1,5 +1,6 @@
 # not specifying the platform so that it can build from different architectures, 
 # by doing this though it should be optimized for amd64 and arm64 builds.
+# maybe use bookworm if 18 supports it?
 FROM postgres:18-trixie
 
 RUN apt-get update && \

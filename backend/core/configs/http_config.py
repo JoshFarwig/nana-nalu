@@ -1,8 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class HTTPConfig(BaseModel):
     """Configuration for HTTP clients"""
+
+    model_config = ConfigDict(frozen=True)
 
     user_agent: str = "Agent"  # TODO: Make user_agent for http client
     timeout: float = 30.0

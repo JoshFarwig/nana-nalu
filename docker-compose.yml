@@ -32,7 +32,8 @@ services:
     build:
       context: ./redis
       dockerfile: Dockerfile.redis
-    environment:
+    environment
+    # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12:
       REDIS__PASSWORD: ${REDIS__PASSWORD}
     restart: always
     networks: [nn_network]
@@ -103,13 +104,7 @@ networks:
   nn_network:
     driver: bridge
 
-# NOTE: using __ nested delimiter syntax for pydantic so 
-# api.admin_username can be resolved from API__ADMIN_USERNAME
-# as a secret or a env variable (secret safer though).
-# unforunatelythis will not be rolled out until 
-# pydantic-settings v2.12, so in the mean time, will wait and pass 
-# secrets as env vars (which is not secure, bakes envs into images, 
-# but also not publishing these to dockerhub, not yet atleast) 
+# TODO: roll-out secrets with new release for pydantic-settings v.2.12!  
 #
 # secrets: 
 #   db__username:  

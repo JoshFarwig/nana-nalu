@@ -1,7 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class CeleryConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
     # TODO: set up config for celery once we get there
     # refer to https://docs.celeryq.dev/en/v5.5.3/userguide/configuration.html
 

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.surf_spot_model import SurfSpot
 
 
+# TODO: refactor to include support for surfline spots
 class SurfSpotRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

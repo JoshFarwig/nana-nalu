@@ -2,7 +2,6 @@ import asyncio
 import logging
 from sqlalchemy import select, func
 from core import AsyncDatabaseManager, BaseConfig, get_settings
-from core.configs.location_config import get_location_config
 from models.user_model import User
 from models.surf_spot_model import SurfSpot
 from repositories.user_repository import UserRepository
@@ -16,9 +15,8 @@ class SeedManager:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.db_manager = AsyncDatabaseManager(settings.db)
 
-        # get location configuration
+        # get location from envs
         self.location = get_location()
-        self.location_config = get_location_config()
 
         self.logger.info(
             "SeedManager initialized",

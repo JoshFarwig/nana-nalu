@@ -31,6 +31,7 @@ class BaseConfig(BaseSettings):
 
 class LocalConfig(BaseConfig):
     model_config = SettingsConfigDict(
+        frozen=True,
         env_file=".env.local",
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
@@ -41,6 +42,7 @@ class LocalConfig(BaseConfig):
 
 class DevelopmentConfig(BaseConfig):
     model_config = SettingsConfigDict(
+        frozen=True,
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
@@ -54,6 +56,7 @@ class DevelopmentConfig(BaseConfig):
 
 class ProductionConfig(BaseConfig):
     model_config = SettingsConfigDict(
+        frozen=True,
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
@@ -85,12 +88,10 @@ def get_settings(env: Environment | str | None = None) -> BaseConfig:
         Configuration object for the specified environment
     """
     # normalize environment using EnvironmentMapper
-    if isinstance(env, str):
-        environment = EnvironmentMapper.normalize(env)
-    elif env is None:
-        environment = EnvironmentMapper.normalize()
-    else:
+    if isinstance(env, Environment):
         environment = env
+    else:
+        environment = EnvironmentMapper.normalize()
 
     cfg_cls = ENVIRONMENT_CONFIG_REGISTRY[environment]
-    return cfg_cls()
+    return cfg_cls()  # type: ignore[arg-type] api, db and celery are instantiated from ENVS.

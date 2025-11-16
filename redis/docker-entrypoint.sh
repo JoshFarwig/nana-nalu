@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+# TODO: refactor to use secret rather than env var
+
 if [ -f /run/secrets/redis__password ]; then
   PASSWORD=$(cat /run/secrets/redis__password)
 elif [ -n "$REDIS__PASSWORD" ]; then

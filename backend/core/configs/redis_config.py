@@ -1,9 +1,11 @@
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 from urllib.parse import quote
 
 
 class RedisConfig(BaseModel):
     """Configuration for Redis Client"""
+
+    model_config = ConfigDict(frozen=True)
 
     host: str | None
     port: int | None
