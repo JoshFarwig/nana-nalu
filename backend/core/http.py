@@ -1,6 +1,8 @@
 import logging
 import asyncio
+from pathlib import Path
 import httpx
+import aiofiles
 from functools import wraps
 
 from core.configs.http_config import HTTPConfig
@@ -132,7 +134,7 @@ class AsyncHTTPManager:
         self,
         url: str,
         file_path: str,
-        chunk_size: int = 8192,
+        chunk_size: int = 65536,
         **kwargs,
     ) -> int:
         """
@@ -141,7 +143,8 @@ class AsyncHTTPManager:
         Args:
             url: URL to download from
             file_path: Local file path to save to
-            chunk_size: Bytes to read per iteration (default: 8KB)
+            chunk_size: Bytes to read per iteration (default: 64KB)
+                        Use 512KB-1MB for large files (100MB+)
             **kwargs: Additional arguments passed to httpx request
 
         Returns:
@@ -161,10 +164,12 @@ class AsyncHTTPManager:
             response.raise_for_status()
 
             total_bytes = 0
-            with open(file_path, "wb") as f:
-                # stream bytes into memory w/ aiter_bytes to lower memory pressure
+            async with aiofiles.open(file_path, "wb") as f:
+                # stream bytes into memory w/ aiter_bytes to lower memory pressure.
+                # thread ops can generate overhead so balance with proper chunk_size
+                # and available bandwith
                 async for chunk in response.aiter_bytes(chunk_size=chunk_size):
-                    f.write(chunk)
+                    await f.write(chunk)
                     total_bytes += len(chunk)
 
             logger.info(

@@ -1,10 +1,11 @@
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, date, time, timedelta, timezone
 from enum import Enum
 from functools import lru_cache
 from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from utils import Location, LocationMapper, longitude_to_360
+
 
 # =======================
 # CORE CONFIGURATIONS
@@ -29,19 +30,19 @@ class NWPSGridConfig(BaseModel):
     cg: str = Field(
         pattern=r"^CG\d+$",
     )
-    lat_max: float = Field(
-        ge=-90,
-        le=90,
-    )
     lat_min: float = Field(
         ge=-90,
         le=90,
     )
-    long_max: float = Field(
+    lat_max: float = Field(
+        ge=-90,
+        le=90,
+    )
+    long_min: float = Field(
         ge=-180,
         le=180,
     )
-    long_min: float = Field(
+    long_max: float = Field(
         ge=-180,
         le=180,
     )
@@ -121,38 +122,52 @@ class NWPSModelConfig(BaseModel):
             raise ValueError("levels cannot contain 'all_lev' with other levels")
         return levels
 
-    def construct_grib_filter_url(
-        self,
-        analysis_time: time,
-    ) -> str:
+    def _prepare_filename_components(
+        self, analysis_time: time, forecast_date: date | None = None
+    ) -> tuple[str, str, str, str]:
         """
-        Construct the full GRIB filter URL for a specific model run.
-
-        Args:
-            analysis_time: The model's initial time point for data gathering (must be in model_analysis_times)
+        Prepare common components needed for filename and URL construction.
 
         Returns:
-            Full GRIB filter URL with dir and file parameters
+            tuple of (date_str, analysis_time_str, analysis_time_hour, filename)
         """
+        if forecast_date is None:
+            forecast_date = datetime.now(timezone.utc).date()
 
         if analysis_time not in self.model_analysis_times.values():
             raise ValueError(
                 f"analysis_time {analysis_time} not in configured model_analysis_times_times: {self.model_analysis_times}"
             )
 
-        forecast_date = datetime.now(timezone.utc).date()
         date_str = forecast_date.strftime("%Y%m%d")
         analysis_time_str = analysis_time.strftime("%H%M")
         analysis_time_hour = analysis_time.strftime("%H")
 
-        # construct dir and file query params
-        # format for dir: /{region}.{YYYYMMDD}/{wfo}/{HH}/{CG}/
-        dir_path = f"/{self.region}.{date_str}/{self.wfo.value}/{analysis_time_hour}/{self.grid.cg}"
         filename = self.filename_pattern.format(
             wfo=self.wfo.value, cg=self.grid.cg, date=date_str, time=analysis_time_str
         )
 
-        # build all query parameters as a list, then join
+        return date_str, analysis_time_str, analysis_time_hour, filename
+
+    def construct_filename(
+        self, analysis_time: time, forecast_date: date | None = None
+    ) -> str:
+        _, _, _, filename = self._prepare_filename_components(
+            analysis_time, forecast_date
+        )
+        return filename
+
+    def construct_grib_filter_url(
+        self, analysis_time: time, forecast_date: date | None = None
+    ) -> str:
+        date_str, _, analysis_time_hour, filename = self._prepare_filename_components(
+            analysis_time, forecast_date
+        )
+
+        # construct dir path
+        dir_path = f"/{self.region}.{date_str}/{self.wfo.value}/{analysis_time_hour}/{self.grid.cg}"
+
+        # build all query parameters
         query_parts = [
             f"dir={quote(dir_path, safe='')}",
             f"file={filename}",
@@ -178,10 +193,10 @@ class NWPSMauiGridConfig(NWPSGridConfig):
     model_config = ConfigDict(frozen=True)
 
     cg: str = "CG4"
-    lat_max: float = 21.042
     lat_min: float = 20.553
-    long_max: float = -155.954
+    lat_max: float = 21.042
     long_min: float = -156.71
+    long_max: float = -155.954
 
 
 class NWPSMauiModelConfig(NWPSModelConfig):
