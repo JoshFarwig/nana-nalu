@@ -127,25 +127,16 @@ class NWPSProvider:
         valid_distances = distances[valid_mask]
 
         # build new dataset for grib2 forecasts for each valid surf spot
-        spot_forecast = (
-            ds.sel(
-                latitude=xr.DataArray(valid_selected_lats, dims="spot"),
-                longitude=xr.DataArray(valid_selected_lons, dims="spot"),
-            )
-            .assign_coords(
-                spot_id=("spot", valid_spot_ids),
-                spot_lat=("spot", valid_spot_lats),
-                spot_lon=("spot", valid_spot_lons),
-                distance_km=("spot", valid_distances),
-            )
-            .rename(
-                {
-                    "latitude": "selected_lat",
-                    "longitude": "selected_lon",
-                    "time": "analysis_time",
-                }
-            )
-            .swap_dims({"step": "valid_time"})
+        # offload to thread pool as xarray selection can be CPU-intensive for large grids
+        spot_forecast = await asyncio.to_thread(
+            self._build_spot_forecast_dataset,
+            ds,
+            valid_selected_lats,
+            valid_selected_lons,
+            valid_spot_ids,
+            valid_spot_lats,
+            valid_spot_lons,
+            valid_distances,
         )
 
         # build forecast dictionary - offload to thread for CPU-bound operations
@@ -165,6 +156,43 @@ class NWPSProvider:
         spot_forecast.close()
 
         return forecasts
+
+    def _build_spot_forecast_dataset(
+        self,
+        ds: xr.Dataset,
+        selected_lats: np.ndarray,
+        selected_lons: np.ndarray,
+        spot_ids: np.ndarray,
+        spot_lats: np.ndarray,
+        spot_lons: np.ndarray,
+        distances: np.ndarray,
+    ) -> xr.Dataset:
+        """
+        Build spot-specific forecast dataset from grid data.
+
+        This is a CPU-bound operation run in a thread pool to avoid blocking
+        the event loop. xarray selection operations can be slow with large grids.
+        """
+        return (
+            ds.sel(
+                latitude=xr.DataArray(selected_lats, dims="spot"),
+                longitude=xr.DataArray(selected_lons, dims="spot"),
+            )
+            .assign_coords(
+                spot_id=("spot", spot_ids),
+                spot_lat=("spot", spot_lats),
+                spot_lon=("spot", spot_lons),
+                distance_km=("spot", distances),
+            )
+            .rename(
+                {
+                    "latitude": "selected_lat",
+                    "longitude": "selected_lon",
+                    "time": "analysis_time",
+                }
+            )
+            .swap_dims({"step": "valid_time"})
+        )
 
     def _build_forecast_dict(
         self,

@@ -1,1563 +1,988 @@
-## Architecture Recommendations
+# Celery + FastAPI Shared Async Architecture
 
-### 1. **Forecasting Service Architecture - Adapter Pattern**
+## Executive Summary
 
-The adapter pattern is excellent for your multi-source forecasting needs. Here's a flexible architecture:
+This document outlines the **correct, production-tested architecture** for sharing async code between FastAPI and Celery, based on:
+- SQLAlchemy official async documentation
+- Industry patterns (Apache Superset, Django-Celery)
+- Medium article "Solving SQLAlchemy Connection Issues in Celery Workers" by Ryan Zheng
+- Real-world Celery + async integration challenges
+
+**Key Principle**: Use async code everywhere (DB, Redis, repositories, services), but wrap Celery tasks in `asyncio.run()` and use `worker_process_init` signal for proper engine isolation.
+
+---
+
+## The Problem: Naive Async + Celery Integration
+
+### ❌ What Doesn't Work
+
+Many tutorials suggest this approach, which **appears** to work but has critical issues:
 
 ```python
-# backend/services/forecast/base.py
-from abc import ABC, abstractmethod
-from typing import Protocol, runtime_checkable
-from datetime import datetime
-from pydantic import BaseModel
+# ❌ WRONG: Global singleton with event loop
+class WorkerState:
+    _instance = None
 
-class ForecastData(BaseModel):
-    """Unified forecast data model"""
-    timestamp: datetime
-    wave_height: float | None = None
-    wave_period: float | None = None
-    wave_direction: float | None = None
-    swell_height: float | None = None
-    swell_period: float | None = None
-    swell_direction: float | None = None
-    wind_speed: float | None = None
-    wind_direction: float | None = None
-    tide_height: float | None = None
-    
-@runtime_checkable
-class ForecastProvider(Protocol):
-    """Protocol for forecast providers"""
-    async def fetch_forecast(
-        self, 
-        lat: float, 
-        lon: float,
-        start: datetime,
-        end: datetime
-    ) -> list[ForecastData]:
-        ...
-    
-    @property
-    def provider_name(self) -> str:
-        ...
-    
-    def is_available_for_spot(self, spot_id: str) -> bool:
-        ...
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.loop = asyncio.new_event_loop()  # ← Created once
+            cls._instance.db_manager = AsyncDatabaseManager(...)  # ← Shared
+        return cls._instance
+
+@signals.worker_init.connect  # ← Wrong signal (runs in parent process)
+def init_worker(**kwargs):
+    WorkerState().initialize(settings)
+
+class AsyncTask(Task):
+    def __call__(self, *args, **kwargs):
+        state = WorkerState()
+        return state.loop.run_until_complete(...)  # ← Conflicts with Celery
 ```
 
-### 2. **Provider Registry Pattern**
+### Why This Fails
 
-```python
-# backend/services/forecast/registry.py
-from typing import Dict, List
-import logging
+1. **Event Loop Conflicts**
+   - Celery internally uses `asyncio.run()` for async tasks
+   - Your custom loop conflicts with Celery's loop
+   - Results in `RuntimeError: This event loop is already running`
 
-class ForecastRegistry:
-    """Registry for managing forecast providers"""
-    
-    def __init__(self):
-        self._providers: Dict[str, ForecastProvider] = {}
-        self._spot_providers: Dict[str, List[str]] = {}
-        self.logger = logging.getLogger(__name__)
-    
-    def register_provider(
-        self, 
-        name: str, 
-        provider: ForecastProvider
-    ) -> None:
-        self._providers[name] = provider
-        
-    def register_spot_provider(
-        self, 
-        spot_id: str, 
-        provider_names: List[str]
-    ) -> None:
-        self._spot_providers[spot_id] = provider_names
-        
-    def get_providers_for_spot(
-        self, 
-        spot_id: str
-    ) -> List[ForecastProvider]:
-        provider_names = self._spot_providers.get(spot_id, [])
-        return [
-            self._providers[name] 
-            for name in provider_names 
-            if name in self._providers
-        ]
+2. **Process Boundary Issues (Prefork Pool)**
+   - `worker_init` runs in **parent process** before fork
+   - All child processes **share the same AsyncEngine**
+   - SQLAlchemy explicitly warns: "database connections should not travel across process boundaries"
+   - Results in `SSL connection has been closed unexpectedly`, transaction conflicts
+
+3. **AsyncEngine Event Loop Binding**
+   - `AsyncEngine` binds to the event loop active when created
+   - If created before tasks run, binds to wrong loop
+   - Results in `Queue is bound to a different event loop`
+
+4. **Connection Pool Corruption**
+   - Multiple processes try to use same connection objects
+   - PostgreSQL connection state gets corrupted
+   - Results in `PGRES_TUPLES_OK error`, `transaction already in progress`
+
+---
+
+## ✅ The Correct Pattern: Process-Local Engines + worker_process_init
+
+Based on production-proven patterns from the Medium article and SQLAlchemy community.
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Main Process (Before Fork)                                  │
+│ - Default AsyncEngine for FastAPI                           │
+│ - No worker engines yet                                     │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                         fork()
+                            │
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+┌───────────────┐  ┌───────────────┐  ┌───────────────┐
+│ Worker 1      │  │ Worker 2      │  │ Worker 3      │
+│               │  │               │  │               │
+│ Event Loop A  │  │ Event Loop B  │  │ Event Loop C  │
+│ Engine A      │  │ Engine B      │  │ Engine C      │
+│ Pool (2 conn) │  │ Pool (2 conn) │  │ Pool (2 conn) │
+└───────────────┘  └───────────────┘  └───────────────┘
 ```
 
-### 3. **HTTP Manager for External APIs**
+### Key Principles
+
+1. **One AsyncEngine per worker process** (not per task, not shared)
+2. **Create engines AFTER fork** using `worker_process_init` signal
+3. **Use `threading.local()` for process isolation**
+4. **Let Celery handle event loops** via `asyncio.run()`
+5. **Tasks are sync wrappers** around async implementation
+
+---
+
+## Implementation
+
+### 1. Database Manager (Shared by FastAPI & Celery)
 
 ```python
-# backend/services/forecast/http_manager.py
-import httpx
-from typing import Optional
-import logging
-
-class ForecastHTTPManager:
-    """Manages HTTP connections for forecast providers"""
-    
-    def __init__(
-        self,
-        timeout: int = 30,
-        max_connections: int = 10,
-        max_keepalive_connections: int = 5
-    ):
-        self.logger = logging.getLogger(__name__)
-        self._client: Optional[httpx.AsyncClient] = None
-        self._timeout = timeout
-        self._limits = httpx.Limits(
-            max_connections=max_connections,
-            max_keepalive_connections=max_keepalive_connections
-        )
-    
-    @property
-    def client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=self._timeout,
-                limits=self._limits,
-                headers={"User-Agent": "NanaNalu-Forecast/1.0"}
-            )
-        return self._client
-    
-    async def close(self):
-        if self._client:
-            await self._client.aclose()
-            self._client = None
-```
-
-## Celery Production Setup
-
-### 1. **Celery App Configuration**
-
-```python
-# backend/celery_app/app.py
-from celery import Celery
-from kombu import Queue
-from core import get_settings
+# backend/core/database.py
+from threading import local
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    async_sessionmaker,
+    AsyncSession,
+    AsyncEngine,
+)
+from .configs import DatabaseConfig
 import logging
 
 logger = logging.getLogger(__name__)
 
-def create_celery_app(config_name: str = None) -> Celery:
-    """Create and configure Celery app"""
-    settings = get_settings(config_name)
-    
-    app = Celery(
-        'nana_nalu',
-        broker=settings.redis.broker_url.get_secret_value(),
-        backend=settings.redis.broker_url.get_secret_value(),
+# Process-local storage (survives fork correctly)
+process_local = local()
+
+# Default engine for main process (FastAPI)
+default_engine: AsyncEngine | None = None
+default_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def create_default_engine(settings: DatabaseConfig) -> AsyncEngine:
+    """
+    Create default engine for main process (FastAPI).
+    Called during app startup.
+    """
+    global default_engine, default_session_factory
+
+    logger.info("Creating default AsyncEngine for main process (FastAPI)")
+
+    default_engine = create_async_engine(
+        settings.get_async_url(),
+        pool_size=settings.async_pool_size,  # 5-10 for FastAPI
+        max_overflow=settings.async_max_overflow,
+        pool_timeout=settings.async_pool_timeout,
+        pool_pre_ping=True,
     )
-    
-    # Configuration
-    app.conf.update(
-        # Task execution
-        task_serializer='json',
-        accept_content=['json'],
-        result_serializer='json',
-        timezone='UTC',
-        enable_utc=True,
-        
-        # Worker configuration
-        worker_prefetch_multiplier=4,
-        worker_max_tasks_per_child=1000,
-        worker_disable_rate_limits=False,
-        
-        # Result backend
-        result_expires=3600,  # 1 hour
-        result_backend_transport_options={
-            'master_name': 'mymaster',
-            'visibility_timeout': 3600,
-        },
-        
-        # Queue configuration
-        task_routes={
-            'celery_app.tasks.forecast.*': {'queue': 'forecast'},
-            'celery_app.tasks.maintenance.*': {'queue': 'maintenance'},
-        },
-        
-        task_queues=(
-            Queue('celery', routing_key='celery'),
-            Queue('forecast', routing_key='forecast'),
-            Queue('maintenance', routing_key='maintenance'),
-        ),
-        
-        # Beat schedule (if using)
-        beat_schedule={
-            'fetch-forecasts': {
-                'task': 'celery_app.tasks.forecast.fetch_all_forecasts',
-                'schedule': 3600.0,  # Every hour
-            },
-        },
+
+    default_session_factory = async_sessionmaker(
+        default_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
     )
-    
-    return app
 
-# Create the app instance
-celery_app = create_celery_app()
-```
+    return default_engine
 
-### 2. **Worker Lifecycle Management**
 
-```python
-# backend/celery_app/worker.py
-from celery import signals
-from celery.utils.log import get_task_logger
-from core import AsyncDatabaseManager, AsyncRedisManager, get_settings
-from services.forecast.http_manager import ForecastHTTPManager
-import asyncio
+async def create_engine_for_worker(settings: DatabaseConfig) -> AsyncEngine:
+    """
+    Create a new AsyncEngine for a worker process.
 
-logger = get_task_logger(__name__)
+    Called from worker_process_init signal AFTER fork.
+    Each worker process gets its own isolated engine and connection pool.
+    """
+    logger.info("Creating AsyncEngine for Celery worker process")
 
-class WorkerState:
-    """Singleton state for worker resources"""
-    _instance = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance.initialized = False
-        return cls._instance
-    
-    def initialize(self, settings):
-        if not self.initialized:
-            self.settings = settings
-            self.db_manager = AsyncDatabaseManager(settings.db)
-            self.redis_manager = AsyncRedisManager(
-                settings.redis, 
-                settings.redis.cache_url
-            )
-            self.http_manager = ForecastHTTPManager()
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            self.initialized = True
-            logger.info("Worker state initialized")
-    
-    async def cleanup(self):
-        if self.initialized:
-            await self.db_manager.close()
-            await self.redis_manager.close()
-            await self.http_manager.close()
-            self.initialized = False
+    # Create engine in current event loop (created by worker_process_init)
+    engine = create_async_engine(
+        settings.get_async_url(),
+        pool_size=2,  # Small pool for Celery workers (2-3 connections)
+        max_overflow=3,
+        pool_timeout=30,
+        pool_pre_ping=True,
+    )
 
-# Worker signals
-@signals.worker_init.connect
-def init_worker(**kwargs):
-    """Initialize worker resources"""
-    settings = get_settings()
-    WorkerState().initialize(settings)
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
-@signals.worker_shutdown.connect
-def shutdown_worker(**kwargs):
-    """Cleanup worker resources"""
-    state = WorkerState()
-    if state.initialized:
-        state.loop.run_until_complete(state.cleanup())
-```
+    # Store in process-local storage
+    process_local.engine = engine
+    process_local.session_factory = session_factory
 
-### 3. **Task Base Class**
+    logger.info(f"Worker process AsyncEngine created (pool_size=2)")
 
-```python
-# backend/celery_app/tasks/base.py
-from celery import Task
-from celery_app.worker import WorkerState
-import asyncio
+    return engine
 
-class AsyncTask(Task):
-    """Base task with async support and resource access"""
-    
-    def __call__(self, *args, **kwargs):
-        """Run task in async context"""
-        state = WorkerState()
-        return state.loop.run_until_complete(
-            self.run_async(*args, **kwargs)
+
+async def dispose_engine() -> None:
+    """
+    Dispose of the process-local engine if it exists.
+    Called from worker_process_shutdown signal.
+    """
+    if hasattr(process_local, 'engine'):
+        logger.info("Disposing AsyncEngine for Celery worker process")
+        await process_local.engine.dispose()
+        del process_local.engine
+        del process_local.session_factory
+
+
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """
+    Get the appropriate session factory for the current process.
+
+    - In Celery worker: Returns process-local factory
+    - In FastAPI: Returns default factory
+    """
+    # Check if we have a process-local factory (Celery worker)
+    if hasattr(process_local, 'session_factory'):
+        return process_local.session_factory
+
+    # Otherwise, use default factory (FastAPI)
+    if default_session_factory is None:
+        raise RuntimeError(
+            "Default session factory not initialized. "
+            "Call create_default_engine() during app startup."
         )
-    
-    async def run_async(self, *args, **kwargs):
-        """Override this in subclasses"""
-        raise NotImplementedError
-    
-    @property
-    def db_manager(self):
-        return WorkerState().db_manager
-    
-    @property
-    def redis_manager(self):
-        return WorkerState().redis_manager
-    
-    @property
-    def http_manager(self):
-        return WorkerState().http_manager
+
+    return default_session_factory
+
+
+@asynccontextmanager
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Get a database session (works for both FastAPI and Celery).
+
+    Usage in FastAPI:
+        async with get_session() as session:
+            # use session
+
+    Usage in Celery:
+        async def _task_impl():
+            async with get_session() as session:
+                # use session
+
+        @app.task
+        def my_task():
+            return asyncio.run(_task_impl())
+    """
+    factory = get_session_factory()
+
+    async with factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+async def health_check() -> bool:
+    """Check if database connection is healthy."""
+    try:
+        async with get_session() as session:
+            await session.execute(text("SELECT 1"))
+            return True
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        return False
 ```
 
-### 4. **Docker Compose Setup**
-
-```yaml
-# docker-compose.yml
-services:
-  celery-worker:
-    build:
-      context: ./backend
-      target: worker
-    environment:
-      - ENV=${ENV:-production}
-      - C_FORCE_ROOT=true
-    command: celery -A celery_app.app worker -l info -Q celery,forecast -n worker@%h
-    depends_on:
-      - redis
-      - postgres
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-          
-  celery-beat:
-    build:
-      context: ./backend
-      target: beat
-    environment:
-      - ENV=${ENV:-production}
-    command: celery -A celery_app.app beat -l info
-    depends_on:
-      - redis
-      - postgres
-```
-
-### 5. **Production Considerations**
-
-**Connection Pooling Strategy:**
-
-- Database: Use smaller pool for Celery (2-3 connections) vs FastAPI (5-10)
-- Redis: Separate connection pools for broker vs cache
-- HTTP: Persistent connections with reasonable keepalive
-
-**Monitoring Setup:**
+### 2. Celery Worker Signals (Critical!)
 
 ```python
-# backend/celery_app/monitoring.py
-from celery import signals
+# backend/workers/signals.py
+from celery.signals import worker_process_init, worker_process_shutdown
+from core.database import create_engine_for_worker, dispose_engine
+from core.redis import create_redis_for_worker, dispose_redis  # Similar pattern
+from core.configs import get_settings
+import asyncio
 import logging
 
-@signals.task_failure.connect
-def log_task_failure(sender=None, task_id=None, exception=None, **kwargs):
-    logger.error(f"Task {sender.name}[{task_id}] failed: {exception}")
+logger = logging.getLogger(__name__)
 
-@signals.task_retry.connect  
-def log_task_retry(sender=None, reason=None, **kwargs):
-    logger.warning(f"Task {sender.name} retrying: {reason}")
+
+@worker_process_init.connect
+def init_worker_process(*args, **kwargs):
+    """
+    Initialize resources for a Celery worker process.
+
+    CRITICAL: This signal handler runs in EACH forked child process,
+    creating a separate AsyncEngine for each worker.
+
+    This runs AFTER the fork, ensuring proper process isolation.
+    """
+    logger.info("=" * 60)
+    logger.info("Initializing Celery worker process")
+    logger.info("=" * 60)
+
+    # Create new event loop for this worker process
+    # (Celery will use this loop for asyncio.run() calls)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    logger.info("Created new event loop for worker process")
+
+    # Load settings
+    settings = get_settings()
+
+    # Create AsyncEngine in this event loop
+    loop.run_until_complete(create_engine_for_worker(settings.db))
+    logger.info("Created AsyncEngine for worker process")
+
+    # Create Redis connection pool in this event loop (if using async Redis)
+    loop.run_until_complete(create_redis_for_worker(settings.redis))
+    logger.info("Created Redis pool for worker process")
+
+    logger.info("Worker process initialization complete")
+    logger.info("=" * 60)
+
+
+@worker_process_shutdown.connect
+def shutdown_worker_process(*args, **kwargs):
+    """
+    Clean up resources for a Celery worker process.
+
+    Runs when a worker process is shutting down.
+    Properly disposes of AsyncEngine to release database connections.
+    """
+    logger.info("=" * 60)
+    logger.info("Shutting down Celery worker process")
+    logger.info("=" * 60)
+
+    loop = asyncio.get_event_loop()
+
+    # Dispose AsyncEngine
+    try:
+        loop.run_until_complete(dispose_engine())
+        logger.info("Disposed AsyncEngine for worker process")
+    except Exception as e:
+        logger.error(f"Error disposing AsyncEngine: {e}")
+
+    # Dispose Redis pool (if using async Redis)
+    try:
+        loop.run_until_complete(dispose_redis())
+        logger.info("Disposed Redis pool for worker process")
+    except Exception as e:
+        logger.error(f"Error disposing Redis pool: {e}")
+
+    logger.info("Worker process shutdown complete")
+    logger.info("=" * 60)
 ```
 
-**Error Handling:**
+### 3. Celery App Setup
 
 ```python
-# backend/celery_app/tasks/forecast.py
+# backend/workers/app.py
+from celery import Celery
+from core.configs import get_settings
+
+settings = get_settings()
+
+app = Celery(
+    'nana_nalu',
+    broker=settings.redis.broker_url.get_secret_value(),
+    backend=settings.redis.broker_url.get_secret_value(),
+)
+
+app.conf.update(
+    # Task execution
+    task_serializer='json',
+    accept_content=['json'],
+    result_serializer='json',
+    timezone='UTC',
+    enable_utc=True,
+
+    # Worker configuration
+    worker_pool='prefork',  # Use prefork (default) for CPU-bound tasks
+    worker_concurrency=4,    # Number of worker processes (adjust based on CPU cores)
+    worker_prefetch_multiplier=1,  # Fetch 1 task at a time (prevents starvation)
+    worker_max_tasks_per_child=100,  # Restart worker after 100 tasks (prevents memory leaks)
+
+    # Result backend
+    result_expires=3600,  # 1 hour
+
+    # Task routes
+    task_routes={
+        'workers.tasks.forecast.*': {'queue': 'forecast'},
+        'workers.tasks.maintenance.*': {'queue': 'maintenance'},
+    },
+)
+
+# Import tasks to register them
+from workers.tasks import forecast  # noqa
+```
+
+### 4. Celery Tasks (Sync Wrappers Around Async Code)
+
+```python
+# backend/workers/tasks/forecast.py
 from celery import shared_task
-from celery_app.tasks.base import AsyncTask
+from core.database import get_session
+from core.redis import get_redis
+from repositories.surf_spot_repository import SurfSpotRepository
+from services.forecast.providers.nwps.provider import NWPSProvider
+from services.http import AsyncHTTPManager
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 @shared_task(
     bind=True,
-    base=AsyncTask,
     max_retries=3,
-    default_retry_delay=60,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_jitter=True
+    default_retry_delay=300,  # 5 minutes
 )
-class FetchForecastTask(AsyncTask):
-    async def run_async(self, spot_id: str):
-        # Your async forecast fetching logic
+def fetch_nwps_forecasts(self, region: str):
+    """
+    Fetch NWPS forecasts for all spots in a region.
+
+    This is a SYNC function (Celery requirement), but it calls
+    async implementation using asyncio.run().
+
+    Celery will execute this in a worker process that has:
+    - Its own event loop (created by worker_process_init)
+    - Its own AsyncEngine (process-local via threading.local)
+    - Its own Redis pool (process-local)
+    """
+    try:
+        logger.info(f"Starting NWPS forecast fetch for region: {region}")
+        result = asyncio.run(_fetch_nwps_async(region))
+        logger.info(f"Completed NWPS forecast fetch for region: {region}")
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching NWPS forecasts: {e}", exc_info=True)
+        # Retry with exponential backoff
+        raise self.retry(exc=e)
+
+
+async def _fetch_nwps_async(region: str) -> dict:
+    """
+    Async implementation of NWPS forecast fetching.
+
+    This function reuses ALL async code from FastAPI:
+    - Async repositories
+    - Async database sessions
+    - Async HTTP clients
+    - Async providers
+    """
+    # Use process-local AsyncEngine via get_session()
+    async with get_session() as session:
+        # Async repository (shared with FastAPI)
+        repo = SurfSpotRepository(session)
+        spots = await repo.get_all_in_grid(
+            min_lat=20.5,
+            max_lat=21.2,
+            min_lon=-157.0,
+            max_lon=-156.0,
+        )
+
+        logger.info(f"Found {len(spots)} spots for NWPS forecast")
+
+        # Async HTTP manager (could be process-local too if needed)
+        http_manager = AsyncHTTPManager()
+
+        try:
+            # Async provider (shared with FastAPI)
+            provider = NWPSProvider(
+                config=get_nwps_config(region),
+                http_manager=http_manager,
+                spot_repository=repo,
+            )
+
+            # Download file (async I/O)
+            analysis_time = datetime.now(timezone.utc)
+            file_path = await provider.download_file(analysis_time)
+
+            logger.info(f"Downloaded NWPS file: {file_path}")
+
+            # Extract forecasts (async, uses asyncio.to_thread internally)
+            forecasts = await provider.extract_forecasts(file_path)
+
+            logger.info(f"Extracted forecasts for {len(forecasts)} spots")
+
+            # Store in Redis (async)
+            redis = await get_redis()
+            for spot_id, forecast_data in forecasts.items():
+                key = f"forecast:nwps:{spot_id}:{analysis_time.isoformat()}"
+                await redis.set(key, json.dumps(forecast_data), ex=50400)  # 14 hours
+
+            logger.info(f"Stored forecasts in Redis")
+
+            # Cleanup file
+            if file_path.exists():
+                file_path.unlink()
+
+            return {
+                'region': region,
+                'spots_processed': len(forecasts),
+                'analysis_time': analysis_time.isoformat(),
+            }
+
+        finally:
+            # Close HTTP client
+            await http_manager.close()
+
+
+@shared_task
+def fetch_gfs_forecasts(region: str):
+    """Fetch GFS wave forecasts."""
+    return asyncio.run(_fetch_gfs_async(region))
+
+
+async def _fetch_gfs_async(region: str) -> dict:
+    """Async implementation for GFS."""
+    async with get_session() as session:
+        # Similar pattern...
+        pass
+
+
+@shared_task
+def fetch_surfline_forecasts(priority: str = 'all'):
+    """Fetch Surfline forecasts."""
+    return asyncio.run(_fetch_surfline_async(priority))
+
+
+async def _fetch_surfline_async(priority: str) -> dict:
+    """Async implementation for Surfline."""
+    async with get_session() as session:
+        # Similar pattern...
         pass
 ```
 
-### Key Recommendations
-
-1. **Separate connection pools** - Celery workers should have stricter, smaller pools than your API
-2. **Use worker state singleton** - Avoid recreating managers per task
-3. **Implement circuit breakers** for external API calls
-4. **Add task result caching** in Redis with appropriate TTLs
-5. **Monitor task queue depth** and worker utilization
-6. **Use task routing** to separate forecast tasks from maintenance tasks
-7. **Implement graceful shutdown** handlers for cleanup
-
-This architecture provides:
-
-- Clean separation of concerns
-- Easy addition of new forecast providers
-- Efficient resource management
-- Production-ready error handling
-- Scalable task processing
-
-For multi-provider forecast data, I'd recommend a **hybrid approach**:
-
-## Data Organization Strategy
-
-### 1. **Group by Data Type, Show Provider Source**
+### 5. FastAPI Startup (Initialize Default Engine)
 
 ```python
-# Structure your API response like this:
-{
-    "spot_id": "dumps",
-    "forecasts": {
-        "waves": {
-            "primary": {  # User's preferred or best available
-                "provider": "surfline",
-                "height": 4.5,
-                "period": 12,
-                "direction": 270
-            },
-            "alternatives": [
-                {"provider": "wavewatch", "height": 4.2, ...},
-                {"provider": "pacioos", "height": 4.8, ...}
-            ]
-        },
-        "wind": {
-            "primary": {
-                "provider": "open_meteo",  # Maybe only source
-                "speed": 15,
-                "direction": 90
-            },
-            "alternatives": []
-        },
-        "tide": {
-            "primary": {
-                "provider": "noaa",
-                "height": 1.2,
-                "type": "rising"
-            }
-        }
-    }
-}
+# backend/main.py
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from core.database import create_default_engine
+from core.configs import get_settings
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan manager."""
+    # Startup
+    settings = get_settings()
+
+    # Create default engine for FastAPI
+    create_default_engine(settings.db)
+
+    yield
+
+    # Shutdown
+    # (engines will be disposed automatically)
+
+app = FastAPI(lifespan=lifespan)
 ```
-
-### 2. **User Preferences Table**
-
-```python
-# Store user preferences
-class UserForecastPreferences:
-    user_id: str
-    spot_id: str  # Can be null for global preference
-    wave_provider_priority: list = ["surfline", "pacioos", "wavewatch"]
-    wind_provider_priority: list = ["surfline", "open_meteo"]
-    show_alternatives: bool = True
-    comparison_view: bool = False  # Toggle between unified/comparison
-```
-
-### 3. **Frontend Display Options**
-
-**Default View:** Unified display with primary provider data, small indicator showing source
-
-```
-Wave: 4-6ft @ 12s WSW (Surfline ▼)
-Wind: 15kts E (Open-Meteo)
-```
-
-**Expanded/Comparison View:** User clicks dropdown to see all providers
-
-```
-Wave Heights:
-├─ Surfline: 4-6ft
-├─ PacIOOS: 4.8ft  
-└─ WaveWatch: 4.2ft
-```
-
-### Key Benefits
-
-- **Clean default UX** - Users see one clear forecast
-- **Transparency** - Always show data source
-- **Power user features** - Allow comparison when needed
-- **Smart fallbacks** - If preferred provider fails, use next available
-- **Spot-specific optimization** - Some spots might have better accuracy from specific providers
-
-This way users get simplicity by default but can drill down for confidence/comparison when they want it.
 
 ---
 
-## Redis Hash Architecture for Multi-Provider Forecast Storage
-
-### Recommended Structure: Redis Hash with Provider Namespacing
-
-**Key Pattern:**
-```
-forecast:{spot_id}:{hour_timestamp}
-```
-
-**Storage Method:** Redis Hash (HSET/HGET/HGETALL)
-
-### Hash Structure
-
-```
-forecast:dumps:2025-11-10T12 (Redis Hash)
-├─ surfline:wave → '{"height": 4.5, "period": 12, "direction": 270}'
-├─ surfline:wind → '{"speed": 15, "direction": 90}'
-├─ noaa:tide → '{"height": 1.2, "trend": "rising"}'
-├─ pacioos:wave → '{"height": 4.8, "period": 13, "direction": 265}'
-├─ _primary:wave → "surfline"
-├─ _primary:wind → "surfline"
-├─ _primary:tide → "noaa"
-├─ _meta:updated_at → "2025-11-10T12:05:32Z"
-└─ _meta:expires_at → "2025-11-10T14:00:00Z"
-```
-
-### Benefits
-
-1. **Atomic Updates**: Each provider can update independently without race conditions
-   ```python
-   await redis.hset("forecast:dumps:2025-11-10T12", "surfline:wave", json.dumps(data))
-   ```
-
-2. **Flexible Retrieval**:
-   - Get all providers: `HGETALL forecast:dumps:2025-11-10T12`
-   - Get specific provider: `HGET forecast:dumps:2025-11-10T12 surfline:wave`
-   - Get all from one provider: `HGETALL` + filter by prefix
-
-3. **Single TTL Management**: Set expiration on entire hash
-   ```python
-   await redis.expire("forecast:dumps:2025-11-10T12", 7200)  # 2 hours
-   ```
-
-4. **Efficient Storage**: One key per spot/hour vs multiple keys per provider
-
-5. **Easy Provider Management**: Add/remove providers without restructuring
-
-### Implementation Example
-
-**Celery Task - Fetch & Store:**
-```python
-@shared_task(base=AsyncTask)
-class FetchSurflineForecastTask(AsyncTask):
-    async def run_async(self, spot_id: str):
-        # Fetch from Surfline API
-        data = await self.http_manager.client.get(f"https://api.surfline.com/...")
-
-        # Current hour timestamp
-        hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-        key = f"forecast:{spot_id}:{hour.isoformat()}"
-
-        # Store wave data
-        await self.redis_manager.hset(
-            key,
-            "surfline:wave",
-            json.dumps({
-                "height": data["wave"]["height"],
-                "period": data["wave"]["period"],
-                "direction": data["wave"]["direction"]
-            })
-        )
-
-        # Store wind data
-        await self.redis_manager.hset(
-            key,
-            "surfline:wind",
-            json.dumps({
-                "speed": data["wind"]["speed"],
-                "direction": data["wind"]["direction"]
-            })
-        )
-
-        # Update metadata
-        await self.redis_manager.hset(
-            key,
-            "_meta:updated_at",
-            datetime.utcnow().isoformat()
-        )
-
-        # Set TTL (2 hours)
-        await self.redis_manager.expire(key, 7200)
-
-        return {"spot_id": spot_id, "provider": "surfline", "status": "cached"}
-```
-
-**API Endpoint - Retrieve:**
-```python
-@router.get("/forecast/{spot_id}")
-async def get_forecast(spot_id: str, redis: Redis = Depends(get_redis)):
-    hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-    key = f"forecast:{spot_id}:{hour.isoformat()}"
-
-    # Get all forecast data
-    raw_data = await redis.hgetall(key)
-
-    if not raw_data:
-        return {"status": "no_data", "message": "Forecast data not available"}
-
-    # Parse into structured response
-    forecast = {
-        "spot_id": spot_id,
-        "timestamp": hour.isoformat(),
-        "providers": {},
-        "primary": {},
-        "metadata": {}
-    }
-
-    for field, value in raw_data.items():
-        if field.startswith("_primary:"):
-            data_type = field.split(":")[1]
-            forecast["primary"][data_type] = value
-        elif field.startswith("_meta:"):
-            meta_key = field.split(":")[1]
-            forecast["metadata"][meta_key] = value
-        else:
-            provider, data_type = field.split(":", 1)
-            if provider not in forecast["providers"]:
-                forecast["providers"][provider] = {}
-            forecast["providers"][provider][data_type] = json.loads(value)
-
-    return forecast
-```
-
-### Handling Different Provider Update Intervals
-
-**Challenge:** Providers update at different frequencies:
-- PacIOOS: Daily at 3am
-- Surfline: Hourly
-- Open-Meteo: Every 15 minutes
-
-**Solution: Per-Provider TTL Tracking + Smart Refresh**
-
-#### Option 1: Field-Level Metadata (Recommended)
-
-Store last update timestamp per provider field:
-
-```
-forecast:dumps:2025-11-10T12
-├─ surfline:wave → '{"height": 4.5, ...}'
-├─ surfline:wave:updated_at → "2025-11-10T12:05:00Z"
-├─ pacioos:wave → '{"height": 4.8, ...}'
-├─ pacioos:wave:updated_at → "2025-11-10T03:00:00Z"  # Last updated at 3am
-```
-
-**Celery Beat Schedule with Provider-Specific Intervals:**
+## Celery Beat Schedule
 
 ```python
-# backend/celery/app.py
-app.conf.beat_schedule = {
-    # Surfline - every hour
-    'fetch-surfline-forecasts': {
-        'task': 'celery_app.tasks.forecast.fetch_surfline_all_spots',
-        'schedule': crontab(minute=0),  # Every hour at :00
-    },
-
-    # PacIOOS - daily at 3am
-    'fetch-pacioos-forecasts': {
-        'task': 'celery_app.tasks.forecast.fetch_pacioos_all_spots',
-        'schedule': crontab(hour=3, minute=0),  # Daily at 3:00 AM
-    },
-
-    # Open-Meteo - every 15 minutes
-    'fetch-openmeteo-forecasts': {
-        'task': 'celery_app.tasks.forecast.fetch_openmeteo_all_spots',
-        'schedule': crontab(minute='*/15'),  # Every 15 minutes
-    },
-}
-```
-
-**Smart Refresh Logic in Tasks:**
-
-```python
-@shared_task(base=AsyncTask)
-class FetchProviderForecastTask(AsyncTask):
-    provider_name: str = None
-    update_interval: int = 3600  # seconds
-
-    async def run_async(self, spot_id: str):
-        hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-        key = f"forecast:{spot_id}:{hour.isoformat()}"
-
-        # Check if data is still fresh
-        updated_at_key = f"{self.provider_name}:wave:updated_at"
-        last_update = await self.redis_manager.hget(key, updated_at_key)
-
-        if last_update:
-            last_update_dt = datetime.fromisoformat(last_update)
-            age = (datetime.utcnow() - last_update_dt).total_seconds()
-
-            if age < self.update_interval:
-                return {"status": "skipped", "reason": "data_still_fresh"}
-
-        # Fetch new data
-        data = await self.fetch_from_provider(spot_id)
-
-        # Store with timestamp
-        await self.redis_manager.hset(key, f"{self.provider_name}:wave", json.dumps(data))
-        await self.redis_manager.hset(
-            key,
-            updated_at_key,
-            datetime.utcnow().isoformat()
-        )
-
-        # Set TTL to longest provider interval (24h for PacIOOS)
-        await self.redis_manager.expire(key, 86400)  # 24 hours
-
-        return {"status": "updated"}
-
-
-class FetchSurflineForecastTask(FetchProviderForecastTask):
-    provider_name = "surfline"
-    update_interval = 3600  # 1 hour
-
-class FetchPacIOOSForecastTask(FetchProviderForecastTask):
-    provider_name = "pacioos"
-    update_interval = 86400  # 24 hours
-
-class FetchOpenMeteoForecastTask(FetchProviderForecastTask):
-    provider_name = "openmeteo"
-    update_interval = 900  # 15 minutes
-```
-
-#### Option 2: Separate Keys with Individual TTLs
-
-Store each provider in separate keys with their own TTLs:
-
-```
-forecast:dumps:2025-11-10T12:surfline (TTL: 2h)
-forecast:dumps:2025-11-10T12:pacioos (TTL: 24h)
-forecast:dumps:2025-11-10T12:openmeteo (TTL: 30min)
-```
-
-**Pros:**
-- Each provider expires independently
-- No stale data served
-
-**Cons:**
-- Multiple Redis calls to assemble full forecast
-- More complex API logic
-
-#### Recommended Approach: Hybrid
-
-Use **single hash with field metadata** + **longest TTL**:
-
-1. Set hash TTL to longest provider interval (24h for PacIOOS)
-2. Track per-field update timestamps
-3. API checks freshness and shows age to users
-4. Celery Beat schedules each provider at its optimal interval
-
-**API Response with Staleness Info:**
-
-```json
-{
-  "spot_id": "dumps",
-  "providers": {
-    "surfline": {
-      "wave": {"height": 4.5, ...},
-      "updated_at": "2025-11-10T12:00:00Z",
-      "age_minutes": 5,
-      "is_fresh": true
-    },
-    "pacioos": {
-      "wave": {"height": 4.8, ...},
-      "updated_at": "2025-11-10T03:00:00Z",
-      "age_minutes": 540,
-      "is_fresh": true  // Still fresh if < 24h
-    }
-  }
-}
-```
-
-### Key Takeaways
-
-1. **Use Redis Hash** for atomic, efficient multi-provider storage
-2. **Single hash per spot/hour** with provider-namespaced fields
-3. **Store field-level metadata** for update timestamps
-4. **Set hash TTL to longest provider interval** (24h)
-5. **Celery Beat schedules per-provider** at their optimal intervals
-6. **API shows data age** so users know freshness
-7. **Tasks check staleness** before fetching to avoid unnecessary API calls
-
----
-
-## NWPS GRIB2 Provider Architecture
-
-### Overview: File-Based vs HTTP-Based Providers
-
-NWPS requires a **different processing model** than traditional API providers. Instead of per-spot HTTP requests, you:
-1. Download a single 62MB GRIB2 file (covers entire region)
-2. Extract data for all spots from this one file
-3. Store results in Redis
-4. Delete the file
-
-This requires adapting your provider pattern to support **both processing models**.
-
-### Unified Provider Protocol with Processing Modes
-
-**Enhanced base protocol supporting multiple processing strategies:**
-
-```python
-# backend/services/forecast/base.py
-from abc import ABC, abstractmethod
-from typing import Protocol, runtime_checkable, Literal
-from datetime import datetime
-from pathlib import Path
-from pydantic import BaseModel
-
-class ForecastData(BaseModel):
-    """Unified forecast data model"""
-    timestamp: datetime
-    wave_height: float | None = None
-    wave_period: float | None = None
-    wave_direction: float | None = None
-    wind_speed: float | None = None
-    wind_direction: float | None = None
-    water_level: float | None = None  # For NWPS tide+surge+setup
-
-
-@runtime_checkable
-class ForecastProvider(Protocol):
-    """
-    Base protocol for all forecast providers.
-    Supports both per-spot (HTTP) and regional (file-based) processing.
-    """
-
-    @property
-    def provider_name(self) -> str:
-        """Unique identifier for this provider"""
-        ...
-
-    @property
-    def processing_mode(self) -> Literal["per_spot", "regional"]:
-        """
-        Processing strategy:
-        - "per_spot": Fetch data individually per spot (HTTP APIs)
-        - "regional": Fetch once for entire region (GRIB2 files)
-        """
-        ...
-
-    @property
-    def update_frequency_seconds(self) -> int:
-        """How often this provider updates data"""
-        ...
-
-    def is_available_for_spot(self, spot: "Spot") -> bool:
-        """Check if provider covers this spot's location"""
-        ...
-
-
-@runtime_checkable
-class PerSpotProvider(ForecastProvider, Protocol):
-    """
-    Provider that fetches data per-spot via HTTP.
-    Examples: Surfline, Open-Meteo, NOAA APIs
-    """
-
-    async def fetch_forecast(
-        self,
-        spot: "Spot",
-        start: datetime,
-        end: datetime
-    ) -> list[ForecastData]:
-        """Fetch forecast for a single spot"""
-        ...
-
-
-@runtime_checkable
-class RegionalProvider(ForecastProvider, Protocol):
-    """
-    Provider that processes regional data files.
-    Examples: NWPS GRIB2, PacIOOS NetCDF
-
-    Processing flow:
-    1. Download/fetch regional file
-    2. Extract data for all spots in region
-    3. Return dict mapping spot_id → forecast data
-    4. Cleanup file
-    """
-
-    @property
-    def region(self) -> str:
-        """Geographic region this provider covers (e.g., "hawaii")"""
-        ...
-
-    async def fetch_regional_data(
-        self,
-        model_run: datetime
-    ) -> Path:
-        """
-        Download regional data file.
-        Returns path to downloaded file (caller responsible for cleanup).
-        """
-        ...
-
-    async def extract_spot_forecasts(
-        self,
-        data_file: Path,
-        spots: list["Spot"],
-        start: datetime,
-        end: datetime
-    ) -> dict[str, list[ForecastData]]:
-        """
-        Extract forecasts for multiple spots from data file.
-
-        Returns:
-            {spot_id: [ForecastData, ...]}
-        """
-        ...
-```
-
-### NWPS Provider Implementation
-
-**Provider that implements RegionalProvider protocol:**
-
-```python
-# backend/services/forecast/providers/nwps_provider.py
-from services.forecast.base import RegionalProvider, ForecastData
-from pathlib import Path
-from datetime import datetime, timezone
-import pygrib
-import httpx
-from typing import Literal
-
-class NWPSProvider:
-    """
-    NOAA Nearshore Wave Prediction System (NWPS) provider.
-
-    Data source: GRIB2 files containing wave, wind, and water level forecasts.
-    Update frequency: Twice daily at 00Z and 12Z.
-    Coverage: Regional grids (Hawaii = CG4).
-    """
-
-    def __init__(self, region_config: dict, http_client: httpx.AsyncClient):
-        """
-        Args:
-            region_config: {
-                "code": "CG4",
-                "name": "Hawaii",
-                "base_url": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/nwps/prod",
-                "coverage": {"lat_min": 18.5, "lat_max": 22.5, ...}
-            }
-            http_client: Shared HTTP client for downloads
-        """
-        self.region_config = region_config
-        self.http_client = http_client
-
-    # Protocol properties
-    provider_name = "nwps"
-    processing_mode: Literal["regional"] = "regional"
-    update_frequency_seconds = 43200  # 12 hours
-
-    @property
-    def region(self) -> str:
-        return self.region_config["name"].lower()
-
-    def is_available_for_spot(self, spot) -> bool:
-        """Check if spot is within NWPS grid coverage"""
-        coverage = self.region_config["coverage"]
-        return (
-            coverage["lat_min"] <= spot.latitude <= coverage["lat_max"]
-            and coverage["lon_min"] <= spot.longitude <= coverage["lon_max"]
-        )
-
-    async def fetch_regional_data(self, model_run: datetime) -> Path:
-        """
-        Download NWPS GRIB2 file for a model run.
-
-        Args:
-            model_run: Model initialization time (must be 00Z or 12Z)
-
-        Returns:
-            Path to downloaded GRIB2 file
-        """
-        # Determine model hour (00 or 12)
-        model_hour = 0 if model_run.hour < 12 else 12
-        run_date = model_run.strftime("%Y%m%d")
-
-        # Build URL
-        # Example: .../nwps.20251112/CG4/nwps.t00z.cg4.grib2
-        code = self.region_config["code"]
-        url = (
-            f"{self.region_config['base_url']}/nwps.{run_date}/"
-            f"{code}/nwps.t{model_hour:02d}z.{code.lower()}.grib2"
-        )
-
-        # Download to temp location
-        output_file = Path(f"/tmp/nwps_{run_date}_{model_hour:02d}z_{code.lower()}.grib2")
-
-        # Streaming download (efficient for 62MB file)
-        async with self.http_client.stream("GET", url) as response:
-            response.raise_for_status()
-
-            with open(output_file, "wb") as f:
-                async for chunk in response.aiter_bytes(chunk_size=8192):
-                    f.write(chunk)
-
-        return output_file
-
-    async def extract_spot_forecasts(
-        self,
-        data_file: Path,
-        spots: list,
-        start: datetime,
-        end: datetime
-    ) -> dict[str, list[ForecastData]]:
-        """
-        Extract forecast data for all spots from GRIB2 file.
-
-        This is the core extraction logic - reads file once,
-        extracts data for all spots.
-        """
-        # Open GRIB2 file
-        grbs = pygrib.open(str(data_file))
-
-        # Build index of all messages by parameter and forecast hour
-        # Structure: {param_name: {forecast_datetime: grib_message}}
-        index = self._build_grib_index(grbs)
-
-        grbs.close()
-
-        # Extract data for each spot
-        results = {}
-
-        for spot in spots:
-            # Extract timeseries for this spot
-            timeseries = []
-
-            # Get all unique forecast hours
-            forecast_hours = self._get_forecast_hours(index)
-
-            for forecast_hour in forecast_hours:
-                if not (start <= forecast_hour <= end):
-                    continue
-
-                # Extract point data at spot's lat/lon
-                forecast_data = ForecastData(
-                    timestamp=forecast_hour,
-                    wave_height=self._extract_value(
-                        index.get("wave_height", {}).get(forecast_hour),
-                        spot.latitude,
-                        spot.longitude
-                    ),
-                    wave_period=self._extract_value(
-                        index.get("wave_period", {}).get(forecast_hour),
-                        spot.latitude,
-                        spot.longitude
-                    ),
-                    wave_direction=self._extract_value(
-                        index.get("wave_direction", {}).get(forecast_hour),
-                        spot.latitude,
-                        spot.longitude
-                    ),
-                    wind_speed=self._extract_value(
-                        index.get("wind_speed", {}).get(forecast_hour),
-                        spot.latitude,
-                        spot.longitude
-                    ),
-                    wind_direction=self._extract_value(
-                        index.get("wind_direction", {}).get(forecast_hour),
-                        spot.latitude,
-                        spot.longitude
-                    ),
-                    water_level=self._extract_value(
-                        index.get("water_level", {}).get(forecast_hour),
-                        spot.latitude,
-                        spot.longitude
-                    ),
-                )
-
-                timeseries.append(forecast_data)
-
-            results[spot.id] = timeseries
-
-        return results
-
-    def _build_grib_index(self, grbs) -> dict:
-        """
-        Build index of GRIB messages by parameter and time.
-
-        Returns:
-            {
-                "wave_height": {datetime(...): grib_message, ...},
-                "wave_period": {...},
-                ...
-            }
-        """
-        index = {}
-
-        # Map GRIB parameter names to our standardized names
-        param_mapping = {
-            "Significant height of combined wind waves and swell": "wave_height",
-            "Primary wave mean period": "wave_period",
-            "Primary wave direction": "wave_direction",
-            "Wind speed": "wind_speed",
-            "Wind direction": "wind_direction",
-            "Water Surface Elevation": "water_level",  # tide+surge+setup
-        }
-
-        for grb in grbs:
-            param_name = grb.name
-
-            if param_name in param_mapping:
-                standardized_name = param_mapping[param_name]
-                forecast_time = grb.validDate  # Forecast valid time
-
-                if standardized_name not in index:
-                    index[standardized_name] = {}
-
-                index[standardized_name][forecast_time] = grb
-
-        return index
-
-    def _get_forecast_hours(self, index: dict) -> list[datetime]:
-        """Extract all unique forecast hours from index"""
-        hours = set()
-        for param_data in index.values():
-            hours.update(param_data.keys())
-        return sorted(hours)
-
-    def _extract_value(
-        self,
-        grb_message,
-        lat: float,
-        lon: float
-    ) -> float | None:
-        """
-        Extract value from GRIB message at specific lat/lon.
-        Uses nearest neighbor (can be enhanced with bilinear interpolation).
-        """
-        if grb_message is None:
-            return None
-
-        try:
-            # Get grid data and coordinates
-            data, lats, lons = grb_message.data()
-
-            # Find nearest grid point
-            dist_sq = (lats - lat)**2 + (lons - lon)**2
-            idx = dist_sq.argmin()
-            value = data.flat[idx]
-
-            # Check for missing values (GRIB2 uses large numbers)
-            if value > 1e10 or value < -1e10:
-                return None
-
-            return float(value)
-
-        except Exception as e:
-            # Log error but don't fail entire extraction
-            return None
-```
-
-### Task Orchestration for Regional Providers
-
-**Two-task pattern: Download + Fan-out extraction**
-
-```python
-# backend/celery/tasks/nwps.py
-from celery import shared_task, group
-from celery_app.tasks.base import AsyncTask
-from services.forecast.providers.nwps_provider import NWPSProvider
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-import json
-
-@shared_task(
-    bind=True,
-    base=AsyncTask,
-    max_retries=3,
-    default_retry_delay=300,  # 5 min
-)
-class FetchNWPSRegionalTask(AsyncTask):
-    """
-    Orchestrator task for NWPS data.
-
-    Responsibilities:
-    1. Download GRIB2 file
-    2. Get all spots in region
-    3. Fan out extraction tasks
-    4. Coordinate cleanup
-    """
-
-    async def run_async(self, region: str = "hawaii"):
-        self.logger.info(f"Starting NWPS fetch for region: {region}")
-
-        # Determine current model run
-        now = datetime.now(timezone.utc)
-        model_hour = 0 if now.hour < 12 else 12
-        model_run = now.replace(hour=model_hour, minute=0, second=0, microsecond=0)
-
-        # Initialize provider
-        provider = self._get_provider(region)
-
-        # Download GRIB2 file
-        try:
-            grib_file = await provider.fetch_regional_data(model_run)
-            file_size_mb = grib_file.stat().st_size / (1024 * 1024)
-            self.logger.info(f"Downloaded GRIB2 file: {file_size_mb:.2f} MB")
-        except Exception as e:
-            self.logger.error(f"Failed to download GRIB2: {e}")
-            raise
-
-        # Store file metadata in Redis (for coordination)
-        file_key = f"nwps:grib_file:{region}:{model_run.isoformat()}"
-        await self.redis_manager.hset(
-            file_key,
-            mapping={
-                "file_path": str(grib_file),
-                "model_run": model_run.isoformat(),
-                "region": region,
-                "downloaded_at": datetime.utcnow().isoformat(),
-                "file_size_mb": file_size_mb,
-            }
-        )
-        await self.redis_manager.expire(file_key, 3600)  # 1 hour
-
-        # Get all spots in region
-        spots = await self._get_spots_in_region(region)
-        self.logger.info(f"Found {len(spots)} spots in {region}")
-
-        # Create extraction tasks for all spots
-        # Each task will read the same file
-        extraction_tasks = [
-            extract_nwps_spot_data.s(
-                spot_id=spot.id,
-                file_key=file_key,
-                region=region
-            )
-            for spot in spots
-        ]
-
-        # Execute tasks in parallel
-        job = group(extraction_tasks)
-        result = job.apply_async()
-
-        # Schedule cleanup after tasks complete
-        # Use countdown to ensure all extraction tasks finish
-        cleanup_nwps_file.apply_async(
-            args=[file_key],
-            countdown=1800  # 30 min buffer
-        )
-
-        return {
-            "status": "success",
-            "region": region,
-            "model_run": model_run.isoformat(),
-            "file_size_mb": round(file_size_mb, 2),
-            "spots_queued": len(spots),
-            "file_key": file_key
-        }
-
-    def _get_provider(self, region: str) -> NWPSProvider:
-        """Initialize NWPS provider for region"""
-        # Load region config
-        from services.forecast.providers.nwps_provider import NWPS_REGIONS
-        return NWPSProvider(
-            region_config=NWPS_REGIONS[region],
-            http_client=self.http_manager.client
-        )
-
-    async def _get_spots_in_region(self, region: str) -> list:
-        """Get all active spots in region from database"""
-        async with self.db_manager.get_session() as session:
-            from models.spot import Spot
-            from sqlalchemy import select
-
-            result = await session.execute(
-                select(Spot).where(
-                    Spot.active == True,
-                    Spot.region == region.title()
-                )
-            )
-            return result.scalars().all()
-
-
-@shared_task(
-    bind=True,
-    base=AsyncTask,
-    max_retries=2,
-)
-class ExtractNWPSSpotDataTask(AsyncTask):
-    """
-    Extract forecast data for a single spot from GRIB2 file.
-    Lightweight task - many can run in parallel.
-    """
-
-    async def run_async(self, spot_id: str, file_key: str, region: str):
-        # Get file metadata from Redis
-        file_info = await self.redis_manager.hgetall(file_key)
-
-        if not file_info:
-            raise ValueError(f"File metadata not found: {file_key}")
-
-        file_path = Path(file_info["file_path"])
-
-        if not file_path.exists():
-            raise FileNotFoundError(f"GRIB2 file not found: {file_path}")
-
-        # Load spot from DB
-        spot = await self._get_spot(spot_id)
-
-        # Initialize provider
-        provider = self._get_provider(region)
-
-        # Extract forecast data
-        # Note: This opens the file, but pygrib is efficient
-        # Multiple tasks can read same file simultaneously
-        start = datetime.now(timezone.utc)
-        end = start + timedelta(days=5)
-
-        forecasts = await provider.extract_spot_forecasts(
-            data_file=file_path,
-            spots=[spot],
-            start=start,
-            end=end
-        )
-
-        spot_forecasts = forecasts.get(spot_id, [])
-
-        # Store in Redis (existing hash pattern)
-        stored_hours = 0
-        for forecast_data in spot_forecasts:
-            hour = forecast_data.timestamp.replace(minute=0, second=0, microsecond=0)
-            redis_key = f"forecast:{spot_id}:{hour.isoformat()}"
-
-            # Store wave data
-            await self.redis_manager.hset(
-                redis_key,
-                "nwps:wave",
-                json.dumps({
-                    "height": forecast_data.wave_height,
-                    "period": forecast_data.wave_period,
-                    "direction": forecast_data.wave_direction,
-                })
-            )
-
-            # Store wind data
-            await self.redis_manager.hset(
-                redis_key,
-                "nwps:wind",
-                json.dumps({
-                    "speed": forecast_data.wind_speed,
-                    "direction": forecast_data.wind_direction,
-                })
-            )
-
-            # Store water level (tide+surge+setup)
-            await self.redis_manager.hset(
-                redis_key,
-                "nwps:water_level",
-                json.dumps({
-                    "height": forecast_data.water_level,
-                    "type": "total",  # tide + surge + wave setup
-                })
-            )
-
-            # Metadata
-            await self.redis_manager.hset(
-                redis_key,
-                "nwps:wave:updated_at",
-                datetime.utcnow().isoformat()
-            )
-
-            # TTL: 14 hours (covers 12hr gap + buffer)
-            await self.redis_manager.expire(redis_key, 50400)
-
-            stored_hours += 1
-
-        self.logger.info(f"Stored {stored_hours} forecast hours for spot {spot_id}")
-
-        return {
-            "spot_id": spot_id,
-            "hours_stored": stored_hours
-        }
-
-    async def _get_spot(self, spot_id: str):
-        """Load spot from database"""
-        async with self.db_manager.get_session() as session:
-            from models.spot import Spot
-            spot = await session.get(Spot, spot_id)
-            if not spot:
-                raise ValueError(f"Spot not found: {spot_id}")
-            return spot
-
-    def _get_provider(self, region: str) -> NWPSProvider:
-        """Initialize NWPS provider"""
-        from services.forecast.providers.nwps_provider import NWPS_REGIONS
-        return NWPSProvider(
-            region_config=NWPS_REGIONS[region],
-            http_client=self.http_manager.client
-        )
-
-
-@shared_task(bind=True, base=AsyncTask)
-class CleanupNWPSFileTask(AsyncTask):
-    """
-    Cleanup GRIB2 file after all extraction tasks complete.
-    """
-
-    async def run_async(self, file_key: str):
-        # Get file metadata
-        file_info = await self.redis_manager.hgetall(file_key)
-
-        if not file_info:
-            self.logger.warning(f"File metadata already deleted: {file_key}")
-            return {"status": "already_cleaned"}
-
-        file_path = Path(file_info["file_path"])
-
-        # Delete file
-        if file_path.exists():
-            file_path.unlink()
-            self.logger.info(f"Deleted GRIB2 file: {file_path}")
-
-        # Delete metadata from Redis
-        await self.redis_manager.delete(file_key)
-
-        return {"status": "cleaned", "file_path": str(file_path)}
-```
-
-### Celery Beat Schedule
-
-```python
-# backend/celery_app/app.py
+# backend/workers/app.py (continued)
 from celery.schedules import crontab
 
 app.conf.beat_schedule = {
-    # NWPS runs at 00Z and 12Z
-    # Add 30min delay for NOAA processing time
-    'fetch-nwps-hawaii-00z': {
-        'task': 'celery_app.tasks.nwps.fetch_nwps_regional',
-        'schedule': crontab(hour=0, minute=30),  # 00:30 UTC
-        'kwargs': {'region': 'hawaii'}
+    # NWPS - Runs at 00Z and 12Z (add 30min delay for NOAA processing)
+    'fetch-nwps-maui-00z': {
+        'task': 'workers.tasks.forecast.fetch_nwps_forecasts',
+        'schedule': crontab(hour=0, minute=30),
+        'kwargs': {'region': 'maui'},
     },
-    'fetch-nwps-hawaii-12z': {
-        'task': 'celery_app.tasks.nwps.fetch_nwps_regional',
-        'schedule': crontab(hour=12, minute=30),  # 12:30 UTC
-        'kwargs': {'region': 'hawaii'}
+    'fetch-nwps-maui-12z': {
+        'task': 'workers.tasks.forecast.fetch_nwps_forecasts',
+        'schedule': crontab(hour=12, minute=30),
+        'kwargs': {'region': 'maui'},
+    },
+
+    # GFS - Every 6 hours
+    'fetch-gfs-maui': {
+        'task': 'workers.tasks.forecast.fetch_gfs_forecasts',
+        'schedule': crontab(hour='*/6', minute=0),
+        'kwargs': {'region': 'maui'},
+    },
+
+    # Surfline - Priority spots every 10min, all spots every 3 hours
+    'fetch-surfline-priority': {
+        'task': 'workers.tasks.forecast.fetch_surfline_forecasts',
+        'schedule': crontab(minute='*/10'),
+        'kwargs': {'priority': 'high'},
+    },
+    'fetch-surfline-all': {
+        'task': 'workers.tasks.forecast.fetch_surfline_forecasts',
+        'schedule': crontab(hour='*/3', minute=0),
+        'kwargs': {'priority': 'all'},
     },
 }
 ```
 
-### Configuration
+---
 
-```python
-# backend/services/forecast/providers/nwps_config.py
+## Running Celery
 
-NWPS_REGIONS = {
-    "hawaii": {
-        "code": "CG4",
-        "name": "Hawaii",
-        "base_url": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/nwps/prod",
-        "coverage": {
-            "lat_min": 18.5,
-            "lat_max": 22.5,
-            "lon_min": -161.0,
-            "lon_max": -154.5,
-        },
-        "model_runs": [0, 12],  # UTC hours
-    },
-    # Future regions:
-    # "california": {...},
-    # "east_coast": {...},
-}
+```bash
+# Worker (with prefork pool)
+celery -A workers.app worker --loglevel=info --concurrency=4
+
+# Beat (scheduler)
+celery -A workers.app beat --loglevel=info
+
+# Combined (development only)
+celery -A workers.app worker --beat --loglevel=info --concurrency=2
 ```
 
-### Key Architectural Decisions
+---
 
-**1. File Persistence Strategy: Keep Until All Spots Processed** ✅
-- **Why:** Simpler than Redis grid caching
-- GRIB2 file stays in `/tmp` during extraction (10-20 min)
-- Each extraction task opens file independently (pygrib is efficient)
-- Cleanup task deletes file after buffer period
+## Key Benefits of This Architecture
 
-**2. Task Coordination via Redis Metadata**
-- Store file location + metadata in Redis
-- Each extraction task reads file path from Redis
-- Prevents race conditions
+### ✅ Code Reuse
+- **100% async code reuse** between FastAPI and Celery
+- Same repositories, services, providers
+- No duplicate sync versions needed
 
-**3. HTTP Client Still Needed**
-- Even file-based providers need HTTP for downloading
-- Streaming download handles 62MB efficiently
-- Shared `http_manager` from WorkerState
+### ✅ Correct Process Isolation
+- Each worker process has its own AsyncEngine
+- Created **after fork** via `worker_process_init`
+- No shared connections across processes
 
-**4. Dual-Mode Provider Protocol**
-- `PerSpotProvider`: Traditional HTTP APIs (Surfline, etc.)
-- `RegionalProvider`: File-based (NWPS, NetCDF)
-- Both store to same Redis hash structure
+### ✅ Proper Connection Pooling
+- FastAPI: Larger pool (5-10 connections) for high concurrency
+- Celery workers: Small pool (2-3 connections) per worker
+- Total connections = workers × pool_size (e.g., 4 workers × 2 = 8 connections)
 
-**5. Error Handling**
-- If extraction task fails for one spot, others continue
-- Cleanup task uses countdown buffer (30 min)
-- File metadata has TTL (prevents orphaned files)
+### ✅ Works with Prefork Pool
+- Scales horizontally with multiple worker processes
+- Each worker runs tasks in parallel
+- Proper resource cleanup on shutdown
 
-### Integration with Existing Registry
+### ✅ Event Loop Handling
+- Celery manages event loops via `asyncio.run()`
+- No conflicts with custom loops
+- Clean, predictable behavior
+
+### ✅ asyncio.to_thread() Benefits
+- CPU-bound work (GRIB parsing, xarray ops) runs in thread pool
+- Doesn't block event loop
+- Allows concurrent I/O while processing
+
+---
+
+## Common Mistakes to Avoid
+
+### ❌ Don't: Create Engine at Import Time
+```python
+# ❌ WRONG
+engine = create_async_engine(...)  # Created before fork
+
+# ✅ CORRECT
+# Use worker_process_init signal
+```
+
+### ❌ Don't: Use worker_init Signal
+```python
+# ❌ WRONG
+@signals.worker_init.connect  # Runs in parent process
+def init(**kwargs):
+    create_engine()
+
+# ✅ CORRECT
+@signals.worker_process_init.connect  # Runs in each child
+def init(**kwargs):
+    asyncio.run(create_engine_for_worker())
+```
+
+### ❌ Don't: Create Singleton Event Loop
+```python
+# ❌ WRONG
+class WorkerState:
+    loop = asyncio.new_event_loop()  # Conflicts with Celery
+
+# ✅ CORRECT
+# Let Celery handle event loops via asyncio.run()
+```
+
+### ❌ Don't: Share Engine Across Processes
+```python
+# ❌ WRONG
+global_engine = create_async_engine(...)  # Shared
+
+# ✅ CORRECT
+process_local.engine = create_async_engine(...)  # Isolated
+```
+
+---
+
+## Performance Considerations
+
+### Connection Pool Sizing
+
+**FastAPI** (main process):
+```python
+pool_size=10         # 10 persistent connections
+max_overflow=20      # 20 additional on demand
+# Total: 30 max concurrent connections
+```
+
+**Celery workers** (4 processes):
+```python
+pool_size=2          # 2 persistent per worker
+max_overflow=3       # 3 additional per worker
+# Total per worker: 5 max
+# Total all workers: 4 × 5 = 20 max concurrent connections
+```
+
+**Database total**: 30 (FastAPI) + 20 (Celery) = 50 connections max
+
+### Task Execution Time
+
+With prefork pool (4 workers):
+- Task A (NWPS): 30 seconds
+- Task B (GFS): 45 seconds
+- Task C (Surfline): 15 seconds
+
+**Sequential**: 30 + 45 + 15 = 90 seconds
+**Parallel** (separate tasks): max(30, 45, 15) = 45 seconds
+
+**Recommendation**: Use separate tasks for each provider, let prefork pool parallelize.
+
+---
+
+## Monitoring & Debugging
+
+### Logging
 
 ```python
-# backend/services/forecast/registry.py
-
-class ForecastRegistry:
-    """Enhanced registry supporting both processing modes"""
-
-    def __init__(self):
-        self._per_spot_providers: dict[str, PerSpotProvider] = {}
-        self._regional_providers: dict[str, RegionalProvider] = {}
-        self._spot_providers: dict[str, list[str]] = {}  # spot → provider names
-
-    def register_per_spot_provider(self, name: str, provider: PerSpotProvider):
-        """Register HTTP-based provider (Surfline, Open-Meteo, etc.)"""
-        self._per_spot_providers[name] = provider
-
-    def register_regional_provider(self, name: str, provider: RegionalProvider):
-        """Register file-based provider (NWPS, PacIOOS NetCDF)"""
-        self._regional_providers[name] = provider
-
-    def get_regional_providers_for_region(self, region: str) -> list[RegionalProvider]:
-        """Get all regional providers covering a region"""
-        return [
-            provider for provider in self._regional_providers.values()
-            if provider.region == region
-        ]
-
-# Usage:
-registry = ForecastRegistry()
-
-# HTTP-based providers (per-spot fetching)
-registry.register_per_spot_provider("surfline", SurflineProvider())
-registry.register_per_spot_provider("open_meteo", OpenMeteoProvider())
-
-# File-based providers (regional processing)
-registry.register_regional_provider(
-    "nwps",
-    NWPSProvider(region_config=NWPS_REGIONS["hawaii"], http_client=...)
+# Enable SQL logging in Celery workers
+create_async_engine(
+    url,
+    echo=True,  # Log all SQL statements
 )
 ```
 
-### Next Steps for Implementation
+### Flower (Celery monitoring)
 
-**Phase 1: Core NWPS Provider** (Start Here)
-1. Implement `NWPSProvider` class with GRIB2 extraction
-2. Test with single spot extraction
-3. Verify data quality (compare with NOAA website)
+```bash
+pip install flower
+celery -A workers.app flower --port=5555
+```
 
-**Phase 2: Task Orchestration**
-1. Implement `FetchNWPSRegionalTask` (download + orchestration)
-2. Implement `ExtractNWPSSpotDataTask` (per-spot extraction)
-3. Implement `CleanupNWPSFileTask` (file deletion)
-4. Test with 2-3 spots
+Visit http://localhost:5555
 
-**Phase 3: Production**
-1. Add to Celery Beat schedule (00:30Z, 12:30Z)
-2. Test with all 20 Maui spots
-3. Monitor file download times, extraction performance
-4. Add error handling + retry logic
+### Check Worker Resources
 
-**Phase 4: Scale**
-1. Add more regions (Oahu, California, etc.)
-2. Optimize GRIB2 extraction (bilinear interpolation, caching)
-3. Consider multi-region orchestration
+```python
+@shared_task
+def health_check():
+    """Check worker health."""
+    return asyncio.run(_health_check_async())
 
-### Performance Expectations (Your Optiplex)
+async def _health_check_async():
+    db_healthy = await database.health_check()
+    redis_healthy = await redis.health_check()
 
-**Per Model Run (2x/day):**
-- Download: 62MB in 5-20 sec (depending on connection)
-- Extraction: 20 spots × 62 hours = ~1240 data points
-  - GRIB2 read: ~5-10 sec per spot (can be optimized)
-  - Total extraction time: 2-5 min (parallelized across workers)
-- Storage: ~500KB in Redis (extracted data only)
-- Cleanup: Instant
+    return {
+        'database': db_healthy,
+        'redis': redis_healthy,
+        'pid': os.getpid(),
+    }
+```
 
-**Total resource impact:**
-- Network: 124MB/day (negligible)
-- Disk: 62MB temporary (deleted after ~20 min)
-- CPU: ~2-5 min of processing 2x/day
-- RAM: ~150MB peak during GRIB2 processing per worker
+---
 
-✅ **Completely reasonable for your setup!**
+## Summary
+
+This architecture provides:
+- ✅ Correct process isolation for AsyncEngine
+- ✅ 100% async code reuse (no duplication)
+- ✅ Production-proven pattern (Medium article, SQLAlchemy docs)
+- ✅ Scales with prefork pool
+- ✅ Proper resource lifecycle management
+- ✅ Clean separation between FastAPI and Celery concerns
+
+**The key insight**: Tasks are sync wrappers (`asyncio.run()`) around async implementations, with process-local engines created after fork using `worker_process_init`.
+
+---
+
+## References & Sources
+
+This architecture is based on extensive research from official documentation, GitHub discussions, Stack Overflow, and production implementations.
+
+### Primary Sources
+
+**1. Medium Article (Production Pattern)**
+- **Title**: "Solving SQLAlchemy Connection Issues in Celery Workers"
+- **Author**: Ryan Zheng
+- **Date**: May 2, 2025
+- **URL**: https://ryan-zheng.medium.com/solving-sqlalchemy-connection-issues-in-celery-workers-9d7cbf299221
+- **Key contribution**: Production-tested pattern using `threading.local()` and `worker_process_init`
+
+### Official Documentation
+
+**2. Celery Signals**
+- **URL**: https://docs.celeryq.dev/en/stable/userguide/signals.html
+- **Relevant sections**: `worker_init`, `worker_process_init`, `worker_process_shutdown`
+- **Key insight**: `worker_process_init` runs in each child process after fork
+
+**3. Celery Concurrency**
+- **URL**: https://docs.celeryq.dev/en/latest/userguide/concurrency/index.html
+- **Topic**: Worker pool types (prefork, solo, threads, gevent, eventlet)
+
+**4. Celery Prefork Pool Implementation**
+- **URL**: https://docs.celeryq.dev/en/stable/internals/reference/celery.concurrency.prefork.html
+- **Topic**: Internal implementation details
+
+**5. SQLAlchemy Async I/O**
+- **URL**: https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html
+- **Relevant sections**: AsyncEngine lifecycle, event loop binding, disposal
+- **Key quote**: "AsyncEngine cannot properly dispose of connections within `__del__`. Failing to explicitly dispose may result in 'RuntimeError: Event loop is closed' warnings."
+
+### GitHub Discussions - Celery
+
+**6. celery/celery #9058** - "The way to run async functions in Celery tasks in one event loop"
+- **URL**: https://github.com/celery/celery/discussions/9058
+- **Topic**: Problems with `asgiref.async_to_sync()` creating new event loops
+- **Key finding**: Creates new loop each time, breaks SQLAlchemy session pools
+- **Solution discussed**: Custom background event loop thread (complex, not recommended)
+
+**7. celery/celery #7573** - "Emit signal.worker_init in prefork pool child process"
+- **URL**: https://github.com/celery/celery/issues/7573
+- **Topic**: Signal behavior differences between `worker_init` and `worker_process_init`
+- **Critical finding**: `worker_init` does NOT run in child processes (runs in parent)
+- **Solution**: Always use `worker_process_init` for per-process initialization
+
+**8. celery/celery #7466** - "How/when does celery create an event loop when using the gevent pool?"
+- **URL**: https://github.com/celery/celery/discussions/7466
+- **Topic**: Event loop creation with different worker pools
+
+**9. celery/celery #5405** - "worker_process_init and solo concurrency"
+- **URL**: https://github.com/celery/celery/issues/5405
+- **Topic**: Signal behavior with solo vs prefork pools
+
+### GitHub Discussions - SQLAlchemy
+
+**10. sqlalchemy/sqlalchemy #11507** - "Event loop closing when reusing an AsyncEngine"
+- **URL**: https://github.com/sqlalchemy/sqlalchemy/discussions/11507
+- **Topic**: AsyncEngine event loop binding issues
+- **Key problem**: Engine created in one event loop, used in another
+- **Error**: "Queue is bound to a different event loop"
+
+**11. sqlalchemy/sqlalchemy #9388** - "Sqlalchemy with distributed task (Celery)"
+- **URL**: https://github.com/sqlalchemy/sqlalchemy/discussions/9388
+- **Topic**: How to properly use SQLAlchemy with Celery
+- **Recommendation**: Use `worker_process_init` to dispose/recreate engines after fork
+
+**12. sqlalchemy/sqlalchemy #5980** - "Performing AsyncIO pooling in SQLAlchemy"
+- **URL**: https://github.com/sqlalchemy/sqlalchemy/discussions/5980
+- **Topic**: Async connection pooling strategies
+
+### Production Implementations
+
+**13. apache/superset #13350** - "Reset DB connection pools for forked worker processes"
+- **URL**: https://github.com/apache/superset/pull/13350
+- **Project**: Apache Superset (major open-source BI tool)
+- **Implementation**: Shows real-world usage of `worker_process_init` pattern
+- **Code**: Disposes SQLAlchemy engine in child processes after fork
+
+### Stack Overflow Discussions
+
+**14. "How to combine Celery with asyncio?"**
+- **URL**: https://stackoverflow.com/questions/39815771/how-to-combine-celery-with-asyncio
+- **Views**: High traffic question
+- **Topic**: General patterns for Celery + async integration
+- **Key answers**: `loop.run_until_complete()` pattern
+
+**15. "Is there an easier way to run async functions in Celery tasks in one event loop?"**
+- **URL**: https://stackoverflow.com/questions/78570189/is-there-an-easier-way-to-run-async-functions-in-celery-tasks-in-one-event-loop
+- **Date**: 2024 (recent)
+- **Topic**: User struggling with background event loop approach
+- **Consensus**: Complex problem, no official Celery solution yet
+
+**16. "Event loop is closed in a celery worker"**
+- **URL**: https://stackoverflow.com/questions/74058894/event-loop-is-closed-in-a-celery-worker
+- **Topic**: Common error when AsyncEngine outlives event loop
+- **Solution**: Proper disposal in `worker_process_shutdown`
+
+**17. "What's the proper way to use SQLAlchemy Sessions with Celery?"**
+- **URL**: https://stackoverflow.com/questions/64016062/whats-the-proper-way-to-use-sqlalchemy-sessions-with-celery
+- **Topic**: Sync SQLAlchemy + Celery (establishes baseline pattern)
+- **Accepted answer**: Use `worker_process_init` signal
+
+**18. "PostgreSQL Connection Issues: 'Queue is bound to a different event loop' in Async Celery Task"**
+- **URL**: https://stackoverflow.com/questions/78875393/postgresql-connection-issues-remaining-connection-slots-are-reserved-queue
+- **Date**: 2024 (very recent)
+- **Error**: Classic AsyncEngine + Celery problem
+- **Cause**: Engine created in different event loop than task execution
+
+**19. "Celery Worker Database Connection Pooling"**
+- **URL**: https://stackoverflow.com/questions/14526249/celery-worker-database-connection-pooling
+- **Topic**: Connection pool management with prefork
+- **Key insight**: Each worker process needs its own pool
+
+**20. "Celery how to establish async connection per worker"**
+- **URL**: https://stackoverflow.com/questions/68430582/python-celery-how-to-establish-async-connection-per-worker
+- **Topic**: Per-worker async resource initialization
+
+### Blog Posts & Articles
+
+**21. "Not The Same Pre-fork Worker Model"**
+- **Author**: Yang Wang
+- **URLs**:
+  - https://www.yangster.ca/post/not-the-same-pre-fork-worker-model/
+  - https://medium.com/nepfin-engineering/not-the-same-pre-fork-worker-model-dde184feefa1
+- **Topic**: Differences between Gunicorn and Celery prefork models
+
+**22. "SQLAlchemy connection pool within multiple threads and processes"**
+- **Author**: David Caron
+- **URL**: https://davidcaron.dev/sqlalchemy-multiple-threads-and-processes/
+- **Topic**: Thread and process safety with SQLAlchemy pools
+
+### Community Forums
+
+**23. SQLAlchemy Google Group - "Using a connection pool with multiple processes"**
+- **URL**: https://groups.google.com/g/sqlalchemy/c/YX9NuBD75oY
+- **Topic**: Process boundaries and connection pools
+- **Key insight**: Connections are file descriptors and don't survive fork
+
+**24. Celery Users Mailing List - "per-worker initialization to prevent shared SQL connection pools?"**
+- **URL**: https://celery-users.narkive.com/einPxD2K/per-worker-initialization-to-prevent-shared-sql-connection-pools
+- **Topic**: Historical discussion on worker initialization patterns
+
+### Other Documentation
+
+**25. Celery School - "Celery Execution Pools: What is it all about?"**
+- **URL**: https://celery.school/celery-worker-pools
+- **Topic**: Deep dive into worker pool implementations
+
+**26. Celery School - "The Worker and the Pool"**
+- **URL**: https://celery.school/the-worker-and-the-pool
+- **Topic**: Worker architecture and pool management
+
+**27. Vultr Docs - "Asynchronous Task Queueing in Python using Celery"**
+- **URL**: https://docs.vultr.com/asynchronous-task-queueing-in-python-using-celery
+- **Topic**: General Celery async patterns
+
+**28. TestDriven.io - "Asynchronous Tasks with FastAPI and Celery"**
+- **URL**: https://testdriven.io/blog/fastapi-and-celery/
+- **Topic**: FastAPI + Celery integration patterns
+
+### Key Consensus Findings
+
+Across all sources, the following pattern emerged as the correct approach:
+
+1. ✅ Use `worker_process_init` signal (NOT `worker_init`)
+2. ✅ Use `threading.local()` for process isolation
+3. ✅ Create AsyncEngine AFTER fork in each child process
+4. ✅ Use `asyncio.run()` in tasks (NOT `asgiref.async_to_sync()`)
+5. ✅ Dispose engine in `worker_process_shutdown`
+6. ✅ Small connection pools for Celery (2-3 connections per worker)
+
+### Anti-Patterns to Avoid
+
+These were consistently identified as problematic across sources:
+
+1. ❌ Creating engine at import time (before fork)
+2. ❌ Using `worker_init` signal (runs in parent process)
+3. ❌ Sharing engines across processes
+4. ❌ Using custom WorkerState singleton with persistent event loop
+5. ❌ Using `asgiref.async_to_sync()` (creates new loop per call)
+6. ❌ Not disposing engines on shutdown
+
+### Additional Reading
+
+For deeper understanding of the underlying issues:
+
+- Python multiprocessing and fork behavior
+- Unix process forking and file descriptor inheritance
+- PostgreSQL connection protocol and process boundaries
+- asyncio event loop lifecycle
+- SQLAlchemy connection pooling internals
+- Thread-local storage in Python (`threading.local()`)
+
+---
+
+## Acknowledgments
+
+This architecture document synthesizes knowledge from:
+- SQLAlchemy maintainers (Mike Bayer and team)
+- Celery maintainers and community
+- Production implementations (Apache Superset, various Stack Overflow answers)
+- Community blog posts (Ryan Zheng, Yang Wang, David Caron)
+
+Special thanks to the open-source community for documenting these complex integration challenges.
