@@ -67,13 +67,13 @@ class NWPSModelConfig(BaseModel):
 
     # NOTE: model time completions are semi-variable, usually take an 1-1.5hrs
     # to complete after start time. actual start time is extremely variable per WFO.
-    # each WFO has different due to model dependencies i.e. WWW3, a wfo's wind grid, etc.
+    # each WFO has different start times due to model dependencies i.e. WWW3, a wfo's wind grid, etc.
     # for example, HFO model set to 00 analysis time ~ 2pm HST starts at 06:52 UTC
     # ~ 9pm HST and completes at 08:03 UTC ~ 10pm HST
 
     # NOTE: NWPS does include a status file as:
     # https://www.nco.ncep.noaa.gov/pmb/spa/nwps/status_file.txt
-    # for each WFO. So can pull from this for the WFO code and check
+    # for each WFO. So if needed, can pull from this for the WFO code and check
     # the tags to see some more status on the model runs.
 
     model_analysis_times: dict[str, time]
@@ -96,6 +96,22 @@ class NWPSModelConfig(BaseModel):
     # is accessible for the NWPS: pacifc region at:
     # https://nomads.ncep.noaa.gov/gribfilter.php?ds=prnwps
     # change ds={region}nwps for your specific region
+
+    # NOTE: IMPORTANT!!! nearest neighbor search for ocean
+    # lat/lons using a cKDTree requires a max distance. this field
+    # will essentially make sure that IF any SurfSpots are placed
+    # very inland, they won't select the nearest ocean cell outside
+    # of the max distance set. Refer to the NWPS resolution of your
+    # location / grib2 file to calculate the max distance.
+
+    # EXAMPLE:
+    # maui's NWPS resolution ~500m x 500m. want around ~4 cells
+    # radius so set the max distance to 2.0
+    # this may change in the future with some like of rough polygon
+    # check to ensure spots are not created inland, but its good
+    # defensive programming as of now.
+
+    max_nearest_neighbor_distance_km: float = 4.5
 
     filename_pattern: str = "{wfo}_nwps_{cg}_{date}_{time}.grib2"
     region: str
@@ -212,6 +228,7 @@ class NWPSMauiModelConfig(NWPSModelConfig):
     model_long_wait_time: timedelta = timedelta(hours=6, minutes=30)
     model_short_wait_time: timedelta = timedelta(minutes=10)
 
+    max_nearest_neighbor_distance_km: float = 2.0
     grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl"
     filename_pattern: str = "{wfo}_nwps_{cg}_{date}_{time}.grib2"
     region: str = "pr"

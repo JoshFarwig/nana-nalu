@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from pathlib import Path
+import time
 import httpx
 import aiofiles
 from functools import wraps
@@ -10,7 +10,7 @@ from core.configs.http_config import HTTPConfig
 logger = logging.getLogger(__name__)
 
 
-def retry_on_failure(func):
+def async_retry_on_failure(func):
     """Decorator to add retry logic to async HTTP operations"""
 
     @wraps(func)
@@ -129,7 +129,7 @@ class AsyncHTTPManager:
     async def delete(self, url: str, **kwargs) -> httpx.Response:
         return await self._request("DELETE", url, **kwargs)
 
-    @retry_on_failure
+    @async_retry_on_failure
     async def download_stream(
         self,
         url: str,
@@ -182,7 +182,7 @@ class AsyncHTTPManager:
             )
             return total_bytes
 
-    @retry_on_failure
+    @async_retry_on_failure
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         logger.debug(
             f"Making {method} request",
@@ -208,3 +208,205 @@ class AsyncHTTPManager:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
+
+
+def sync_retry_on_failure(func):
+    """Decorator to add retry logic to sync HTTP operations"""
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        operation_name = func.__name__
+        last_exception = None
+
+        for attempt in range(self._max_retries):
+            try:
+                return func(self, *args, **kwargs)
+
+            except (httpx.NetworkError, httpx.TimeoutException) as e:
+                last_exception = e
+                if attempt < self._max_retries - 1:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.warning(
+                        "Network error, retrying",
+                        extra={
+                            "method": operation_name,
+                            "attempt": attempt + 1,
+                            "max_retries": self._max_retries,
+                            "error": str(e),
+                            "retry_delay": delay,
+                        },
+                    )
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(
+                        "Failed after retries",
+                        extra={
+                            "method": operation_name,
+                            "max_retries": self._max_retries,
+                            "error": str(e),
+                        },
+                    )
+                    raise
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code >= 500 or e.response.status_code == 429:
+                    if attempt < self._max_retries - 1:
+                        delay = self._calculate_retry_delay(attempt)
+                        logger.warning(
+                            f"HTTP {e.response.status_code}, retrying",
+                            extra={
+                                "method": operation_name,
+                                "status_code": e.response.status_code,
+                                "attempt": attempt + 1,
+                                "max_retries": self._max_retries,
+                                "retry_delay": delay,
+                            },
+                        )
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error(
+                            "HTTP error",
+                            extra={
+                                "method": operation_name,
+                                "status_code": e.response.status_code,
+                                "error": str(e),
+                            },
+                        )
+                        raise
+
+        if last_exception:
+            raise last_exception
+
+    return wrapper
+
+
+class SyncHTTPManager:
+    """
+    Synchronous HTTP manager with retry logic.
+    Primarily used for celery worker operations.
+    """
+
+    def __init__(self, config: HTTPConfig) -> None:
+        self._max_retries = config.max_retries
+        self._retry_base_delay = config.retry_base_delay
+        self._retry_max_delay = config.retry_max_delay
+        self._retry_backoff_factor = config.retry_backoff_factor
+
+        limits = httpx.Limits(
+            max_connections=config.max_connections,
+            max_keepalive_connections=config.max_keepalive_connections,
+        )
+
+        self._client = httpx.Client(
+            timeout=httpx.Timeout(config.timeout),
+            limits=limits,
+            headers={"user-agent": config.user_agent},
+            follow_redirects=True,
+        )
+
+        logger.info(
+            "SyncHTTPManager initialized",
+            extra={
+                "timeout": config.timeout,
+                "max_connections": config.max_connections,
+                "max_retries": config.max_retries,
+                "retry_base_delay": config.retry_base_delay,
+                "retry_backoff_factor": config.retry_backoff_factor,
+            },
+        )
+
+    def _calculate_retry_delay(self, attempt: int) -> float:
+        """Calculate exponential backoff delay with max cap"""
+        delay = self._retry_base_delay * (self._retry_backoff_factor**attempt)
+        return min(delay, self._retry_max_delay)
+
+    def get(self, url: str, **kwargs) -> httpx.Response:
+        return self._request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs) -> httpx.Response:
+        return self._request("POST", url, **kwargs)
+
+    def put(self, url: str, **kwargs) -> httpx.Response:
+        return self._request("PUT", url, **kwargs)
+
+    def delete(self, url: str, **kwargs) -> httpx.Response:
+        return self._request("DELETE", url, **kwargs)
+
+    @sync_retry_on_failure
+    def download_stream(
+        self,
+        url: str,
+        file_path: str,
+        chunk_size: int = 65536,
+        **kwargs,
+    ) -> int:
+        """
+        Stream download a file to disk.
+
+        Args:
+            url: URL to download from
+            file_path: Local file path to save to
+            chunk_size: Bytes to read per iteration (default: 64KB)
+                        Use 512KB-1MB for large files (100MB+)
+            **kwargs: Additional arguments passed to httpx request
+
+        Returns:
+            Total bytes downloaded
+
+        Raises:
+            httpx.HTTPStatusError: On HTTP errors
+            httpx.NetworkError: On network failures
+            IOError: On file write errors
+        """
+        logger.debug(
+            "Starting stream download",
+            extra={"url": url, "file_path": file_path, "chunk_size": chunk_size},
+        )
+
+        with self._client.stream("GET", url, **kwargs) as response:
+            response.raise_for_status()
+
+            total_bytes = 0
+            with open(file_path, "wb") as f:
+                for chunk in response.iter_bytes(chunk_size=chunk_size):
+                    f.write(chunk)
+                    total_bytes += len(chunk)
+
+            logger.info(
+                "Downloaded file successfully",
+                extra={
+                    "url": url,
+                    "file_path": file_path,
+                    "total_bytes": total_bytes,
+                },
+            )
+            return total_bytes
+
+    @sync_retry_on_failure
+    def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        logger.debug(
+            f"Making {method} request",
+            extra={"method": method, "url": url},
+        )
+
+        response = self._client.request(method, url, **kwargs)
+        response.raise_for_status()
+
+        logger.debug(
+            f"{method} request successful",
+            extra={"method": method, "url": url, "status_code": response.status_code},
+        )
+
+        return response
+
+    def close(self) -> None:
+        self._client.close()
+        logger.info("SyncHTTPManager closed")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()

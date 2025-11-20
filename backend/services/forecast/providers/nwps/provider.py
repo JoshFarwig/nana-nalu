@@ -1,12 +1,11 @@
-import asyncio
 from datetime import time
 from pathlib import Path
 import logging
 import xarray as xr
 import numpy as np
 
-from core.http import AsyncHTTPManager
-from repositories.surf_spot_repository import SurfSpotRepository
+from core.http import SyncHTTPManager
+from repositories.surf_spot_repository import SyncSurfSpotRepository
 from services.forecast.providers.nwps.config import NWPSModelConfig
 from utils.geo import (
     longitude_to_360,
@@ -25,14 +24,14 @@ class NWPSProvider:
     def __init__(
         self,
         config: NWPSModelConfig,
-        http_manager: AsyncHTTPManager,
-        surf_spot_repo: SurfSpotRepository,
+        http_manager: SyncHTTPManager,
+        surf_spot_repo: SyncSurfSpotRepository,
     ):
         self.config = config
         self.http_manager = http_manager
         self.surf_spot_repo = surf_spot_repo
 
-    async def download_file(self, analysis_time: time) -> Path:
+    def download_file(self, analysis_time: time) -> Path:
         """Download the GRIB2 file from the NWPS model configuration with streaming"""
 
         url = self.config.construct_grib_filter_url(analysis_time)
@@ -40,17 +39,24 @@ class NWPSProvider:
         file_path = Path(self.file_path) / filename
 
         # NOTE: using 512KB chunks for grib files of 20-30MB
-        await self.http_manager.download_stream(
+        self.http_manager.download_stream(
             url, file_path=str(file_path), chunk_size=512 * 1024
         )
 
         return file_path
 
-    async def extract_forecasts(self, file_path: Path) -> dict:
+    def extract_forecasts(self, file_path: Path) -> dict:
         """Core NWPS provider function to extract forecasts for all spots that exist in grid"""
 
+        # PERFORMANCE: for future implementations, if extract_forecasts ABSOLUTELY needs optimization
+        # consider using a threadpoolexecutor for the cfgrib IO + decompression and the KDtree
+        # build + query. some numpy / xarray operations could be justified IF they are operating on
+        # very very large sets of data, which is not the case as of now. nothing else screams out
+        # as a potiental optimization here that releases the GIL enough to justify using threading
+        # w/ python's quirks
+
         # extract all spots that exist in grid configured in NWPS{LOCATION}GridConfig
-        spots = await self.surf_spot_repo.get_all_in_grid(
+        spots = self.surf_spot_repo.get_all_in_grid(
             self.config.grid.lat_min,
             self.config.grid.lat_max,
             self.config.grid.long_min,
@@ -59,11 +65,8 @@ class NWPSProvider:
         )
 
         # open dataset in thread pool to avoid blocking event loop (grib2 parsing can be slow)
-        ds = await asyncio.to_thread(
-            xr.open_dataset,
-            str(file_path),
-            engine="cfgrib",
-            filter_by_keys={"dataType": "fc"},
+        ds = xr.open_dataset(
+            str(file_path), engine="cfgrib", filter_by_keys={"dataType": "fc"}
         )
 
         # transform spot data into np arrays for xarray data
@@ -73,31 +76,36 @@ class NWPSProvider:
             [longitude_to_360(spot["longitude"], precision=4) for spot in spots]
         )
 
-        # NOTE: curently building a KDtree every time this function exes. consider moving to some
-        # kind of cache stored in provider state so that it lives throughout the lifespan of the celery worker,
-        # but as of now, fine as is.
+        # NOTE: curently building a KDtree every time this function execs. consider moving to some
+        # kind of cache stored in provider state so it persists throughout celery worker runtime.
+        # this kind of thing may need to be shared across child processes, so idk, maybe not possible
 
         # build kdtree that filters out land cells with no data to
         # run nearest neighbor search only on valid ocean cells
         # offload to thread pool as this can be CPU-intensive for larger grids
-        tree, valid_lats, valid_lons = await asyncio.to_thread(
-            build_forecast_kdtree, ds, valid_var="swh", time_slice={"step": 0}
+        tree, valid_lats, valid_lons = build_forecast_kdtree(
+            ds, valid_var="swh", time_slice={"step": 0}
         )
 
         # retrieve the selected lats, lons, and distances from the nearest neighbor search
         # use max_distance_km to generate NaN's  for spots that do not have
-        # any nearby cells in a 2km radius. select a radius wisely, with
-        # Maui's NWPS data, grid resolutions are
-        # 500m x 500m, so 2km range ensures ~ 4 cell distance
-        max_distance_threshold = 2
+        # any nearby cells in a 2km radius. choose a distance wisely.
+        # Maui's NWPS data grid resolutions are
+        # ~500m x 500m, so 2km distance ensures ~ 4 cell radius
 
+        # NOTE: ideally, there will some shapefile or simple polygon off the island's shape
+        # or I guess if I am building this for various NA locations, some like of script to
+        # add in a shapefile for a land mass and transform it into a polygon to ensure
+        # any new SurfSpot's cross reference the polygon to ensure it is not within the
+        # polygon. for now though, keeping this defensive query.
+        #
         selected_lats, selected_lons, distances = query_nearest_forecast_points(
             tree,
             valid_lats,
             valid_lons,
             spot_lats,
             spot_lons,
-            max_distance_km=max_distance_threshold,
+            max_distance_km=self.config.max_nearest_neighbor_distance_km,
         )
 
         # filter out spots that are out of bounds (have NaN coordinates)
@@ -109,7 +117,7 @@ class NWPSProvider:
             for idx in filtered_indices:
                 logger.warning(
                     f"Spot with id: {spot_ids[idx]} filtered - out of bounds.",
-                    f"Spot exceeds max distance threshold of {max_distance_threshold}km",
+                    f"Spot exceeds max distance threshold of {self.config.max_nearest_neighbor_distance_km}km",
                     extra={
                         "id": spot_ids[idx],
                         "lat": spot_lats[idx],
@@ -118,7 +126,7 @@ class NWPSProvider:
                     },
                 )
 
-        # retrieve spots that found nearest neighbors in max_distance_threshold range
+        # retrieve spots that found nearest neighbors range
         valid_spot_ids = spot_ids[valid_mask]
         valid_spot_lats = spot_lats[valid_mask]
         valid_spot_lons = spot_lons[valid_mask]
@@ -127,9 +135,7 @@ class NWPSProvider:
         valid_distances = distances[valid_mask]
 
         # build new dataset for grib2 forecasts for each valid surf spot
-        # offload to thread pool as xarray selection can be CPU-intensive for large grids
-        spot_forecast = await asyncio.to_thread(
-            self._build_spot_forecast_dataset,
+        spot_forecast = self._build_spot_forecast_dataset(
             ds,
             valid_selected_lats,
             valid_selected_lons,
@@ -139,9 +145,8 @@ class NWPSProvider:
             valid_distances,
         )
 
-        # build forecast dictionary - offload to thread for CPU-bound operations
-        forecasts = await asyncio.to_thread(
-            self._build_forecast_dict,
+        # build forecast dictionary
+        forecasts = self._build_forecast_dict(
             spot_forecast,
             valid_spot_ids,
             valid_spot_lats,
@@ -169,9 +174,6 @@ class NWPSProvider:
     ) -> xr.Dataset:
         """
         Build spot-specific forecast dataset from grid data.
-
-        This is a CPU-bound operation run in a thread pool to avoid blocking
-        the event loop. xarray selection operations can be slow with large grids.
         """
         return (
             ds.sel(
@@ -206,9 +208,6 @@ class NWPSProvider:
     ) -> dict:
         """
         Build forecast dictionary from xarray Dataset.
-
-        This is a CPU-bound operation run in a thread pool to avoid blocking
-        the event loop. Vectorizes data extraction where possible.
         """
         forecasts = {}
 

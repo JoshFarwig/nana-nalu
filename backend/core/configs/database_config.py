@@ -19,10 +19,10 @@ class DatabaseConfig(BaseModel):
     async_driver: str = "asyncpg"
     sync_driver: str = "psycopg2"
 
-    # async sqlalchemy engine config
-    # # set higher pool size / overflow depending on estimated traffic
-    async_pool_size: int = 3
-    async_max_overflow: int = 5
+    # async engine config
+    # set higher pool size / overflow depending on estimated traffic
+    async_pool_size: int = 10
+    async_max_overflow: int = 20
     async_pool_timeout: int = 30
     async_pool_pre_ping: bool = True
 

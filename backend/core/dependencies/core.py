@@ -97,10 +97,15 @@ async def get_db_session(
     """
     Get database session for endpoint injection.
 
-    Uses async for to iterate over the db_manager's session generator, ensuring
-    proper session lifecycle management is delegated to the db_manager's get_session
-    (creation and cleanup). The yielded session is injected into endpoint functions
-    via FastAPI's dependency system.
+    Uses 'async for' pattern because FastAPI's Depends() requires plain
+    generators (functions with yield), not @asynccontextmanager decorated
+    functions. FastAPI wraps plain generators internally to manage lifecycle,
+    but cannot detect pre-decorated context managers before calling them.
+    This may change in the future, but is the verified workaround as of
+    now.
+
+    See: https://github.com/fastapi/fastapi/discussions/8955
+         https://github.com/fastapi/fastapi/pull/10353
 
     Args:
         db_manager: Database manager from app state
@@ -108,5 +113,5 @@ async def get_db_session(
     Yields:
         AsyncSession: Database session with automatic lifecycle management
     """
-    async for session in db_manager.get_session():
+    async for session in db_manager.get_explicit_commit_session():
         yield session

@@ -24,11 +24,11 @@ class FileProvider(ForecastProvider, Protocol):
 
     processing_mode: Literal["file"] = "file"
 
-    async def download_file(self, analysis_time: time) -> Path:
+    def download_file(self, analysis_time: time) -> Path:
         """Download forecast file."""
         ...
 
-    async def extract_forecast(self, file_path: Path, analysis_time: time) -> dict:
+    def extract_forecast(self, file_path: Path) -> dict:
         """Extract forecast data for a avaiable spots from the regional file."""
         ...
 
@@ -41,6 +41,8 @@ class APIProvider(ForecastProvider, Protocol):
     processing_mode: Literal["api"] = "api"
     supports_batching: bool  # can request multiple spots in one API call
 
-    async def fetch_forecast(self, timestamp: datetime) -> dict[str, dict]:
+    # potientally consider async functionality, but for now, develop the
+    # MVP with sync for celery
+    def fetch_forecast(self, timestamp: datetime) -> dict[str, dict]:
         """Fetch forecast data via HTTP API for given spots."""
         ...
