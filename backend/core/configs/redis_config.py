@@ -20,9 +20,20 @@ class RedisConfig(BaseModel):
     conn_scheme: str = "redis"
 
     # async redis manager settings
+    # used for fastapi
     async_max_connections: int = 8
     async_connect_timeout: int = 5
     async_socket_timeout: int = 2
+
+    # NOTE: adjust sync settings based on the average task load
+    # currently, only considering NWPS provider and
+    # one other provider task
+
+    # sync redis manager settings
+    # used for celery workers
+    sync_max_connections: int = 2
+    sync_connect_timeout: int = 3
+    sync_socket_timeout: int = 2
 
     # general client settings
     decode_responses: bool = True

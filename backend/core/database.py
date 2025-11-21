@@ -23,7 +23,6 @@ class AsyncDatabaseManager:
 
     def __init__(self, settings: DatabaseConfig):
         self.settings = settings
-        # NOTE: use async_url by default, sync used for alembic migrations
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.database_url = settings.get_async_url()
         self._engine: AsyncEngine | None = None

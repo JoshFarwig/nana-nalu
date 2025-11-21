@@ -24,13 +24,12 @@ class EnvironmentMapper:
     def normalize(cls, env: str | None = None) -> Environment:
         """Normalize enviroment type and map to Enum"""
 
+        env = env or os.getenv("ENV")
         if env is None:
-            env = os.getenv("ENV")
-            if env is None:
-                raise ValueError(
-                    "ENV variable is not set, and cannot normalize. "
-                    "Please set it to one of " + ", ".join(cls._ENV_MAP.keys())
-                )
+            raise ValueError(
+                "ENV variable is not set, and cannot normalize. "
+                "Please set it to one of " + ", ".join(cls._ENV_MAP.keys())
+            )
 
         normalized_env = cls._ENV_MAP.get(env.lower())
 
@@ -63,7 +62,7 @@ class EnvironmentMapper:
         return cls.normalize(env) == Environment.TEST
 
 
-def get_env() -> Environment | None:
+def get_env() -> Environment:
     return EnvironmentMapper.normalize()
 
 

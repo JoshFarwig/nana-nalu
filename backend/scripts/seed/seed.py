@@ -1,5 +1,5 @@
 import logging
-from core import SyncDatabaseManager, BaseConfig, get_settings
+from core import SyncDatabaseManager, BaseConfig, load_settings
 from models.user_model import User
 from repositories import SyncUserRepository, SyncSurfSpotRepository
 from scripts.seed.seed_factory import SeedFactory
@@ -21,7 +21,7 @@ class SeedManager:
             },
         )
 
-    def get_admin(self) -> User:
+    def get_or_seed_admin(self) -> User:
         """Get existing admin user or seed admin user and return reference."""
 
         with self.db_manager.auto_commit_session() as session:
@@ -89,10 +89,7 @@ class SeedManager:
         """Main seeding method."""
 
         try:
-            # get or seed admin user first, user required for surf spots
-            admin_user = self.get_admin()
-
-            # seed surf spots
+            admin_user = self.get_or_seed_admin()
             self.seed_surf_spots(admin_user)
         except Exception as e:
             self.logger.exception("Error seeding database", extra={"error": str(e)})
@@ -104,7 +101,7 @@ class SeedManager:
 def main():
     """Run the seeder."""
 
-    settings = get_settings()
+    settings = load_settings()
     seeder = SeedManager(settings)
     seeder.seed_database()
 

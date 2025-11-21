@@ -15,6 +15,6 @@ class CeleryConfig(BaseModel):
     # task_annotations: dict[str, str]
 
     # worker settings
-    worker_pool: str = "solo"
-    worker_concurrency: int = 1
+    worker_pool: str = "prefork"
+    worker_concurrency: int = 2
     worker_max_tasks_per_child: int = 100

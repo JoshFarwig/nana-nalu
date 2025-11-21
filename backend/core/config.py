@@ -75,10 +75,10 @@ ENVIRONMENT_CONFIG_REGISTRY: dict[Environment, type[BaseConfig]] = {
 }
 
 
-@lru_cache()
-def get_settings(env: Environment | str | None = None) -> BaseConfig:
+@lru_cache
+def load_settings(env: Environment | str | None = None) -> BaseConfig:
     """
-    Get application settings based on environment.
+    Load application settings based on environment.
 
     Args:
         env: Environment to load. If None, reads from ENV environment variable.
@@ -91,7 +91,7 @@ def get_settings(env: Environment | str | None = None) -> BaseConfig:
     if isinstance(env, Environment):
         environment = env
     else:
-        environment = EnvironmentMapper.normalize()
+        environment = EnvironmentMapper.normalize(env)
 
     cfg_cls = ENVIRONMENT_CONFIG_REGISTRY[environment]
     return cfg_cls()  # type: ignore[arg-type] api, db and celery are instantiated from ENVS.

@@ -1,14 +1,11 @@
 from celery import Celery
 
-from core import get_settings
+from core import load_settings
 
 
 def create_celery_app() -> Celery:
-    """Create and configure Celery app"""
+    settings = load_settings()
 
-    settings = get_settings()
-
-    # create celery app
     app = Celery(
         "nana_nalu",
         broker=settings.redis.get_broker_url(),

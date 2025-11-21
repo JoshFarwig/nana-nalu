@@ -10,8 +10,21 @@ class HTTPConfig(BaseModel):
     timeout: float = 30.0
 
     max_retries: int = 3
-    max_connections: int = 20
-    max_keepalive_connections: int = 10
+
+    # async http manager settings
+    # used for fastapi
+    async_max_connections: int = 20
+    async_max_keepalive_connections: int = 10
+
+    # NOTE: adjust sync settings based on the average task load
+    # currently only considering NWPS provider and
+    # one other provider task
+
+    # sync http manager settings
+    # used for celery workers
+    sync_max_connections: int = 2
+    sync_max_keepalive_connections: int = 0
+    sync_keepalive_expiry: float = 5.0
 
     retry_base_delay: float = 10.0
     retry_max_delay: float = 60.0

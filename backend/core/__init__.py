@@ -1,7 +1,7 @@
 from .database import AsyncDatabaseManager, SyncDatabaseManager
 from .redis import AsyncRedisManager, SyncRedisManager
 from .http import AsyncHTTPManager, SyncHTTPManager
-from .config import BaseConfig, DevelopmentConfig, ProductionConfig, get_settings
+from .config import BaseConfig, DevelopmentConfig, ProductionConfig, load_settings
 
 __all__ = [
     "AsyncDatabaseManager",
@@ -10,7 +10,7 @@ __all__ = [
     "SyncRedisManager",
     "AsyncHTTPManager",
     "SyncHTTPManager",
-    "get_settings",
+    "load_settings",
     "BaseConfig",
     "DevelopmentConfig",
     "ProductionConfig",

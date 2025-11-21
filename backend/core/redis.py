@@ -55,12 +55,12 @@ class SyncRedisManager:
         self._client: redis.Redis | None = None
 
     def _create_client(self) -> redis.Redis:
-        """Create Redis client with connection pooling."""
+        """Create Redis client with minimal connection pooling for Celery Workers"""
         return redis.from_url(
             self.redis_url,
-            max_connections=self.settings.async_max_connections,
-            socket_connect_timeout=self.settings.async_connect_timeout,
-            socket_timeout=self.settings.async_socket_timeout,
+            max_connections=self.settings.sync_max_connections,
+            socket_connect_timeout=self.settings.sync_connect_timeout,
+            socket_timeout=self.settings.sync_socket_timeout,
             encoding="utf-8",
             decode_responses=self.settings.decode_responses,
             retry_on_timeout=self.settings.retry_on_timeout,

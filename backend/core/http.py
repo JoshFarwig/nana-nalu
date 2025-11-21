@@ -83,33 +83,26 @@ def async_retry_on_failure(func):
 
 
 class AsyncHTTPManager:
-    def __init__(self, config: HTTPConfig) -> None:
-        self._max_retries = config.max_retries
-        self._retry_base_delay = config.retry_base_delay
-        self._retry_max_delay = config.retry_max_delay
-        self._retry_backoff_factor = config.retry_backoff_factor
+    def __init__(self, settings: HTTPConfig) -> None:
+        self._max_retries = settings.max_retries
+        self._retry_base_delay = settings.retry_base_delay
+        self._retry_max_delay = settings.retry_max_delay
+        self._retry_backoff_factor = settings.retry_backoff_factor
 
         limits = httpx.Limits(
-            max_connections=config.max_connections,
-            max_keepalive_connections=config.max_keepalive_connections,
+            max_connections=settings.async_max_connections,
+            max_keepalive_connections=settings.async_max_keepalive_connections,
         )
 
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(config.timeout),
+            timeout=httpx.Timeout(settings.timeout),
             limits=limits,
-            headers={"user-agent": config.user_agent},
+            headers={"user-agent": settings.user_agent},
             follow_redirects=True,
         )
 
         logger.info(
             "AsyncHTTPManager initialized",
-            extra={
-                "timeout": config.timeout,
-                "max_connections": config.max_connections,
-                "max_retries": config.max_retries,
-                "retry_base_delay": config.retry_base_delay,
-                "retry_backoff_factor": config.retry_backoff_factor,
-            },
         )
 
     def _calculate_retry_delay(self, attempt: int) -> float:
@@ -288,33 +281,27 @@ class SyncHTTPManager:
     Primarily used for celery worker operations.
     """
 
-    def __init__(self, config: HTTPConfig) -> None:
-        self._max_retries = config.max_retries
-        self._retry_base_delay = config.retry_base_delay
-        self._retry_max_delay = config.retry_max_delay
-        self._retry_backoff_factor = config.retry_backoff_factor
+    def __init__(self, settings: HTTPConfig) -> None:
+        self._max_retries = settings.max_retries
+        self._retry_base_delay = settings.retry_base_delay
+        self._retry_max_delay = settings.retry_max_delay
+        self._retry_backoff_factor = settings.retry_backoff_factor
 
         limits = httpx.Limits(
-            max_connections=config.max_connections,
-            max_keepalive_connections=config.max_keepalive_connections,
+            max_connections=settings.sync_max_connections,
+            max_keepalive_connections=settings.sync_max_keepalive_connections,
+            keepalive_expiry=settings.sync_keepalive_expiry,
         )
 
         self._client = httpx.Client(
-            timeout=httpx.Timeout(config.timeout),
+            timeout=httpx.Timeout(settings.timeout),
             limits=limits,
-            headers={"user-agent": config.user_agent},
+            headers={"user-agent": settings.user_agent},
             follow_redirects=True,
         )
 
         logger.info(
             "SyncHTTPManager initialized",
-            extra={
-                "timeout": config.timeout,
-                "max_connections": config.max_connections,
-                "max_retries": config.max_retries,
-                "retry_base_delay": config.retry_base_delay,
-                "retry_backoff_factor": config.retry_backoff_factor,
-            },
         )
 
     def _calculate_retry_delay(self, attempt: int) -> float:

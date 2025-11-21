@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # ======================================================
 
 
-async def init_app(app: FastAPI, config: Environment | str) -> None:
+async def init_app(app: FastAPI, config: Environment | str | None = None) -> None:
     """
     Initialize FastAPI application with all required resources.
 
@@ -32,21 +32,21 @@ async def init_app(app: FastAPI, config: Environment | str) -> None:
     Raises:
         StartupError: If any initialization step fails
     """
-    # Normalize config to Environment enum
-    if isinstance(config, str):
-        env = EnvironmentMapper.normalize(config)
-    else:
+    # normalize config to Environment enum
+    if isinstance(config, Environment):
         env = config
+    else:
+        env = EnvironmentMapper.normalize(config)
 
     # configure logging first
     configure_logging(env)
     logger.info("Starting application initialization", extra={"config": env.value})
 
     # load settings
-    from core.config import get_settings
+    from core.config import load_settings
 
     try:
-        settings = get_settings(env)
+        settings = load_settings(env)
         app.state.settings = settings
         logger.info(
             "Settings loaded successfully",
@@ -74,9 +74,13 @@ async def init_app(app: FastAPI, config: Environment | str) -> None:
     # perform health checks
     try:
         await _health_check_infrastructure(app)
-        logger.info("All infrastructure health checks passed", extra={"config": env.value})
+        logger.info(
+            "All infrastructure health checks passed", extra={"config": env.value}
+        )
     except Exception as e:
-        logger.exception("Infrastructure health check failed", extra={"config": env.value})
+        logger.exception(
+            "Infrastructure health check failed", extra={"config": env.value}
+        )
         await _cleanup_infrastructure(app)
         raise StartupError(f"Health check failed: {e}") from e
 

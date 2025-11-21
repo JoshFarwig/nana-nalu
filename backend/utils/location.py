@@ -20,7 +20,7 @@ class LocationMapper:
         """Normalize location type and map to Enum"""
 
         # default to maui if no value exists for LOCATION
-        location = os.getenv("LOCATION", Location.MAUI.value)
+        location = location or os.getenv("LOCATION", Location.MAUI.value)
 
         normalized_location = cls._LOCATION_MAP.get(location.lower())
 
@@ -38,9 +38,9 @@ class LocationMapper:
         return cls.normalize(location) == Location.MAUI
 
 
-def get_location() -> Location:
+def get_location(location: str | None = None) -> Location:
     """Get current location from environment"""
-    return LocationMapper.normalize()
+    return LocationMapper.normalize(location)
 
 
 def is_maui() -> bool:
