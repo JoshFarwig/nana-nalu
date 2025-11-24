@@ -3,7 +3,7 @@ from core import SyncDatabaseManager, BaseConfig, load_settings
 from models.user_model import User
 from repositories import SyncUserRepository, SyncSurfSpotRepository
 from scripts.seed.seed_factory import SeedFactory
-from utils.location import get_location
+from utils.location import get_locations
 
 
 class SeedManager:
@@ -12,14 +12,7 @@ class SeedManager:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.db_manager = SyncDatabaseManager(settings.db)
 
-        self.location = get_location()
-
-        self.logger.info(
-            "SeedManager initialized",
-            extra={
-                "location": self.location.value,
-            },
-        )
+        self.logger.info("SeedManager initialized")
 
     def get_or_seed_admin(self) -> User:
         """Get existing admin user or seed admin user and return reference."""
@@ -56,7 +49,7 @@ class SeedManager:
                 return admin_user
 
     def seed_surf_spots(self, admin_user: User) -> None:
-        """Seed initial surf spots based on location configuration."""
+        """Seed initial surf spots based on enabled locations."""
 
         with self.db_manager.auto_commit_session() as session:
             surf_spot_repo = SyncSurfSpotRepository(session)
@@ -65,22 +58,19 @@ class SeedManager:
                 self.logger.info("Surf spots already exist")
                 return
 
-            try:
-                surf_spots = SeedFactory.get_surf_spots(self.location, admin_user)
-            except ValueError as e:
-                self.logger.exception(
-                    f"Failed to load seed data for location: {self.location.value}",
-                    extra={"error": str(e)},
-                )
-                raise
+            # Get all surf spots for all enabled locations
+            surf_spots = SeedFactory.get_all_surf_spots(admin_user)
+
+            if not surf_spots:
+                self.logger.warning("No surf spots loaded from any enabled location")
+                return
 
             session.add_all(surf_spots)
 
             self.logger.info(
-                f"Seeded {len(surf_spots)} surf spots for {self.location.value}",
+                f"Seeded {len(surf_spots)} surf spots across enabled locations",
                 extra={
                     "count": len(surf_spots),
-                    "location": self.location.value,
                     "created_by_id": admin_user.id,
                 },
             )

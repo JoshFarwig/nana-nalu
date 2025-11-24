@@ -9,11 +9,14 @@ from .env import (
 )
 from .location import (
     Location,
-    LocationMapper,
-    get_location,
-    is_maui,
+    get_locations,
 )
-from .geo import longitude_to_180, longitude_to_360
+from .geo import (
+    longitude_to_180,
+    longitude_to_360,
+    build_forecast_kdtree,
+    query_nearest_forecast_points,
+)
 
 __all__ = [
     # environment
@@ -26,10 +29,10 @@ __all__ = [
     "is_test",
     # location
     "Location",
-    "LocationMapper",
-    "get_location",
-    "is_maui",
+    "get_locations",
     # geo
     "longitude_to_180",
     "longitude_to_360",
+    "build_forecast_kdtree",
+    "query_nearest_forecast_points",
 ]

@@ -89,14 +89,10 @@ def shutdown_worker_managers(sender=None, **kwargs):
 
 
 def get_settings() -> BaseConfig:
-    if _settings is None:
-        raise RuntimeError("Settings not initialized")
     return _settings
 
 
 def get_location() -> Location:
-    if _location is None:
-        raise RuntimeError("Location not initialized")
     return _location
 
 

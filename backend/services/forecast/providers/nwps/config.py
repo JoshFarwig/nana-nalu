@@ -1,11 +1,13 @@
+import logging
 from datetime import datetime, date, time, timedelta, timezone
 from enum import Enum
 from functools import lru_cache
 from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from utils import Location, LocationMapper, longitude_to_360
+from utils import Location, get_locations, longitude_to_360
 
+logger = logging.getLogger(__name__)
 
 # =======================
 # CORE CONFIGURATIONS
@@ -246,19 +248,79 @@ NWPS_CONFIG_REGISTRY: dict[Location, type[NWPSModelConfig]] = {
 }
 
 
-@lru_cache()
-def get_nwps_config(location: Location | str | None = None) -> NWPSModelConfig:
-    if isinstance(location, Location):
-        normalized_location = location
-    else:
-        normalized_location = LocationMapper.normalize(location)
+def get_nwps_configs() -> dict[Location, NWPSGridConfig]:
+    enabled = get_locations()
+    configs = {}
 
-    if normalized_location not in NWPS_CONFIG_REGISTRY:
-        avialable = ", ".join(loc.value for loc in NWPS_CONFIG_REGISTRY.keys())
+    for location in enabled:
+        try:
+            configs[location] = get_nwps_config(location)
+        except ValueError as e:
+            logger.warning(
+                f"No NWPS configuration for enabled location {location.value}: {e}"
+            )
+
+    return configs
+
+
+def get_nwps_config(location: Location) -> NWPSModelConfig:
+    if location not in NWPS_CONFIG_REGISTRY:
+        valid_locations = ", ".join(loc.value for loc in NWPS_CONFIG_REGISTRY.keys())
         raise ValueError(
-            f"No NWPS configuration for location: {normalized_location}. "
-            f"Available: {avialable}"
+            f"No NWPS configuration for location: {location}. "
+            f"Does the configuration exist in the NWPS_CONFIG_REGISTRY? "
+            f"Valid location configurations are: {valid_locations}."
         )
 
-    config_cls = NWPS_CONFIG_REGISTRY[normalized_location]
+    config_cls = NWPS_CONFIG_REGISTRY[location]
     return config_cls()  # type: ignore[arg-type] all vars in NWPSModelConfig MUST be defined in their child classes
+
+
+def get_locations_by_analysis_time() -> dict[time, list[tuple[Location, NWPSModelConfig]]]:
+    """
+    Group enabled locations by their analysis times for beat scheduling.
+
+    Returns:
+        Dict mapping analysis_time → list of (location, config) tuples
+
+    Example:
+        {
+            time(0, 0, tzinfo=UTC): [(Location.MAUI, config), (Location.OAHU, config)],
+            time(6, 0, tzinfo=UTC): [(Location.OAHU, config)],
+            time(12, 0, tzinfo=UTC): [(Location.MAUI, config), (Location.OAHU, config)],
+        }
+    """
+    configs = get_nwps_configs()
+    grouped: dict[time, list[tuple[Location, NWPSModelConfig]]] = {}
+
+    for location, config in configs.items():
+        for analysis_time in config.model_analysis_times.values():
+            if analysis_time not in grouped:
+                grouped[analysis_time] = []
+            grouped[analysis_time].append((location, config))
+
+    return grouped
+
+
+def get_locations_for_analysis_time(analysis_time: time) -> list[tuple[Location, NWPSModelConfig]]:
+    """
+    Get all enabled locations that have NWPS data at a specific analysis time.
+
+    Args:
+        analysis_time: UTC time to check (must have tzinfo=timezone.utc)
+
+    Returns:
+        List of (location, config) tuples for locations with this analysis time
+
+    Example:
+        >>> get_locations_for_analysis_time(time(0, 0, tzinfo=timezone.utc))
+        [(Location.MAUI, config), (Location.OAHU, config)]
+    """
+    configs = get_nwps_configs()
+    locations_with_time = []
+
+    for location, config in configs.items():
+        if analysis_time in config.model_analysis_times.values():
+            locations_with_time.append((location, config))
+
+    return locations_with_time

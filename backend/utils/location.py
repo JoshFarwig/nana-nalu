@@ -7,41 +7,36 @@ logger = logging.getLogger(__name__)
 
 class Location(str, Enum):
     MAUI = "maui"
+    # OAHU = "oahu"
 
 
-class LocationMapper:
-    # normalization map
-    _LOCATION_MAP = {
-        "maui": Location.MAUI,
-    }
+def get_locations(locations_str: str | None = None) -> set[Location]:
+    if locations_str is None:
+        locations_str = os.getenv("LOCATIONS", "")
 
-    @classmethod
-    def normalize(cls, location: str | None = None) -> Location:
-        """Normalize location type and map to Enum"""
+    valid_locations = set()
+    invalid_locations = []
 
-        # default to maui if no value exists for LOCATION
-        location = location or os.getenv("LOCATION", Location.MAUI.value)
+    for loc in locations_str.split(","):
+        loc_clean = loc.strip().lower()
+        if not loc_clean:
+            continue
+        try:
+            valid_locations.add(Location(loc_clean))
+        except ValueError:
+            invalid_locations.append(loc_clean)
 
-        normalized_location = cls._LOCATION_MAP.get(location.lower())
+    if invalid_locations:
+        valid_locs = [loc.value for loc in Location]
+        logger.warning(
+            f"Ignoring invalid locations: {invalid_locations}. "
+            f"Valid locations: {valid_locs}"
+        )
 
-        if normalized_location is None:
-            raise ValueError(
-                f"Unknown location value: {location.lower()}. "
-                "Please pass a valid value: " + ", ".join(cls._LOCATION_MAP.keys())
-            )
+    if not valid_locations:
+        logger.warning("No valid locations configured. Defaulting to MAUI.")
+        valid_locations.add(Location.MAUI)
 
-        return normalized_location
+    logger.info(f"Enabled locations: {sorted([loc.value for loc in valid_locations])}")
 
-    @classmethod
-    def is_maui(cls, location: str | None = None) -> bool:
-        """Helper method to check if location is Maui"""
-        return cls.normalize(location) == Location.MAUI
-
-
-def get_location(location: str | None = None) -> Location:
-    """Get current location from environment"""
-    return LocationMapper.normalize(location)
-
-
-def is_maui() -> bool:
-    return LocationMapper.is_maui()
+    return valid_locations
