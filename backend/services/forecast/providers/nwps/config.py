@@ -248,7 +248,7 @@ NWPS_CONFIG_REGISTRY: dict[Location, type[NWPSModelConfig]] = {
 }
 
 
-def get_nwps_configs() -> dict[Location, NWPSGridConfig]:
+def get_nwps_configs() -> dict[Location, NWPSModelConfig]:
     enabled = get_locations()
     configs = {}
 
@@ -276,7 +276,9 @@ def get_nwps_config(location: Location) -> NWPSModelConfig:
     return config_cls()  # type: ignore[arg-type] all vars in NWPSModelConfig MUST be defined in their child classes
 
 
-def get_locations_by_analysis_time() -> dict[time, list[tuple[Location, NWPSModelConfig]]]:
+def get_locations_by_analysis_time() -> dict[
+    time, list[tuple[Location, NWPSModelConfig]]
+]:
     """
     Group enabled locations by their analysis times for beat scheduling.
 
@@ -302,7 +304,9 @@ def get_locations_by_analysis_time() -> dict[time, list[tuple[Location, NWPSMode
     return grouped
 
 
-def get_locations_for_analysis_time(analysis_time: time) -> list[tuple[Location, NWPSModelConfig]]:
+def get_locations_for_analysis_time(
+    analysis_time: time,
+) -> list[tuple[Location, NWPSModelConfig]]:
     """
     Get all enabled locations that have NWPS data at a specific analysis time.
 
@@ -316,6 +320,7 @@ def get_locations_for_analysis_time(analysis_time: time) -> list[tuple[Location,
         >>> get_locations_for_analysis_time(time(0, 0, tzinfo=timezone.utc))
         [(Location.MAUI, config), (Location.OAHU, config)]
     """
+
     configs = get_nwps_configs()
     locations_with_time = []
 

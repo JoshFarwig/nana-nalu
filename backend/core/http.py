@@ -18,20 +18,20 @@ def async_retry_on_failure(func):
         operation_name = func.__name__
         last_exception = None
 
-        for attempt in range(self._max_retries):
+        for attempt in range(self._max_attempts):
             try:
                 return await func(self, *args, **kwargs)
 
             except (httpx.NetworkError, httpx.TimeoutException) as e:
                 last_exception = e
-                if attempt < self._max_retries - 1:
+                if attempt < self._max_attempts - 1:
                     delay = self._calculate_retry_delay(attempt)
                     logger.warning(
                         "Network error, retrying",
                         extra={
                             "method": operation_name,
                             "attempt": attempt + 1,
-                            "max_retries": self._max_retries,
+                            "max_attempts": self._max_attempts,
                             "error": str(e),
                             "retry_delay": delay,
                         },
@@ -43,7 +43,7 @@ def async_retry_on_failure(func):
                         "Failed after retries",
                         extra={
                             "method": operation_name,
-                            "max_retries": self._max_retries,
+                            "max_attempts": self._max_attempts,
                             "error": str(e),
                         },
                     )
@@ -51,7 +51,7 @@ def async_retry_on_failure(func):
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code >= 500 or e.response.status_code == 429:
-                    if attempt < self._max_retries - 1:
+                    if attempt < self._max_attempts - 1:
                         delay = self._calculate_retry_delay(attempt)
                         logger.warning(
                             f"HTTP {e.response.status_code}, retrying",
@@ -59,7 +59,7 @@ def async_retry_on_failure(func):
                                 "method": operation_name,
                                 "status_code": e.response.status_code,
                                 "attempt": attempt + 1,
-                                "max_retries": self._max_retries,
+                                "max_attempts": self._max_attempts,
                                 "retry_delay": delay,
                             },
                         )
@@ -83,8 +83,11 @@ def async_retry_on_failure(func):
 
 
 class AsyncHTTPManager:
-    def __init__(self, settings: HTTPConfig) -> None:
-        self._max_retries = settings.max_retries
+    def __init__(self, settings: HTTPConfig, retry: bool = True) -> None:
+        if retry:
+            self._max_attempts = settings.max_attempts
+        else:
+            self._max_attempts = 1  # 1 attempt no retries
         self._retry_base_delay = settings.retry_base_delay
         self._retry_max_delay = settings.retry_max_delay
         self._retry_backoff_factor = settings.retry_backoff_factor
@@ -211,20 +214,20 @@ def sync_retry_on_failure(func):
         operation_name = func.__name__
         last_exception = None
 
-        for attempt in range(self._max_retries):
+        for attempt in range(self._max_attempts):
             try:
                 return func(self, *args, **kwargs)
 
             except (httpx.NetworkError, httpx.TimeoutException) as e:
                 last_exception = e
-                if attempt < self._max_retries - 1:
+                if attempt < self._max_attempts - 1:
                     delay = self._calculate_retry_delay(attempt)
                     logger.warning(
                         "Network error, retrying",
                         extra={
                             "method": operation_name,
                             "attempt": attempt + 1,
-                            "max_retries": self._max_retries,
+                            "max_attempts": self._max_attempts,
                             "error": str(e),
                             "retry_delay": delay,
                         },
@@ -236,7 +239,7 @@ def sync_retry_on_failure(func):
                         "Failed after retries",
                         extra={
                             "method": operation_name,
-                            "max_retries": self._max_retries,
+                            "max_attempts": self._max_attempts,
                             "error": str(e),
                         },
                     )
@@ -244,7 +247,7 @@ def sync_retry_on_failure(func):
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code >= 500 or e.response.status_code == 429:
-                    if attempt < self._max_retries - 1:
+                    if attempt < self._max_attempts - 1:
                         delay = self._calculate_retry_delay(attempt)
                         logger.warning(
                             f"HTTP {e.response.status_code}, retrying",
@@ -252,7 +255,7 @@ def sync_retry_on_failure(func):
                                 "method": operation_name,
                                 "status_code": e.response.status_code,
                                 "attempt": attempt + 1,
-                                "max_retries": self._max_retries,
+                                "max_attempts": self._max_attempts,
                                 "retry_delay": delay,
                             },
                         )
@@ -281,8 +284,11 @@ class SyncHTTPManager:
     Primarily used for celery worker operations.
     """
 
-    def __init__(self, settings: HTTPConfig) -> None:
-        self._max_retries = settings.max_retries
+    def __init__(self, settings: HTTPConfig, retry: bool = True) -> None:
+        if retry:
+            self._max_attempts = settings.max_attempts
+        else:
+            self._max_attempts = 1  # 1 attempt no retries
         self._retry_base_delay = settings.retry_base_delay
         self._retry_max_delay = settings.retry_max_delay
         self._retry_backoff_factor = settings.retry_backoff_factor

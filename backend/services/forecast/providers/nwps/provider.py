@@ -64,7 +64,7 @@ class NWPSProvider:
             is_active=True,
         )
 
-        # open dataset in thread pool to avoid blocking event loop (grib2 parsing can be slow)
+        # open dataset (grib2 parsing can be slow)
         ds = xr.open_dataset(
             str(file_path), engine="cfgrib", filter_by_keys={"dataType": "fc"}
         )
@@ -226,13 +226,13 @@ class NWPSProvider:
 
         # build dictionary for each spot
         for i, spot_id in enumerate(spot_ids):
-            forecasts[str(spot_id)] = {
+            forecasts[int(spot_id)] = {
                 "spot_id": int(spot_id),
-                "spot_latitude": float(spot_lats[i]),
-                "spot_longitude": float(spot_lons[i]),
-                "selected_latitude": float(selected_lats[i]),
-                "selected_longitude": float(selected_lons[i]),
-                "distance_km": float(distances[i]),
+                "grid_metadata": {
+                    "selected_lat": float(selected_lats[i]),
+                    "selected_lon": float(selected_lons[i]),
+                    "distance_km": float(distances[i]),
+                },
                 "analysis_time": analysis_time,
                 "valid_times": valid_times,
                 "data": {var: data_arrays[var][i].tolist() for var in data_vars},

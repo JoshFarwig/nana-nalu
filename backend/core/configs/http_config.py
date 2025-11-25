@@ -9,7 +9,7 @@ class HTTPConfig(BaseModel):
     user_agent: str = "Agent"  # TODO: Make user_agent for http client
     timeout: float = 30.0
 
-    max_retries: int = 3
+    max_attempts: int = 3
 
     # async http manager settings
     # used for fastapi

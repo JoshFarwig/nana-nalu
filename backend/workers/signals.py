@@ -18,8 +18,8 @@ class WorkerManagers:
     http: SyncHTTPManager
 
 
-# Global (process scoped) managers
-# Settings and location loaded at module import (before fork)
+# hlobal (process scoped) managers
+# settings and location loaded at module import (before fork)
 _managers: WorkerManagers | None = None
 _settings: BaseConfig = load_settings()
 _location: Location = get_location()
@@ -51,10 +51,10 @@ def init_worker_managers(sender=None, **kwargs):
     _managers = WorkerManagers(
         db=SyncDatabaseManager(_settings.db),
         redis=SyncRedisManager(_settings.redis, _settings.redis.get_cache_url()),
-        http=SyncHTTPManager(_settings.http),
+        http=SyncHTTPManager(_settings.http, retry=False),
     )
 
-    # Health checks
+    # health checks
     if not _managers.db.health_check():
         logger.error("Database health check failed on worker init")
     if not _managers.redis.health_check():

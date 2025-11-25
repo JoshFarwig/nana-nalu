@@ -34,7 +34,7 @@ def get_locations(locations_str: str | None = None) -> set[Location]:
         )
 
     if not valid_locations:
-        logger.warning("No valid locations configured. Defaulting to MAUI.")
+        logger.warning("No valid locations configured. Defaulting to maui.")
         valid_locations.add(Location.MAUI)
 
     logger.info(f"Enabled locations: {sorted([loc.value for loc in valid_locations])}")
