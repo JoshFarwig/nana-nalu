@@ -1,0 +1,47 @@
+# Focker Compose for integration tests
+# usage: docker compose -f docker-compose.test.yml up -d
+
+services:
+  test-db:
+    build:
+      context: ./db
+      dockerfile: Dockerfile.postgis
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_nana_nalu
+    ports:
+      - "5433:5432"  # different port to avoid conflicts with dev DB
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: |
+        psql -U test_user -d test_nana_nalu \
+        -c "SELECT 1" > /dev/null || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks: [test_network]
+
+  test-redis:
+    build:
+      context: ./redis
+      dockerfile: Dockerfile.redis
+    environment:
+      REDIS__PASSWORD: test_redis_password
+    ports:
+      - "6380:6379"  # different port to avoid conflicts
+    healthcheck:
+      test: |
+        REDISCLI_AUTH=test_redis_password redis-cli SET hc ok EX 10 && \
+        REDISCLI_AUTH=test_redis_password redis-cli GET hc | grep -q ok || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks: [test_network]
+
+networks:
+  test_network:
+    driver: bridge

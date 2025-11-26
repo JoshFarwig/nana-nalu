@@ -10,8 +10,8 @@
 # async setups such that a single fetch for a provider is a seperate task,
 # really didn't make much sense for the overhead and complexity.
 
-from user_repository import AsyncUserRepository, SyncUserRepository
-from surf_spot_repository import AsyncSurfSpotRepository, SyncSurfSpotRepository
+from .user_repository import AsyncUserRepository, SyncUserRepository
+from .surf_spot_repository import AsyncSurfSpotRepository, SyncSurfSpotRepository
 
 
 __all__ = [

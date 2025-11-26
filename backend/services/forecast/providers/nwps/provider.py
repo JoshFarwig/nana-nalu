@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import time, date, datetime, timezone
 from pathlib import Path
 import logging
 import xarray as xr
@@ -6,12 +6,16 @@ import numpy as np
 
 from core.http import SyncHTTPManager
 from repositories.surf_spot_repository import SyncSurfSpotRepository
-from services.forecast.providers.nwps.config import NWPSModelConfig
+from services.forecast.providers.nwps.config import (
+    NWPSModelConfig,
+    NWPS_CONFIG_REGISTRY,
+)
 from utils.geo import (
     longitude_to_360,
     build_forecast_kdtree,
     query_nearest_forecast_points,
 )
+from utils.location import Location
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +23,9 @@ logger = logging.getLogger(__name__)
 class NWPSProvider:
     provider_name: str = "NWPS"
     processing_mode: str = "file"
-    file_path: str = "/tmp/nwps/"
+    file_path: str = (
+        "/tmp/nwps/"  # TODO: consider changing to tmp/nwps/ instead for os level dir
+    )
 
     def __init__(
         self,
@@ -31,12 +37,31 @@ class NWPSProvider:
         self.http_manager = http_manager
         self.surf_spot_repo = surf_spot_repo
 
-    def download_file(self, analysis_time: time) -> Path:
+    @classmethod
+    def supports_location(cls, location: Location) -> bool:
+        """
+        check if NWPS has configuration for the given location.
+
+        returns True if location is in NWPS_CONFIG_REGISTRY, False otherwise.
+        """
+        return location in NWPS_CONFIG_REGISTRY
+
+    def download_file(
+        self, analysis_time: time, forecast_date: date | None = None
+    ) -> Path:
         """Download the GRIB2 file from the NWPS model configuration with streaming"""
 
-        url = self.config.construct_grib_filter_url(analysis_time)
-        filename = self.config.construct_filename(analysis_time)
-        file_path = Path(self.file_path) / filename
+        if forecast_date is None:
+            forecast_date = datetime.now(timezone.utc).date()
+
+        url = self.config.construct_grib_filter_url(analysis_time, forecast_date)
+        filename = self.config.construct_filename(analysis_time, forecast_date)
+
+        # ensure download directory exists
+        download_dir = Path(self.file_path)
+        download_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = download_dir / filename
 
         # NOTE: using 512KB chunks for grib files of 20-30MB
         self.http_manager.download_stream(

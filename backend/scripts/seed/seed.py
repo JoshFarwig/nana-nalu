@@ -3,7 +3,7 @@ from core import SyncDatabaseManager, BaseConfig, load_settings
 from models.user_model import User
 from repositories import SyncUserRepository, SyncSurfSpotRepository
 from scripts.seed.seed_factory import SeedFactory
-from utils.location import get_locations
+from utils.location import load_locations
 
 
 class SeedManager:

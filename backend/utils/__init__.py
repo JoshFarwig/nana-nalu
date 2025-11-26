@@ -9,7 +9,7 @@ from .env import (
 )
 from .location import (
     Location,
-    get_locations,
+    load_locations,
 )
 from .geo import (
     longitude_to_180,
@@ -29,7 +29,7 @@ __all__ = [
     "is_test",
     # location
     "Location",
-    "get_locations",
+    "load_locations",
     # geo
     "longitude_to_180",
     "longitude_to_360",

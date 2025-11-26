@@ -10,7 +10,7 @@ class Location(str, Enum):
     # OAHU = "oahu"
 
 
-def get_locations(locations_str: str | None = None) -> set[Location]:
+def load_locations(locations_str: str | None = None) -> set[Location]:
     if locations_str is None:
         locations_str = os.getenv("LOCATIONS", "")
 

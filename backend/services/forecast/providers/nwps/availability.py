@@ -60,7 +60,6 @@ class NWPSAvailabilityChecker:
 
             current -= timedelta(hours=1)
 
-        # Log appropriate message based on search window used
         if last_run_time:
             logger.warning(
                 f"[NWPS] No new runs found since last run at {last_run_time.isoformat()}"

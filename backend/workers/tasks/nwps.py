@@ -9,13 +9,14 @@ from workers.signals import (
     get_db_manager,
     get_redis_manager,
     get_http_manager,
+    get_worker_locations,
 )
 
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 from services.forecast.providers.nwps.provider import NWPSProvider
 from services.forecast.providers.nwps.config import get_nwps_config
 from services.forecast.providers.nwps.availability import NWPSAvailabilityChecker
-from utils.location import Location, get_locations
+from utils.location import Location
 
 logger = logging.getLogger(__name__)
 
@@ -42,36 +43,61 @@ def fetch_all_nwps_forecasts():
     Parent dispatcher task that checks all enabled locations for new NWPS data.
 
     Spawns one child task per location to check availability and fetch if new data exists.
+    Gracefully skips locations that don't have NWPS configuration.
+
     Designed for periodic polling - frequency depends on WFO run schedule:
     - HFO (Hawaii): 2x daily polls for unpredictable 2x daily runs (e.g., 7:00 & 17:00 UTC)
     - Other WFOs: Adjust beat schedule to match their analysis time intervals (3hr, 6hr, etc.)
 
     Retry logic is hardcoded: 3 retries × 1hr for "no data", 3 retries × 5min for network errors.
     """
-    locations = get_locations()
+    from services.forecast.providers.nwps.provider import NWPSProvider
+
+    locations = get_worker_locations()
 
     if not locations:
         logger.warning("[NWPS] No enabled locations found")
         return {"locations_dispatched": 0}
 
+    # Filter to only locations supported by NWPS
+    supported_locations = [
+        loc for loc in locations if NWPSProvider.supports_location(loc)
+    ]
+
+    if not supported_locations:
+        logger.warning(
+            "[NWPS] No NWPS configurations found for enabled locations",
+            extra={"enabled_locations": [loc.value for loc in locations]},
+        )
+        return {"locations_dispatched": 0, "locations_skipped": len(locations)}
+
+    # Log skipped locations
+    skipped = set(locations) - set(supported_locations)
+    if skipped:
+        logger.info(
+            "[NWPS] Skipping locations without NWPS configuration",
+            extra={"skipped_locations": [loc.value for loc in skipped]},
+        )
+
     job = group(
         check_and_fetch_if_new.si(loc)  # type: ignore
-        for loc in locations
+        for loc in supported_locations
     )
 
     result = job.apply_async()
 
     logger.info(
-        f"[NWPS] Dispatched {len(locations)} polling tasks",
+        f"[NWPS] Dispatched {len(supported_locations)} polling tasks",
         extra={
-            "locations": [loc.value for loc in locations],
+            "locations": [loc.value for loc in supported_locations],
             "group_id": result.id,
         },
     )
 
     return {
-        "locations_dispatched": len(locations),
-        "locations": [loc.value for loc in locations],
+        "locations_dispatched": len(supported_locations),
+        "locations_skipped": len(skipped),
+        "locations": [loc.value for loc in supported_locations],
         "group_id": result.id,
     }
 
@@ -102,7 +128,7 @@ def check_and_fetch_if_new(self, loc: Location):
 
     config = get_nwps_config(loc)
 
-    # Get the last run timestamp from Redis to optimize search window
+    # get the last run timestamp from Redis to optimize search window
     last_run_key = f"nwps:{loc.value}:last_run"
     last_run_id = redis_manager.client.get(last_run_key)
 
@@ -172,7 +198,7 @@ def check_and_fetch_if_new(self, loc: Location):
 
         try:
             # download and extract
-            file_path = provider.download_file(analysis_time)
+            file_path = provider.download_file(analysis_time, forecast_date)
             forecasts = provider.extract_forecasts(file_path)
 
             # store in Redis

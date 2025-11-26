@@ -2,6 +2,8 @@ from datetime import datetime, time
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 
+from utils.location import Location
+
 if TYPE_CHECKING:
     from models import SurfSpot
 
@@ -10,6 +12,16 @@ class ForecastProvider(Protocol):
     """Base protocol for all forecast providers."""
 
     provider_name: str
+
+    @classmethod
+    def supports_location(cls, location: Location) -> bool:
+        """
+        Check if this provider has configuration for the given location.
+
+        Returns:
+            True if provider can fetch data for this location, False otherwise.
+        """
+        ...
 
     def is_available_for_spot(self, spot: SurfSpot) -> bool:
         """Check if this provider can generate forecasts for the given spot."""

@@ -62,7 +62,7 @@ class AsyncDatabaseManager:
             self._session_factory = self._create_session_factory()
         return self._session_factory
 
-    async def get_explicit_commit_session(self) -> AsyncGenerator[AsyncSession]:
+    async def get_explicit_commit_session(self) -> AsyncGenerator[AsyncSession, None]:
         """
         Issue out session via generator and expect EXPLICIT commits.
 
@@ -91,7 +91,7 @@ class AsyncDatabaseManager:
                 raise
 
     @asynccontextmanager
-    async def explicit_commit_session(self) -> AsyncGenerator[AsyncSession]:
+    async def explicit_commit_session(self) -> AsyncGenerator[AsyncSession, None]:
         """
         Issue out a context manager for the session and expect EXPLICIT commits.
         """
@@ -103,7 +103,7 @@ class AsyncDatabaseManager:
                 raise
 
     @asynccontextmanager
-    async def auto_commit_session(self) -> AsyncGenerator[AsyncSession]:
+    async def auto_commit_session(self) -> AsyncGenerator[AsyncSession, None]:
         """
         Issue out a context manager for the session and autocommit the entire transaction.
         """
@@ -178,7 +178,7 @@ class SyncDatabaseManager:
         return self._session_factory
 
     @contextmanager
-    def explicit_commit_session(self) -> Generator[Session]:
+    def explicit_commit_session(self) -> Generator[Session, None, None]:
         """
         Issue out a context manager for the session and expect EXPLICIT commits.
         """
@@ -190,7 +190,7 @@ class SyncDatabaseManager:
                 raise
 
     @contextmanager
-    def auto_commit_session(self) -> Generator[Session]:
+    def auto_commit_session(self) -> Generator[Session, None, None]:
         """
         Issue out a context manager for the session and autocommit the entire transaction.
         """

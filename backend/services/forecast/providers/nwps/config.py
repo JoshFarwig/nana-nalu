@@ -4,7 +4,7 @@ from enum import Enum
 from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from utils import Location, get_locations, longitude_to_360
+from utils import Location, load_locations, longitude_to_360
 
 logger = logging.getLogger(__name__)
 
@@ -59,17 +59,17 @@ class NWPSModelConfig(BaseModel):
     wfo: WFO
 
     # NOTE: NWPS model run times are highly variable and unpredictable
-    # - Model completions usually take 1-1.5hrs after start time
-    # - Start times vary by WFO due to model dependencies (WW3, wind grids, etc.)
-    # - Example: HFO's "00z" run may start at 06:52 UTC and complete at 08:03 UTC
-    # - This is why we use polling + availability checking instead of fixed schedules
+    # model completions usually take 1-1.5hrs after start time,
+    # start times vary by WFO due to model dependencies (WW3, wind grids, etc.).
+    # example: HFO's "00z" run may start at 06:52 UTC and complete at 08:03 UTC.
+    # this is why we use polling + availability checking instead of fixed schedules.
 
     # NOTE: NWPS provides a status file for monitoring:
     # https://www.nco.ncep.noaa.gov/pmb/spa/nwps/status_file.txt
-    # Can be used for additional run status verification if needed
+    # can be used for additional run status verification if needed
 
-    # Maximum age of forecast data to accept before considering it stale
-    # Used by polling system to skip fetching old runs
+    # maximum age of forecast data to accept before considering it stale
+    # used by polling system to skip fetching old runs
     max_forecast_age_hours: int = 8
 
     grib_filter_base_url: str
@@ -126,7 +126,7 @@ class NWPSModelConfig(BaseModel):
         return levels
 
     def _prepare_filename_components(
-        self, analysis_time: time, forecast_date: date | None = None
+        self, analysis_time: time, forecast_date: date
     ) -> tuple[str, str, str, str]:
         """
         Prepare common components needed for filename and URL construction.
@@ -134,8 +134,6 @@ class NWPSModelConfig(BaseModel):
         Returns:
             tuple of (date_str, analysis_time_str, analysis_time_hour, filename)
         """
-        if forecast_date is None:
-            forecast_date = datetime.now(timezone.utc).date()
 
         date_str = forecast_date.strftime("%Y%m%d")
         analysis_time_str = analysis_time.strftime("%H%M")
@@ -147,16 +145,14 @@ class NWPSModelConfig(BaseModel):
 
         return date_str, analysis_time_str, analysis_time_hour, filename
 
-    def construct_filename(
-        self, analysis_time: time, forecast_date: date | None = None
-    ) -> str:
+    def construct_filename(self, analysis_time: time, forecast_date: date) -> str:
         _, _, _, filename = self._prepare_filename_components(
             analysis_time, forecast_date
         )
         return filename
 
     def construct_grib_filter_url(
-        self, analysis_time: time, forecast_date: date | None = None
+        self, analysis_time: time, forecast_date: date
     ) -> str:
         date_str, _, analysis_time_hour, filename = self._prepare_filename_components(
             analysis_time, forecast_date
@@ -203,10 +199,10 @@ class NWPSMauiModelConfig(NWPSModelConfig):
     wfo: WFO = WFO.HONOLULU
 
     # NOTE: HFO runs twice daily but at highly unpredictable times
-    # Observed patterns: early run finishes ~7-9:30 UTC, late run finishes ~17-20 UTC
-    # Polling system checks 3x daily to catch both runs regardless of timing
+    # observed patterns: early run finishes ~7-9:30 UTC, late run finishes ~17-20 UTC
+    # polling system checks 3x daily to catch both runs regardless of timing
 
-    # Maximum age of forecast data to accept
+    # maximum age of forecast data to accept
     # HFO runs twice daily (~12h gaps), so 18h allows for one missed run + buffer
     max_forecast_age_hours: int = 18
 
@@ -215,7 +211,7 @@ class NWPSMauiModelConfig(NWPSModelConfig):
     filename_pattern: str = "{wfo}_nwps_{cg}_{date}_{time}.grib2"
     region: str = "pr"
     params: list[str] = ["all_var"]
-    levels: list[str] = ["surface"]
+    levels: list[str] = ["lev_surface"]
     grid: NWPSGridConfig = NWPSMauiGridConfig()
 
 
@@ -229,7 +225,7 @@ NWPS_CONFIG_REGISTRY: dict[Location, type[NWPSModelConfig]] = {
 
 
 def get_nwps_configs() -> dict[Location, NWPSModelConfig]:
-    enabled = get_locations()
+    enabled = load_locations()
     configs = {}
 
     for location in enabled:
@@ -254,5 +250,3 @@ def get_nwps_config(location: Location) -> NWPSModelConfig:
 
     config_cls = NWPS_CONFIG_REGISTRY[location]
     return config_cls()  # type: ignore[arg-type] all vars in NWPSModelConfig MUST be defined in their child classes
-
-

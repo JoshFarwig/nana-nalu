@@ -1,7 +1,7 @@
 import logging
 from models.user_model import User
 from models.surf_spot_model import SurfSpot
-from utils.location import Location, get_locations
+from utils.location import Location, load_locations
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class SeedFactory:
         """
         cls._initialize_seed_map()
 
-        enabled_locations = get_locations()
+        enabled_locations = load_locations()
         all_spots = []
 
         for location in enabled_locations:

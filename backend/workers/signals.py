@@ -6,7 +6,7 @@ from core import SyncDatabaseManager, SyncRedisManager, SyncHTTPManager, load_se
 from core.config import BaseConfig
 from core.logging import configure_logging
 
-from utils.location import Location, get_location
+from utils.location import Location, load_locations
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +18,11 @@ class WorkerManagers:
     http: SyncHTTPManager
 
 
-# hlobal (process scoped) managers
-# settings and location loaded at module import (before fork)
+# global (process scoped) managers
+# settings and locations loaded at module import (before fork)
 _managers: WorkerManagers | None = None
 _settings: BaseConfig = load_settings()
-_location: Location = get_location()
+_locations: set[Location] = load_locations()
 
 
 @signals.setup_logging.connect
@@ -88,12 +88,12 @@ def shutdown_worker_managers(sender=None, **kwargs):
         logger.info("Worker managers shutdown complete")
 
 
-def get_settings() -> BaseConfig:
+def get_worker_settings() -> BaseConfig:
     return _settings
 
 
-def get_location() -> Location:
-    return _location
+def get_worker_locations() -> set[Location]:
+    return _locations
 
 
 def get_worker_managers() -> WorkerManagers:
