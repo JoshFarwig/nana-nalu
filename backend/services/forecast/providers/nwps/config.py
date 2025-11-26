@@ -1,7 +1,6 @@
 import logging
-from datetime import datetime, date, time, timedelta, timezone
+from datetime import datetime, date, time, timezone
 from enum import Enum
-from functools import lru_cache
 from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -12,14 +11,6 @@ logger = logging.getLogger(__name__)
 # =======================
 # CORE CONFIGURATIONS
 # =======================
-
-
-def ensure_utc(t: time) -> time:
-    if t.tzinfo is None:
-        raise ValueError("Time must include tzinfo=timezone.utc")
-    if t.tzinfo != timezone.utc:
-        raise ValueError("Time must be UTC")
-    return t
 
 
 class WFO(str, Enum):
@@ -67,20 +58,19 @@ class NWPSModelConfig(BaseModel):
 
     wfo: WFO
 
-    # NOTE: model time completions are semi-variable, usually take an 1-1.5hrs
-    # to complete after start time. actual start time is extremely variable per WFO.
-    # each WFO has different start times due to model dependencies i.e. WWW3, a wfo's wind grid, etc.
-    # for example, HFO model set to 00 analysis time ~ 2pm HST starts at 06:52 UTC
-    # ~ 9pm HST and completes at 08:03 UTC ~ 10pm HST
+    # NOTE: NWPS model run times are highly variable and unpredictable
+    # - Model completions usually take 1-1.5hrs after start time
+    # - Start times vary by WFO due to model dependencies (WW3, wind grids, etc.)
+    # - Example: HFO's "00z" run may start at 06:52 UTC and complete at 08:03 UTC
+    # - This is why we use polling + availability checking instead of fixed schedules
 
-    # NOTE: NWPS does include a status file as:
+    # NOTE: NWPS provides a status file for monitoring:
     # https://www.nco.ncep.noaa.gov/pmb/spa/nwps/status_file.txt
-    # for each WFO. So if needed, can pull from this for the WFO code and check
-    # the tags to see some more status on the model runs.
+    # Can be used for additional run status verification if needed
 
-    model_analysis_times: dict[str, time]
-    model_long_wait_time: timedelta
-    model_short_wait_time: timedelta
+    # Maximum age of forecast data to accept before considering it stale
+    # Used by polling system to skip fetching old runs
+    max_forecast_age_hours: int = 8
 
     grib_filter_base_url: str
 
@@ -121,11 +111,6 @@ class NWPSModelConfig(BaseModel):
     levels: list[str]
     grid: NWPSGridConfig
 
-    @field_validator("model_analysis_times", mode="before")
-    @classmethod
-    def validate_model_analysis_times(cls, times):
-        return [ensure_utc(time) for time in times]
-
     @field_validator("params")
     @classmethod
     def validate_params(cls, params: list[str]) -> list[str]:
@@ -151,11 +136,6 @@ class NWPSModelConfig(BaseModel):
         """
         if forecast_date is None:
             forecast_date = datetime.now(timezone.utc).date()
-
-        if analysis_time not in self.model_analysis_times.values():
-            raise ValueError(
-                f"analysis_time {analysis_time} not in configured model_analysis_times_times: {self.model_analysis_times}"
-            )
 
         date_str = forecast_date.strftime("%Y%m%d")
         analysis_time_str = analysis_time.strftime("%H%M")
@@ -222,13 +202,13 @@ class NWPSMauiModelConfig(NWPSModelConfig):
 
     wfo: WFO = WFO.HONOLULU
 
-    model_analysis_times: dict[str, time] = {
-        "00": time(0, 0, tzinfo=timezone.utc),
-        "12": time(12, 0, tzinfo=timezone.utc),
-    }
+    # NOTE: HFO runs twice daily but at highly unpredictable times
+    # Observed patterns: early run finishes ~7-9:30 UTC, late run finishes ~17-20 UTC
+    # Polling system checks 3x daily to catch both runs regardless of timing
 
-    model_long_wait_time: timedelta = timedelta(hours=6, minutes=30)
-    model_short_wait_time: timedelta = timedelta(minutes=10)
+    # Maximum age of forecast data to accept
+    # HFO runs twice daily (~12h gaps), so 18h allows for one missed run + buffer
+    max_forecast_age_hours: int = 18
 
     max_nearest_neighbor_distance_km: float = 2.0
     grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl"
@@ -276,56 +256,3 @@ def get_nwps_config(location: Location) -> NWPSModelConfig:
     return config_cls()  # type: ignore[arg-type] all vars in NWPSModelConfig MUST be defined in their child classes
 
 
-def get_locations_by_analysis_time() -> dict[
-    time, list[tuple[Location, NWPSModelConfig]]
-]:
-    """
-    Group enabled locations by their analysis times for beat scheduling.
-
-    Returns:
-        Dict mapping analysis_time → list of (location, config) tuples
-
-    Example:
-        {
-            time(0, 0, tzinfo=UTC): [(Location.MAUI, config), (Location.OAHU, config)],
-            time(6, 0, tzinfo=UTC): [(Location.OAHU, config)],
-            time(12, 0, tzinfo=UTC): [(Location.MAUI, config), (Location.OAHU, config)],
-        }
-    """
-    configs = get_nwps_configs()
-    grouped: dict[time, list[tuple[Location, NWPSModelConfig]]] = {}
-
-    for location, config in configs.items():
-        for analysis_time in config.model_analysis_times.values():
-            if analysis_time not in grouped:
-                grouped[analysis_time] = []
-            grouped[analysis_time].append((location, config))
-
-    return grouped
-
-
-def get_locations_for_analysis_time(
-    analysis_time: time,
-) -> list[tuple[Location, NWPSModelConfig]]:
-    """
-    Get all enabled locations that have NWPS data at a specific analysis time.
-
-    Args:
-        analysis_time: UTC time to check (must have tzinfo=timezone.utc)
-
-    Returns:
-        List of (location, config) tuples for locations with this analysis time
-
-    Example:
-        >>> get_locations_for_analysis_time(time(0, 0, tzinfo=timezone.utc))
-        [(Location.MAUI, config), (Location.OAHU, config)]
-    """
-
-    configs = get_nwps_configs()
-    locations_with_time = []
-
-    for location, config in configs.items():
-        if analysis_time in config.model_analysis_times.values():
-            locations_with_time.append((location, config))
-
-    return locations_with_time

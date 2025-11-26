@@ -149,8 +149,6 @@ class NWPSProvider:
         forecasts = self._build_forecast_dict(
             spot_forecast,
             valid_spot_ids,
-            valid_spot_lats,
-            valid_spot_lons,
             valid_selected_lats,
             valid_selected_lons,
             valid_distances,
@@ -200,8 +198,6 @@ class NWPSProvider:
         self,
         spot_forecast: xr.Dataset,
         spot_ids: np.ndarray,
-        spot_lats: np.ndarray,
-        spot_lons: np.ndarray,
         selected_lats: np.ndarray,
         selected_lons: np.ndarray,
         distances: np.ndarray,

@@ -1,24 +1,6 @@
-"""
-NWPS (NOAA Wave Prediction System) forecast tasks.
-
-Architecture:
-- Parent task: Dispatches island-specific downloads for a given analysis time
-- Child task: Downloads GRIB2 for one island, handles 404s with adaptive retry
-
-Each island's NWPS grid has:
-- model_analysis_times: When NOAA runs the model (e.g., 00z, 12z)
-- model_long_wait_time: Expected processing time (e.g., 6.5 hours after analysis start)
-- model_short_wait_time: Retry interval if GRIB2 not ready (e.g., 10 minutes)
-
-Workflow:
-1. Beat scheduler triggers at analysis_time + long_wait_time
-2. Parent task groups islands with same analysis time
-3. Child tasks download GRIB2 per island, retry with short_wait_time on 404
-"""
-
 import logging
 import json
-from datetime import timedelta, timezone, time
+from datetime import timedelta, timezone, datetime
 
 from celery import shared_task, group
 from httpx import HTTPStatusError, NetworkError, TimeoutException
@@ -31,171 +13,231 @@ from workers.signals import (
 
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 from services.forecast.providers.nwps.provider import NWPSProvider
-from services.forecast.providers.nwps.config import (
-    get_nwps_config,
-    get_locations_for_analysis_time,
-)
-from utils.location import Location
+from services.forecast.providers.nwps.config import get_nwps_config
+from services.forecast.providers.nwps.availability import NWPSAvailabilityChecker
+from utils.location import Location, get_locations
 
 logger = logging.getLogger(__name__)
 
 
 # =======================
-# EXCEPTION CLASSES
+# CUSTOM EXCEPTIONS
 # =======================
 
 
-class NWPSGRIB2NotReadyError(Exception):
-    """Raised when GRIB2 file returns 404 (not ready yet on NOMADS)."""
+class NoNewRunAvailable(Exception):
+    """Raised when NOMADS has no new NWPS run available yet (not an error, just early)"""
 
     pass
 
 
 # =========================
 # PARENT TASK - DISPATCHER
-# =======================
+# =========================
 
 
 @shared_task
-def fetch_nwps_forecasts_for_analysis_time(analysis_hour: int):
+def fetch_all_nwps_forecasts():
     """
-    Parent task: Dispatch NWPS downloads for all configured locations with this analysis time.
+    Parent dispatcher task that checks all enabled locations for new NWPS data.
 
-    Called by beat scheduler at analysis_time + long_wait_time.
-    Uses group() with .si() to fan out to independent child tasks.
+    Spawns one child task per location to check availability and fetch if new data exists.
+    Designed for periodic polling - frequency depends on WFO run schedule:
+    - HFO (Hawaii): 2x daily polls for unpredictable 2x daily runs (e.g., 7:00 & 17:00 UTC)
+    - Other WFOs: Adjust beat schedule to match their analysis time intervals (3hr, 6hr, etc.)
 
-    Args:
-        analysis_hour: UTC hour (0-23) of the model analysis time
-
-    Returns:
-        dict: Summary with locations dispatched and task group ID
+    Retry logic is hardcoded: 3 retries × 1hr for "no data", 3 retries × 5min for network errors.
     """
-    analysis_time = time(analysis_hour, 0, tzinfo=timezone.utc)
-    locations = get_locations_for_analysis_time(analysis_time)
+    locations = get_locations()
 
     if not locations:
-        logger.warning(
-            f"[NWPS] No location configurations found for analysis time: {analysis_time.strftime('%H:%M %Z')}",
-            extra={"analysis_time": analysis_time.isoformat()},
-        )
+        logger.warning("[NWPS] No enabled locations found")
         return {"locations_dispatched": 0}
 
     job = group(
-        add_nwps_forecast.si(loc, analysis_hour)  # type: ignore[misc]
-        for loc, _ in locations
+        check_and_fetch_if_new.si(loc)  # type: ignore
+        for loc in locations
     )
 
     result = job.apply_async()
 
     logger.info(
-        f"[NWPS] Dispatched {len(locations)} tasks for {analysis_hour:02d}z",
+        f"[NWPS] Dispatched {len(locations)} polling tasks",
         extra={
-            "locations": [loc.value for loc, _ in locations],
+            "locations": [loc.value for loc in locations],
             "group_id": result.id,
         },
     )
 
     return {
         "locations_dispatched": len(locations),
-        "locations": [loc.value for loc, _ in locations],
+        "locations": [loc.value for loc in locations],
         "group_id": result.id,
     }
 
 
-# =======================
-# Child task:
-# =======================
+# =========================
+# CHILD TASK - PER LOCATION
+# =========================
 
 
-@shared_task(
-    bind=True,
-    max_retries=5,
-    time_limit=300,
-    soft_time_limit=270,
-)
-def add_nwps_forecast(
-    self,
-    loc: Location,
-    analysis_hour: int,
-):
+@shared_task(bind=True, max_retries=3)
+def check_and_fetch_if_new(self, loc: Location):
+    """
+    Poll NOMADS for new NWPS data and fetch if available.
+
+    Handles unpredictable NWPS run schedules by:
+    1. Checking what's actually available on NOMADS (via HEAD requests)
+    2. Comparing to what we already have cached in Redis
+    3. Fetching only if there's new data and it's not too old
+
+    Retry strategy (intelligent based on failure type):
+    - No new run available: Retry 3x with 1hr intervals (model likely still running)
+    - Network/download errors: Retry 3x with 5min intervals (transient failures)
+    - Already current or too old: Exit immediately, no retry needed
+    """
     db_manager = get_db_manager()
     redis_manager = get_redis_manager()
     http_manager = get_http_manager()
+
     config = get_nwps_config(loc)
 
-    valid_times = list(config.model_analysis_times.values())
-    analysis_time = time(analysis_hour, 0, tzinfo=timezone.utc)
-    retry_countdown = int(config.model_short_wait_time.total_seconds())
+    # Get the last run timestamp from Redis to optimize search window
+    last_run_key = f"nwps:{loc.value}:last_run"
+    last_run_id = redis_manager.client.get(last_run_key)
 
-    if analysis_time not in valid_times:
-        raise ValueError(
-            f"Invalid analysis time {analysis_hour:02d}z for {loc.value}. "
-            f"Valid times for {loc.value}: {[t.hour for t in valid_times]}"
+    # parse last run time if it exists, otherwise None
+    # last_run_id is stored as ISO format datetime string (e.g., "2025-01-26T06:00:00+00:00")
+    last_run_time = datetime.fromisoformat(last_run_id) if last_run_id else None  # type: ignore
+
+    # check what's available (searches back to last_run_time if provided, else 24h)
+    checker = NWPSAvailabilityChecker(config, http_manager)
+    latest_run = checker.get_latest_available_run(last_run_time=last_run_time)
+
+    if not latest_run:
+        # model likely still running - retry with 1hr backoff
+        if self.request.retries < self.max_retries:
+            retry_countdown = 3600  # 1 hour in seconds
+            logger.info(
+                f"[NWPS] No new run available for {loc.value}, will retry in {retry_countdown // 60}min",
+                extra={
+                    "location": loc.value,
+                    "attempt": self.request.retries + 1,
+                    "max_retries": self.max_retries,
+                    "retry_in_seconds": retry_countdown,
+                },
+            )
+            raise self.retry(
+                exc=NoNewRunAvailable(f"No new run for {loc.value}"),
+                countdown=retry_countdown,
+            )
+        else:
+            logger.warning(
+                f"[NWPS] No new runs found for {loc.value} after {self.max_retries} retries, giving up until next beat",
+                extra={"location": loc.value, "attempts": self.max_retries + 1},
+            )
+            return {"status": "no_data_available", "retries_exhausted": True}
+
+    forecast_date, analysis_time = latest_run
+
+    # create run_id as ISO format datetime string for storage in Redis
+    run_datetime = datetime.combine(forecast_date, analysis_time)
+    run_id = run_datetime.isoformat()
+
+    # check if we already have this run (idempotency)
+    if last_run_id == run_id:
+        logger.info(f"[NWPS] Already have latest run {run_id}, skipping")
+        return {"status": "already_current", "run": run_id}
+
+    # check if forecast is too old
+    age_hours = (datetime.now(timezone.utc) - run_datetime).total_seconds() / 3600
+
+    if age_hours > config.max_forecast_age_hours:
+        logger.warning(
+            f"[NWPS] Latest run {run_id} is {age_hours:.1f}h old (max: {config.max_forecast_age_hours}h), skipping",
+            extra={
+                "run_id": run_id,
+                "age_hours": age_hours,
+                "max_age": config.max_forecast_age_hours,
+            },
         )
+        return {"status": "forecast_too_old", "run": run_id, "age_hours": age_hours}
 
-    logger.info(
-        f"[NWPS] Starting GRIB2 forecast data download for {loc.value} — {analysis_hour:02d}z",
-        extra={
-            "location": loc.value,
-            "analysis_hour": analysis_hour,
-            "retry_count": self.max_retries,
-        },
-    )
+    # new run available - fetch it!
+    logger.info(f"[NWPS] New run available: {run_id}, fetching...")
 
-    with (
-        db_manager.explicit_commit_session() as session,
-        redis_manager.client.pipeline() as pipe,
-    ):
+    with db_manager.explicit_commit_session() as session:
         surf_spot_repo = SyncSurfSpotRepository(session)
         provider = NWPSProvider(config, http_manager, surf_spot_repo)
 
         try:
+            # download and extract
             file_path = provider.download_file(analysis_time)
             forecasts = provider.extract_forecasts(file_path)
 
-            for spot_id, spot_data in forecasts.items():
-                key = f"forecast:nwps:{loc.value}:{spot_id}"
-                pipe.setex(key, timedelta(hours=14), json.dumps(spot_data))
+            # store in Redis
+            with redis_manager.client.pipeline() as pipe:
+                for spot_id, spot_data in forecasts.items():
+                    key = f"forecast:nwps:{loc.value}:{spot_id}"
+                    pipe.setex(key, timedelta(hours=14), json.dumps(spot_data))
 
-            pipe.execute()
+                # mark as processed
+                pipe.set(last_run_key, run_id)
+                pipe.execute()
 
-            file_size_mb = round(file_path.stat().st_size / (1024 * 1024), 2)
+            # cleanup file
             file_path.unlink(missing_ok=True)
 
             logger.info(
-                f"[NWPS] Successfully added forecast data for {loc.value} — {analysis_hour:02d}z",
+                f"[NWPS] Successfully fetched run {run_id} for {loc.value}",
                 extra={
                     "location": loc.value,
-                    "analysis_hour": analysis_hour,
+                    "run_id": run_id,
                     "spots_processed": len(forecasts),
                 },
             )
 
             return {
-                "location": loc.value,
-                "analysis_hour": analysis_hour,
+                "status": "success",
+                "run": run_id,
                 "spots_processed": len(forecasts),
-                "file_size_mb": file_size_mb,
             }
 
-        except HTTPStatusError as e:
-            if e.response.status_code == 404:
-                if self.request.retries < self.max_retries:
-                    logger.warning(
-                        f"[NWPS] GRIB2 file not ready for {loc.value}, retrying in {retry_countdown}s",
-                        extra={
-                            "location": loc.value,
-                            "attempt": self.requests.retries + 1,
-                            "max_retries": self.max_retries,
-                        },
-                    )
-                    raise self.retry(exc=e, countdown=retry_countdown)
-                else:
-                    logger.error(f"[NWPS] HTTP {e.response.status_code} error")
-                    raise
-        except (NetworkError, TimeoutException) as e:
+        except (HTTPStatusError, NetworkError, TimeoutException) as e:
+            # network/download errors - retry with shorter 5min backoff
             if self.request.retries < self.max_retries:
-                logger.warning(f"[NWPS] Network error, retrying in {retry_countdown}s")
-                raise self.retry(exc=e, countdown=retry_countdown)
+                download_retry_countdown = 300  # 5 minutes for transient errors
+                logger.warning(
+                    f"[NWPS] Download failed for {loc.value} at {run_id}, will retry in {download_retry_countdown // 60}min",
+                    extra={
+                        "location": loc.value,
+                        "run_id": run_id,
+                        "retry_in_seconds": download_retry_countdown,
+                        "attempt": self.request.retries + 1,
+                        "max_retries": self.max_retries,
+                        "error": str(e),
+                    },
+                )
+                raise self.retry(exc=e, countdown=download_retry_countdown)
             else:
+                logger.error(
+                    f"[NWPS] Download failed for {loc.value} at {run_id} after {self.max_retries} retries",
+                    extra={
+                        "location": loc.value,
+                        "run_id": run_id,
+                        "attempts": self.max_retries + 1,
+                        "error": str(e),
+                    },
+                )
                 raise
+
+        except Exception as e:
+            logger.exception(
+                f"[NWPS] Unexpected error downloading forecast for {loc.value} at {run_id}",
+                extra={
+                    "location": loc.value,
+                    "run_id": run_id,
+                    "error": str(e),
+                },
+            )
+            raise
