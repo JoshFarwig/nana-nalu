@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date, time, timezone
+from datetime import date, time
 from enum import Enum
 from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -70,6 +70,7 @@ class NWPSModelConfig(BaseModel):
 
     # maximum age of forecast data to accept before considering it stale
     # used by polling system to skip fetching old runs
+
     max_forecast_age_hours: int = 8
 
     grib_filter_base_url: str
@@ -204,13 +205,31 @@ class NWPSMauiModelConfig(NWPSModelConfig):
 
     # maximum age of forecast data to accept
     # HFO runs twice daily (~12h gaps), so 18h allows for one missed run + buffer
+
     max_forecast_age_hours: int = 18
 
     max_nearest_neighbor_distance_km: float = 2.0
     grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl"
     filename_pattern: str = "{wfo}_nwps_{cg}_{date}_{time}.grib2"
     region: str = "pr"
-    params: list[str] = ["all_var"]
+
+    # refer to https://nomads.ncep.noaa.gov/gribfilter.php?ds=prnwps for the valid params / levels
+    # removed current speed and dir since RTOFS-Global is turned off on the model runs (and its like a 9km
+    # resolution, so wouldn't really provide any valiable data for computational grids of 500m).
+    # refer to: (replace the HFO.date.txt to the current date or forecast run)
+    # example: https://www.nco.ncep.noaa.gov/pmb/spa/nwps/warnings/Warn_Forecaster_HFO.20251126.txt
+
+    params: list[str] = [
+        "var_DIRPW",
+        "var_DSLM",
+        "var_HTSGW",
+        "var_PERPW",
+        "var_SWDIR",
+        "var_SWELL",
+        "var_SWPER",
+        "var_WDIR",
+        "var_WIND",
+    ]
     levels: list[str] = ["lev_surface"]
     grid: NWPSGridConfig = NWPSMauiGridConfig()
 

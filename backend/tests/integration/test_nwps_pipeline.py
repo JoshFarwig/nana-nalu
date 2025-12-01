@@ -81,9 +81,9 @@ class TestNWPSPipeline:
             assert len(forecasts) > 0, "no forecasts extracted"
 
             # log what we actually got
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"Found {len(forecasts)} spots with forecast data")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
 
             # get the spot IDs from our test data
             spot_ids = [spot.id for spot in sample_maui_spots]
@@ -102,7 +102,7 @@ class TestNWPSPipeline:
                 print(f"  Analysis time: {forecast_data['analysis_time']}")
 
                 # show valid times info
-                valid_times = forecast_data['valid_times']
+                valid_times = forecast_data["valid_times"]
                 print(f"  Valid times: {len(valid_times)} forecast hours")
                 print(f"    First: {valid_times[0]}")
                 print(f"    Last:  {valid_times[-1]}")
@@ -110,8 +110,8 @@ class TestNWPSPipeline:
                 print(f"  Available variables: {list(forecast_data['data'].keys())}")
 
                 # show first 2 values of each variable
-                print(f"  Sample data (first 2 values):")
-                for var_name, var_data in forecast_data['data'].items():
+                print("  Sample data (first 2 values):")
+                for var_name, var_data in forecast_data["data"].items():
                     print(f"    {var_name:8s}: {var_data[:2]}")
 
                 # check top-level structure
@@ -171,41 +171,3 @@ class TestNWPSPipeline:
             # cleanup - remove downloaded file
             if file_path is not None and file_path.exists():
                 file_path.unlink(missing_ok=True)
-
-    @pytest.mark.skip(reason="only run when testing with mock data during development")
-    def test_nwps_with_mock_grib_file(
-        self,
-        sync_db_session: Session,
-        sync_redis_client: redis.Redis,
-        http_manager: SyncHTTPManager,
-        sample_maui_spots,
-    ):
-        """
-        test NWPS extraction with a pre-downloaded GRIB file.
-
-        useful for:
-        - development without network access
-        - testing extraction logic in isolation
-        - faster test iteration
-
-        to use:
-        1. download a GRIB file manually
-        2. place it in /tmp/nwps/test_maui.grib2
-        3. remove @pytest.mark.skip decorator
-        """
-        config = get_nwps_config(Location.MAUI)
-        repo = SyncSurfSpotRepository(sync_db_session)
-        provider = NWPSProvider(config, http_manager, repo)
-
-        # use pre-downloaded test file
-        test_file = Path("/tmp/nwps/test_maui.grib2")
-        assert test_file.exists(), f"test GRIB file not found at {test_file}"
-
-        # extract and validate
-        forecasts = provider.extract_forecasts(test_file)
-
-        assert len(forecasts) > 0
-        for spot_id, forecast_data in forecasts.items():
-            assert "swh" in forecast_data["data"]
-            assert "perpw" in forecast_data["data"]
-            assert "dirpw" in forecast_data["data"]

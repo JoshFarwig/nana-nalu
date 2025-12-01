@@ -34,8 +34,24 @@ services:
     image: nn_api:prod
     ports:
       - "127.0.0.1:${API__H_PORT:-8000}:${API__PORT:-8000}"
-    networks: [nn_network]
+    networks: [nn_network] 
 
+  worker: 
+    container_name: nn_worker_prod 
+    build: 
+      dockerfile: Dockerfile.prod
+      target: worker
+    image: nn_worker:prod
+    networks: [nn_network] 
+
+  beat: 
+    container_name: nn_beat_prod 
+    build: 
+      dockerfile: Dockerfile.prod
+      target: beat
+    image: nn_beat:prod
+    networks: [nn_network] 
+    
 networks: 
   nn_network: 
     name: nn_prod_network

@@ -154,7 +154,7 @@ def check_and_fetch_if_new(self, loc: Location):
                 },
             )
             raise self.retry(
-                exc=NoNewRunAvailable(f"No new run for {loc.value}"),
+                exc=NoNewRunAvailable(f"[NWPS] No new run for {loc.value}"),
                 countdown=retry_countdown,
             )
         else:
@@ -234,7 +234,7 @@ def check_and_fetch_if_new(self, loc: Location):
             if self.request.retries < self.max_retries:
                 download_retry_countdown = 300  # 5 minutes for transient errors
                 logger.warning(
-                    f"[NWPS] Download failed for {loc.value} at {run_id}, will retry in {download_retry_countdown // 60}min",
+                    f"[NWPS] Forecast extraction for {loc.value} at {run_id}, will retry in {download_retry_countdown // 60}min",
                     extra={
                         "location": loc.value,
                         "run_id": run_id,
@@ -247,7 +247,7 @@ def check_and_fetch_if_new(self, loc: Location):
                 raise self.retry(exc=e, countdown=download_retry_countdown)
             else:
                 logger.error(
-                    f"[NWPS] Download failed for {loc.value} at {run_id} after {self.max_retries} retries",
+                    f"[NWPS] Forecast extraction for {loc.value} at {run_id} after {self.max_retries} retries",
                     extra={
                         "location": loc.value,
                         "run_id": run_id,
@@ -259,7 +259,7 @@ def check_and_fetch_if_new(self, loc: Location):
 
         except Exception as e:
             logger.exception(
-                f"[NWPS] Unexpected error downloading forecast for {loc.value} at {run_id}",
+                f"[NWPS] Unexpected error extracting forecast for {loc.value} at {run_id}",
                 extra={
                     "location": loc.value,
                     "run_id": run_id,

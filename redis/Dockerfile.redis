@@ -1,4 +1,4 @@
-FROM redis:8.2.3-bookworm
+FROM redis:8.2.3-alpine
 
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 # NOTE: create a redis config and copy here if needed

@@ -72,7 +72,7 @@ class NWPSAvailabilityChecker:
         """
         Check if a specific run's GRIB file exists on NOMADS.
 
-        Note: NOMADS returns 403 for non-existent directories/files (not 404),
+        Note: NOMADS will return a 403 for non-existent directories/files,
         so we only consider 200 as success.
         """
         url = self._build_check_url(forecast_date, analysis_time)
@@ -82,7 +82,7 @@ class NWPSAvailabilityChecker:
             response = self.http._client.head(url, timeout=5)
             return response.status_code == 200
         except Exception:
-            # network errors, timeouts, etc. - treat as non-existent
+            # network errors, timeouts, bad requests. - treat as non-existent
             return False
 
     def _build_check_url(self, forecast_date: date, analysis_time: time) -> str:

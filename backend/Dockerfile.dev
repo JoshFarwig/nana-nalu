@@ -17,28 +17,58 @@ RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync
 
 FROM base as api
-RUN --mount=type=cache,target=/root/.cache/uv \ 
-  uv sync --group api 
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --group api
 
 ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
 ENTRYPOINT []
-CMD uvicorn api.v1.main:app --reload --port ${API__PORT:-8015}
+CMD ["uvicorn", "api.v1.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
-# TODO: refactor these targets once basic celery pipeline is setup
-FROM base as worker 
-RUN --mount=type=cache,target=/root/.cache/uv \ 
-  uv sync --group celery
+FROM base as worker
+
+# detect architecture and install system eccodes library for ARM64 Linux
+# eccodeslib Python package has no ARM64 Linux wheels, so we use system library
+# on x86_64, amd64, and macOS, the Python eccodeslib package provides the binaries
+ARG TARGETARCH
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+  echo "ARM64 detected: Installing system eccodes library..." && \
+  apt-get update && \
+  apt-get install -y --no-install-recommends \
+  libeccodes-dev \
+  libeccodes-tools && \
+  rm -rf /var/lib/apt/lists/*; \
+  else \
+  echo "Non-ARM64 ($TARGETARCH): Using Python eccodeslib package"; \
+  fi
+
+# set environment variables so eccodes Python bindings find system library via findlibs
+# these are only needed on ARM64 Linux, but are harmless on other platforms
+# findlibs will use these to locate system eccodes before falling back to eccodeslib
+# see: https://github.com/ecmwf/findlibs
+ENV ECCODES_DIR=/usr
+ENV FINDLIBS_ECCODES_DIR=/usr
+
+# install worker group dependencies
+# The pyproject.toml override-dependencies ensures eccodeslib is excluded on ARM64 Linux
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --group worker
 
 ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
 ENTRYPOINT []
-CMD ["celery", "-A", "celery.app", "worker"]
+CMD ["celery", "-A", "workers.celery_app", "worker", "--loglevel=info", "--pool=prefork", "--concurrency=2"]
 
-# TODO: refactor these targets once basic celery pipeline is setup
 FROM base as beat
-RUN --mount=type=cache,target=/root/.cache/uv \ 
-  uv sync --group celery
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --group beat
 
 ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
 ENTRYPOINT []
-CMD ["celery", "-A", "celery.app", "worker"]
+CMD ["celery", "-A", "workers.app", "beat", "--loglevel=info"]
 
+FROM base as flower
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --group flower
+
+ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
+ENTRYPOINT []
+CMD ["celery", "-A", "workers.app", "flower", "--port=5555"]

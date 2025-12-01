@@ -1,14 +1,7 @@
-# not specifying the platform so that it can build from different architectures, 
-# by doing this though it should be optimized for amd64 and arm64 builds.
-# maybe use bookworm if 18 supports it?
-FROM postgres:18-trixie
+# Platform-agnostic PostgreSQL + PostGIS build
+# Builds natively for both amd64 and arm64 (Ampere A1)
+FROM postgres:18-alpine
 
-RUN apt-get update && \
-  apt-cache search postgis | grep postgresql-18 && \
-  apt-cache policy postgresql-18-postgis-3
-
-RUN apt-get update && \
-  apt-get install -y \
-  postgresql-18-postgis-3 \
-  postgresql-18-postgis-3-scripts \
-  && rm -rf /var/lib/apt/lists/*
+# Install PostGIS from Alpine packages
+# Note: Alpine includes all PostGIS extensions in the base package
+RUN apk add --no-cache postgis

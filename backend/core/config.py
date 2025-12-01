@@ -14,10 +14,9 @@ class BaseConfig(BaseSettings):
     # NOTE: nested configurations will only load
     # such that their var names match
     # the named prefix and the nested delimiter i.e.
-    # API__ADMIN_PASSWORD for api.admin_password
-    # of APIConfig object.
+    # DB__PASSWORD for db.password
+    # of DatabaseConfig object.
 
-    api: APIConfig
     db: DatabaseConfig
     redis: RedisConfig
 
@@ -25,6 +24,13 @@ class BaseConfig(BaseSettings):
     # that do not require any env fields should instantiate
     # with a default config object, env fields will override
 
+    # TODO: since celery does not need reference to api,
+    # setting default to None, I could make an explicit difference
+    # between api vs worker config but idk or have defaults for all api values.
+    # but if I have defaults for the api values an instantiate them on celery,
+    # wouldn't be the same if I don't pass the API envs / secrets to the celery
+    # instances. so idk. this may be the best approach to juse default it to none
+    api: APIConfig | None = None
     celery: CeleryConfig = CeleryConfig()
     http: HTTPConfig = HTTPConfig()
 

@@ -26,7 +26,7 @@ _locations: set[Location] = load_locations()
 
 
 @signals.setup_logging.connect
-def setup_custom_logging():
+def setup_custom_logging(sender=None, **kwargs):
     configure_logging()
 
 

@@ -1,44 +1,87 @@
 [project]
-name = "backend"
+name = "nana_nalu_backend"
 version = "0.1.0"
 description = "Data gathering, processing, and exposure via API for nānā-nalu"
 readme = "README.md"
 requires-python="~=3.12.10"
-# TODO: pin and reorganize depdencies to 
-# their associated dependency-groups
+# minimal shared dependencies - only what ALL services need
+# config loading, logging, and HTTP client used across services
 dependencies = [
-  "sqlalchemy[asyncio]~=2.0.44",
-  "geoalchemy2~=0.18.0",
-  "asyncpg~=0.30.0",
   "pydantic~=2.12.4",
   "pydantic-settings~=2.12.0",
-  "redis~=7.0.1",
-  "httpx~=0.28.1",
-  "bcrypt~=5.0.0",
   "python-json-logger~=4.0.0",
+  "httpx~=0.28.1",
 ]
 
+
 [dependency-groups]
+# api service - FastAPI + database access + caching
 api = [
   "fastapi[standard]>=0.115.12",
   "uvicorn>=0.34.3",
+  "sqlalchemy[asyncio]~=2.0.44",
+  "geoalchemy2~=0.18.0",
+  "asyncpg~=0.30.0",
   "alembic~=1.16.1",
+  "redis~=7.0.1",
+  "bcrypt~=5.0.0",
+]
+# worker service - task execution with scientific computing + database access
+worker = [
+  "celery~=5.5.3",
+  "redis~=7.0.1",
+  "pyYAML~=6.0.3",
+  "bcrypt~=5.0.0",
+  "sqlalchemy[asyncio]~=2.0.44",
+  "geoalchemy2~=0.18.0",
   "psycopg2-binary>=2.9.0",
-  
-] 
-celery = [
-  "celery~=5.5.3", 
   "numpy>=2.3.4",
   "aiofiles>=25.1.0",
   "xarray>=2025.10.1",
   "cfgrib>=0.9.15.1",
   "scipy>=1.16.3",
+  # eccodes Python bindings - uses system libeccodes on ARM64 Linux
+  # eccodeslib (bundled binaries) excluded via [tool.uv] override below
+  "eccodes>=2.44.0",
 ]
-dev = [
+# beat scheduler - minimal dependencies, only schedules tasks
+beat = [
+  "celery~=5.5.3",
+]
+# flower monitor - web UI for Celery monitoring
+flower = [
+  "celery~=5.5.3",
+  "flower>=2.0.0",
+]
+dev = [ 
+  "scipy-stubs>=1.16.3.0", # for scipy import or type issues,
+  "ruff>=0.1.0",
+]
+test = [
   "pytest>=7.0.0",
   "pytest-asyncio>=0.21.0",
   "ruff>=0.1.0",
   "mypy>=1.0.0",
-  "scipy-stubs>=1.16.3.0",
 ]
 
+[tool.uv]
+# override eccodeslib to only install on platforms that have wheels
+# ARM64 Linux uses system libeccodes instead (installed via apt)
+override-dependencies = [
+  # eccodeslib only has wheels for: x86_64 Linux, macOS ARM64, macOS x86_64
+  # exclude it on ARM64 Linux where we use system libeccodes
+  "eccodeslib>=2.44.0; sys_platform != 'linux' or platform_machine != 'aarch64'",
+]
+
+environments = [
+  # macOS (development)
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",   
+  "sys_platform == 'darwin' and platform_machine == 'x86_64'", 
+
+  # Linux (production or development)
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",   
+  "sys_platform == 'linux' and platform_machine == 'aarch64'",  
+
+  # TODO: add windows environments if any future developers join 
+  # and require windows platforms
+]

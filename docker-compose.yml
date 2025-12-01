@@ -5,8 +5,6 @@
 
 services:
   db:
-    # NOTE: uses a dockerfile to build the PostGIS image, primarily because
-    # the official postgis image doesn't have any arm64 builds (for macos)
     build:
       context: ./db
       dockerfile: Dockerfile.postgis
@@ -32,7 +30,7 @@ services:
     build:
       context: ./redis
       dockerfile: Dockerfile.redis
-    environment
+    environment:
     # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12:
       REDIS__PASSWORD: ${REDIS__PASSWORD}
     restart: always
@@ -49,9 +47,11 @@ services:
   api:
     build:
       context: ./backend
+      dockerfile: Dockerfile.dev
+      target: api
     environment:
       ENV: ${ENV}
-      LOCATION: ${LOCATION}
+      LOCATIONS: ${LOCATIONS}
       # use __ nested env delimiter syntax for nested pydantic-settings objects
       # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12
       API__ADMIN_USERNAME: ${API__ADMIN_USERNAME}
@@ -70,7 +70,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      # - worker
     networks: [nn_network]
     healthcheck:
       # TODO: create a healthcheck endpoint, just using root for now
@@ -80,22 +79,81 @@ services:
       retries: 3
       start_period: 15s
   
-  # Celery setup
-  # worker: 
-  #   build: 
-  #     context: ./backend 
-  #   environment: 
-  #   depends_on: 
-  #     - db 
-  #     - redis 
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+      target: worker
+    environment:
+      ENV: ${ENV}
+      LOCATIONS: ${LOCATIONS}
+      DB__HOST: ${DB__HOST}
+      DB__PORT: ${DB__PORT}
+      DB__USERNAME: ${DB__USERNAME}
+      DB__PASSWORD: ${DB__PASSWORD}
+      DB__NAME: ${DB__NAME}
+      REDIS__HOST: ${REDIS__HOST}
+      REDIS__PORT: ${REDIS__PORT}
+      REDIS__PASSWORD: ${REDIS__PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    networks: [nn_network]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A workers.app inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+      target: beat
+    environment:
+      ENV: ${ENV}
+      LOCATIONS: ${LOCATIONS}
+      DB__HOST: ${DB__HOST}
+      DB__PORT: ${DB__PORT}
+      DB__USERNAME: ${DB__USERNAME}
+      DB__PASSWORD: ${DB__PASSWORD}
+      DB__NAME: ${DB__NAME}
+      REDIS__HOST: ${REDIS__HOST}
+      REDIS__PORT: ${REDIS__PORT}
+      REDIS__PASSWORD: ${REDIS__PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    # NOTE: not really sure what the best protocol is for a healthcheck to make sure
+    # a celery beat is running properly. could create task the container issues via
+    # the beat, but seems overly complicated as of now. look into it later.
+    restart: always
+    networks: [nn_network]
 
-  #   build: 
-  #     context: ./backend 
-  #   environment: 
-  #   depends_on: 
-  #     - db 
-  #     - redis
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+      target: flower
+    environment:
+      ENV: ${ENV}
+      REDIS__HOST: ${REDIS__HOST}
+      REDIS__PORT: ${REDIS__PORT}
+      REDIS__PASSWORD: ${REDIS__PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    networks: [nn_network]
 
 volumes:
   pg_data:
