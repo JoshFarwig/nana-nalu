@@ -4,7 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base_model import Base
 
 if TYPE_CHECKING:
-    from models import SurfSpot
+    from models.surf_spot_model import SurfSpot
 
 
 class SurflineSpot(Base):

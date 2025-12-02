@@ -1,11 +1,12 @@
 import logging
 from fastapi import FastAPI
 
-from core import AsyncDatabaseManager, AsyncRedisManager, BaseConfig
+from core.database import AsyncDatabaseManager
+from core.redis import AsyncRedisManager
+from core.config import BaseConfig
 from core.logging.config import configure_logging
-from utils import Environment, EnvironmentMapper
-
-from core.exceptions import StartupError
+from utils.env import Environment, EnvironmentMapper
+from core.exceptions.base import StartupError
 
 logger = logging.getLogger(__name__)
 

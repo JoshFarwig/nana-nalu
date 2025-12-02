@@ -87,6 +87,7 @@ services:
     environment:
       ENV: ${ENV}
       LOCATIONS: ${LOCATIONS}
+      CELERY__WORKER: true
       DB__HOST: ${DB__HOST}
       DB__PORT: ${DB__PORT}
       DB__USERNAME: ${DB__USERNAME}
@@ -103,7 +104,7 @@ services:
     restart: always
     networks: [nn_network]
     healthcheck:
-      test: ["CMD-SHELL", "celery -A workers.app inspect ping -d celery@$$HOSTNAME"]
+      test: ["CMD-SHELL", "celery -A workers.celery_app inspect ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -117,6 +118,7 @@ services:
     environment:
       ENV: ${ENV}
       LOCATIONS: ${LOCATIONS}
+      CELERY__WORKER: false
       DB__HOST: ${DB__HOST}
       DB__PORT: ${DB__PORT}
       DB__USERNAME: ${DB__USERNAME}
@@ -145,6 +147,7 @@ services:
       target: flower
     environment:
       ENV: ${ENV}
+      CELERY__WORKER: false
       REDIS__HOST: ${REDIS__HOST}
       REDIS__PORT: ${REDIS__PORT}
       REDIS__PASSWORD: ${REDIS__PASSWORD}

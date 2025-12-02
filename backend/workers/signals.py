@@ -1,14 +1,22 @@
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from celery import signals
 
-from core import SyncDatabaseManager, SyncRedisManager, SyncHTTPManager, load_settings
-from core.config import BaseConfig
+from core.config import BaseConfig, load_settings
 from core.logging import configure_logging
 
 from utils.location import Location, load_locations
 
+
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from core.database import SyncDatabaseManager
+    from core.redis import SyncRedisManager
+    from core.http import SyncHTTPManager
 
 
 @dataclass
@@ -38,12 +46,15 @@ def init_worker_managers(sender=None, **kwargs):
     Called once when each worker process starts (after fork).
     Creates fresh manager instances with connection pools for this worker's lifetime.
     """
+    from core.database import SyncDatabaseManager
+    from core.redis import SyncRedisManager
+    from core.http import SyncHTTPManager
+
     global _managers
 
     logger.info(
         "Initializing worker process",
         extra={
-            "pid": sender.id if sender else None,
             "concurrency": _settings.celery.worker_concurrency,
         },
     )

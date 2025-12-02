@@ -3,9 +3,10 @@ from collections.abc import AsyncGenerator
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core import AsyncDatabaseManager, AsyncRedisManager, BaseConfig
-
-from core.exceptions import DependencyError
+from core.database import AsyncDatabaseManager
+from core.redis import AsyncRedisManager
+from core.config import BaseConfig
+from core.exceptions.base import DependencyError
 
 
 logger = logging.getLogger(__name__)

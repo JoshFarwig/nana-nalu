@@ -9,9 +9,15 @@ def create_celery_app() -> Celery:
     Create and configure Celery application.
 
     Architecture:
+    - Tasks are ALWAYS lazy loaded (referenced by string, imported on execution)
+    - Worker signals conditionally loaded based on settings.celery.worker
     - Uses prefork pool (multiprocessing) for true CPU parallelism
     - Each worker runs tasks synchronously (no async/await)
     - Worker lifecycle managed via signals in workers/signals.py
+
+    Container modes (controlled via CELERY__WORKER env var):
+    - worker (CELERY__WORKER=true): Loads signals, executes tasks with full dependencies
+    - beat/flower (CELERY__WORKER=false): Minimal deps, no signals, schedules/monitors only
     """
     settings = load_settings()
 
@@ -30,7 +36,7 @@ def create_celery_app() -> Celery:
         timezone="UTC",
         enable_utc=True,
         task_routes={
-            "workers.tasks.nwps.*": {"queue": "nwps"},
+            "workers.tasks.nwps.*": {"queue": "forecasts"},
         },
     )
 
@@ -38,6 +44,7 @@ def create_celery_app() -> Celery:
     # parent task dispatches child tasks for all enabled locations
     # ex: HFO timing: early run finishes ~7-9:30 UTC, late run finishes ~17-20 UTC
 
+    # tasks referenced by string (lazy loading), imported by worker on execution
     app.conf.beat_schedule = {
         "nwps-poll-morning": {
             "task": "workers.tasks.nwps.fetch_all_nwps_forecasts",
@@ -55,16 +62,16 @@ def create_celery_app() -> Celery:
         },
     }
 
+    # import worker signals / tasks only when running as worker container.
+    # allows for beat and flower instances to not have to have eager import
+    # resolution and require packages not used by the containers i.e. beat
+    # does not need sqlalchemy
+    if settings.celery.worker:
+        import workers.signals  # noqa: F401
+        import workers.tasks.nwps
+
     return app
 
 
 # create the Celery app instance
 app = create_celery_app()
-
-# import signals to register worker lifecycle hooks
-# MUST happen after app creation for signals to connect properly
-import workers.signals  # noqa: E402, F401
-
-# import tasks to register them with Celery
-# uncomment as you create task modules
-from workers.tasks import nwps  # noqa: E402, F401

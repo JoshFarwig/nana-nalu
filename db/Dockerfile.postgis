@@ -1,7 +1,12 @@
-# Platform-agnostic PostgreSQL + PostGIS build
-# Builds natively for both amd64 and arm64 (Ampere A1)
-FROM postgres:18-alpine
+# custom dockerfile for platform agnostic setup for pg18 + postgis 3
+FROM postgres:18-bookworm
 
-# Install PostGIS from Alpine packages
-# Note: Alpine includes all PostGIS extensions in the base package
-RUN apk add --no-cache postgis
+RUN apt-get update && \
+  apt-cache search postgis | grep postgresql-18 && \
+  apt-cache policy postgresql-18-postgis-3
+
+RUN apt-get update && \
+  apt-get install -y \
+  postgresql-18-postgis-3 \
+  postgresql-18-postgis-3-scripts \
+  && rm -rf /var/lib/apt/lists/*

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from core import BaseConfig
+from core.config import BaseConfig
 from utils.password import hash_password
 from models.user_model import User
 

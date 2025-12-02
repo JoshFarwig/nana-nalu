@@ -3,7 +3,7 @@ import logging
 import logging.config
 from pathlib import Path
 
-from utils import Environment, EnvironmentMapper
+from utils.env import Environment, EnvironmentMapper
 
 
 def _get_logging_config_path(env: Environment | str | None = None) -> Path:

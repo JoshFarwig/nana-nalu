@@ -3,9 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
-from core.exceptions import (
-    NanaNaluException,
-    StartupError,
+from core.exceptions.base import NanaNaluException, StartupError
+from core.exceptions.handlers import (
     generic_exception_handler,
     validation_exception_handler,
     nana_nalu_exception_handler,
@@ -80,7 +79,7 @@ def create_app(config: str | None = None) -> FastAPI:
         Configured FastAPI application instance
     """
     import os
-    from utils import EnvironmentMapper
+    from utils.env import EnvironmentMapper
 
     # Normalize config if provided as string, otherwise use ENV variable
     if config:

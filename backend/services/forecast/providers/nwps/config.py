@@ -4,7 +4,8 @@ from enum import Enum
 from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from utils import Location, load_locations, longitude_to_360
+from utils.location import Location, load_locations
+from utils.geo_validation import longitude_to_360
 
 logger = logging.getLogger(__name__)
 

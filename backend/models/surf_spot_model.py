@@ -6,7 +6,9 @@ from geoalchemy2 import Geometry
 from .base_model import Base
 
 if TYPE_CHECKING:
-    from models import User, SpotObservation, SurflineSpot
+    from models.user_model import User
+    from models.spot_observation_model import SpotObservation
+    from models.surfline_spot import SurflineSpot
 
 
 class SurfSpot(Base):

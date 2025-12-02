@@ -10,11 +10,8 @@ from services.forecast.providers.nwps.config import (
     NWPSModelConfig,
     NWPS_CONFIG_REGISTRY,
 )
-from utils.geo import (
-    longitude_to_360,
-    build_forecast_kdtree,
-    query_nearest_forecast_points,
-)
+from utils.geo_validation import longitude_to_360
+from utils.geo_spatial import build_forecast_kdtree, query_nearest_forecast_points
 from utils.location import Location
 
 logger = logging.getLogger(__name__)
@@ -230,11 +227,16 @@ class NWPSProvider:
         """
         Build forecast dictionary from xarray Dataset.
         """
+        from pandas import Timestamp
+
         forecasts = {}
 
         # extract common data once (shared across all spots)
-        analysis_time = spot_forecast.analysis_time.values.tolist()
-        valid_times = spot_forecast.valid_time.values.tolist()
+        # convert numpy datetime64 to ISO format strings for better readability and compatibility
+        analysis_time = Timestamp(spot_forecast.analysis_time.values).isoformat()
+        valid_times = [
+            Timestamp(vt).isoformat() for vt in spot_forecast.valid_time.values
+        ]
 
         # get all data variable names (exclude coordinates)
         data_vars = [
@@ -243,7 +245,8 @@ class NWPSProvider:
 
         # vectorized extraction: convert all data to numpy arrays first
         # this is much faster than doing .isel() in a loop
-        data_arrays = {var: spot_forecast[var].values for var in data_vars}
+        # transpose to get shape (num_spots, num_timesteps) instead of (num_timesteps, num_spots)
+        data_arrays = {var: spot_forecast[var].values.T for var in data_vars}
 
         # build dictionary for each spot
         for i, spot_id in enumerate(spot_ids):

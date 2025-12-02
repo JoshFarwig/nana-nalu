@@ -7,7 +7,7 @@ from alembic import context
 from dotenv import load_dotenv
 
 from core.config import load_settings
-from utils import EnvironmentMapper
+from utils.env import EnvironmentMapper
 
 # load ENV's
 load_dotenv()

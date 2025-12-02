@@ -80,7 +80,7 @@ def fetch_all_nwps_forecasts():
         )
 
     job = group(
-        check_and_fetch_if_new.si(loc)  # type: ignore
+        check_and_fetch_if_new.si(loc.value)  # type: ignore
         for loc in supported_locations
     )
 
@@ -108,9 +108,12 @@ def fetch_all_nwps_forecasts():
 
 
 @shared_task(bind=True, max_retries=3)
-def check_and_fetch_if_new(self, loc: Location):
+def check_and_fetch_if_new(self, loc: str):
     """
     Poll NOMADS for new NWPS data and fetch if available.
+
+    Args:
+        loc: Location string value (e.g., "maui"), reconstructed to Location enum inside task
 
     Handles unpredictable NWPS run schedules by:
     1. Checking what's actually available on NOMADS (via HEAD requests)
@@ -122,14 +125,14 @@ def check_and_fetch_if_new(self, loc: Location):
     - Network/download errors: Retry 3x with 5min intervals (transient failures)
     - Already current or too old: Exit immediately, no retry needed
     """
+
     db_manager = get_db_manager()
     redis_manager = get_redis_manager()
     http_manager = get_http_manager()
-
-    config = get_nwps_config(loc)
+    config = get_nwps_config(Location(loc))
 
     # get the last run timestamp from Redis to optimize search window
-    last_run_key = f"nwps:{loc.value}:last_run"
+    last_run_key = f"forecast:nwps:{loc}:last_run"
     last_run_id = redis_manager.client.get(last_run_key)
 
     # parse last run time if it exists, otherwise None
@@ -145,29 +148,29 @@ def check_and_fetch_if_new(self, loc: Location):
         if self.request.retries < self.max_retries:
             retry_countdown = 3600  # 1 hour in seconds
             logger.info(
-                f"[NWPS] No new run available for {loc.value}, will retry in {retry_countdown // 60}min",
+                f"[NWPS] No new run available for {loc}, will retry in {retry_countdown // 60}min",
                 extra={
-                    "location": loc.value,
+                    "location": loc,
                     "attempt": self.request.retries + 1,
                     "max_retries": self.max_retries,
                     "retry_in_seconds": retry_countdown,
                 },
             )
             raise self.retry(
-                exc=NoNewRunAvailable(f"[NWPS] No new run for {loc.value}"),
+                exc=NoNewRunAvailable(f"[NWPS] No new run for {loc}"),
                 countdown=retry_countdown,
             )
         else:
             logger.warning(
-                f"[NWPS] No new runs found for {loc.value} after {self.max_retries} retries, giving up until next beat",
-                extra={"location": loc.value, "attempts": self.max_retries + 1},
+                f"[NWPS] No new runs found for {loc} after {self.max_retries} retries, giving up until next beat",
+                extra={"location": loc, "attempts": self.max_retries + 1},
             )
             return {"status": "no_data_available", "retries_exhausted": True}
 
     forecast_date, analysis_time = latest_run
 
     # create run_id as ISO format datetime string for storage in Redis
-    run_datetime = datetime.combine(forecast_date, analysis_time)
+    run_datetime = datetime.combine(forecast_date, analysis_time, tzinfo=timezone.utc)
     run_id = run_datetime.isoformat()
 
     # check if we already have this run (idempotency)
@@ -201,23 +204,41 @@ def check_and_fetch_if_new(self, loc: Location):
             file_path = provider.download_file(analysis_time, forecast_date)
             forecasts = provider.extract_forecasts(file_path)
 
+            logger.info(
+                f"[NWPS] Extracted forecasts for {len(forecasts)} spots",
+                extra={
+                    "location": loc,
+                    "spot_ids": list(forecasts.keys()),
+                    "run_id": run_id,
+                },
+            )
+
             # store in Redis
             with redis_manager.client.pipeline() as pipe:
                 for spot_id, spot_data in forecasts.items():
-                    key = f"forecast:nwps:{loc.value}:{spot_id}"
+                    key = f"forecast:nwps:{loc}:{spot_id}"
                     pipe.setex(key, timedelta(hours=14), json.dumps(spot_data))
 
                 # mark as processed
                 pipe.set(last_run_key, run_id)
-                pipe.execute()
+                result = pipe.execute()
 
-            # cleanup file
+                logger.info(
+                    f"[NWPS] Redis pipeline executed",
+                    extra={
+                        "location": loc,
+                        "commands_executed": len(result),
+                        "last_run_key": last_run_key,
+                    },
+                )
+
+            # cleanup file and idx
             file_path.unlink(missing_ok=True)
 
             logger.info(
-                f"[NWPS] Successfully fetched run {run_id} for {loc.value}",
+                f"[NWPS] Successfully fetched run {run_id} for {loc}",
                 extra={
-                    "location": loc.value,
+                    "location": loc,
                     "run_id": run_id,
                     "spots_processed": len(forecasts),
                 },
@@ -234,9 +255,9 @@ def check_and_fetch_if_new(self, loc: Location):
             if self.request.retries < self.max_retries:
                 download_retry_countdown = 300  # 5 minutes for transient errors
                 logger.warning(
-                    f"[NWPS] Forecast extraction for {loc.value} at {run_id}, will retry in {download_retry_countdown // 60}min",
+                    f"[NWPS] Forecast extraction for {loc} at {run_id}, will retry in {download_retry_countdown // 60}min",
                     extra={
-                        "location": loc.value,
+                        "location": loc,
                         "run_id": run_id,
                         "retry_in_seconds": download_retry_countdown,
                         "attempt": self.request.retries + 1,
@@ -247,9 +268,9 @@ def check_and_fetch_if_new(self, loc: Location):
                 raise self.retry(exc=e, countdown=download_retry_countdown)
             else:
                 logger.error(
-                    f"[NWPS] Forecast extraction for {loc.value} at {run_id} after {self.max_retries} retries",
+                    f"[NWPS] Forecast extraction for {loc} at {run_id} after {self.max_retries} retries",
                     extra={
-                        "location": loc.value,
+                        "location": loc,
                         "run_id": run_id,
                         "attempts": self.max_retries + 1,
                         "error": str(e),
@@ -259,9 +280,9 @@ def check_and_fetch_if_new(self, loc: Location):
 
         except Exception as e:
             logger.exception(
-                f"[NWPS] Unexpected error extracting forecast for {loc.value} at {run_id}",
+                f"[NWPS] Unexpected error extracting forecast for {loc} at {run_id}",
                 extra={
-                    "location": loc.value,
+                    "location": loc,
                     "run_id": run_id,
                     "error": str(e),
                 },

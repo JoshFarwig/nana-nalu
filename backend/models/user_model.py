@@ -4,8 +4,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base_model import Base
 
 if TYPE_CHECKING:
-    from .surf_spot_model import SurfSpot
-    from .spot_observation_model import SpotObservation
+    from models.surf_spot_model import SurfSpot
+    from models.spot_observation_model import SpotObservation
 
 
 class User(Base):

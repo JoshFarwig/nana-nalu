@@ -46,7 +46,6 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 # findlibs will use these to locate system eccodes before falling back to eccodeslib
 # see: https://github.com/ecmwf/findlibs
 ENV ECCODES_DIR=/usr
-ENV FINDLIBS_ECCODES_DIR=/usr
 
 # install worker group dependencies
 # The pyproject.toml override-dependencies ensures eccodeslib is excluded on ARM64 Linux
@@ -55,7 +54,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
 ENTRYPOINT []
-CMD ["celery", "-A", "workers.celery_app", "worker", "--loglevel=info", "--pool=prefork", "--concurrency=2"]
+CMD ["celery", "-A", "workers.celery_app", "worker", "-Q", "forecasts,celery", "--loglevel=info", "--pool=prefork", "--concurrency=2"]
 
 FROM base as beat
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -63,7 +62,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
 ENTRYPOINT []
-CMD ["celery", "-A", "workers.app", "beat", "--loglevel=info"]
+CMD ["celery", "-A", "workers.celery_app", "beat", "--loglevel=info"]
 
 FROM base as flower
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -71,4 +70,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
 ENTRYPOINT []
-CMD ["celery", "-A", "workers.app", "flower", "--port=5555"]
+CMD ["celery", "-A", "workers.celery_app", "flower", "--port=5555"]

@@ -9,6 +9,7 @@ requires-python="~=3.12.10"
 dependencies = [
   "pydantic~=2.12.4",
   "pydantic-settings~=2.12.0",
+  "pyYAML~=6.0.3",
   "python-json-logger~=4.0.0",
   "httpx~=0.28.1",
 ]
@@ -21,6 +22,7 @@ api = [
   "uvicorn>=0.34.3",
   "sqlalchemy[asyncio]~=2.0.44",
   "geoalchemy2~=0.18.0",
+  "psycopg2-binary>=2.9.0",
   "asyncpg~=0.30.0",
   "alembic~=1.16.1",
   "redis~=7.0.1",
@@ -30,8 +32,6 @@ api = [
 worker = [
   "celery~=5.5.3",
   "redis~=7.0.1",
-  "pyYAML~=6.0.3",
-  "bcrypt~=5.0.0",
   "sqlalchemy[asyncio]~=2.0.44",
   "geoalchemy2~=0.18.0",
   "psycopg2-binary>=2.9.0",
@@ -45,13 +45,17 @@ worker = [
   "eccodes>=2.44.0",
 ]
 # beat scheduler - minimal dependencies, only schedules tasks
+# uses lazy loading (task names only), no SQLAlchemy or scientific deps
 beat = [
   "celery~=5.5.3",
+  "redis~=7.0.1",
 ]
 # flower monitor - web UI for Celery monitoring
+# uses lazy loading (task names only), no SQLAlchemy or scientific deps
 flower = [
   "celery~=5.5.3",
   "flower>=2.0.0",
+  "redis~=7.0.1",
 ]
 dev = [ 
   "scipy-stubs>=1.16.3.0", # for scipy import or type issues,

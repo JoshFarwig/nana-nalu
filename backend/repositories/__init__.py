@@ -9,14 +9,3 @@
 # defeats this purpose. Openmeteo has request batching built in as well, so
 # async setups such that a single fetch for a provider is a seperate task,
 # really didn't make much sense for the overhead and complexity.
-
-from .user_repository import AsyncUserRepository, SyncUserRepository
-from .surf_spot_repository import AsyncSurfSpotRepository, SyncSurfSpotRepository
-
-
-__all__ = [
-    "AsyncUserRepository",
-    "SyncUserRepository",
-    "AsyncSurfSpotRepository",
-    "SyncSurfSpotRepository",
-]

@@ -6,8 +6,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base_model import Base
 
 if TYPE_CHECKING:
-    from .user_model import User
-    from .surf_spot_model import SurfSpot
+    from models.user_model import User
+    from models.surf_spot_model import SurfSpot
 
 
 class WindConditionEnum(Enum):

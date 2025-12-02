@@ -104,10 +104,6 @@ class AsyncHTTPManager:
             follow_redirects=True,
         )
 
-        logger.info(
-            "AsyncHTTPManager initialized",
-        )
-
     def _calculate_retry_delay(self, attempt: int) -> float:
         """Calculate exponential backoff delay with max cap"""
         delay = self._retry_base_delay * (self._retry_backoff_factor**attempt)
@@ -304,10 +300,6 @@ class SyncHTTPManager:
             limits=limits,
             headers={"user-agent": settings.user_agent},
             follow_redirects=True,
-        )
-
-        logger.info(
-            "SyncHTTPManager initialized",
         )
 
     def _calculate_retry_delay(self, attempt: int) -> float:

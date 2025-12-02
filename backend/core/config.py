@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from utils import Environment, EnvironmentMapper
+from utils.env import Environment, EnvironmentMapper
 from .configs import APIConfig, CeleryConfig, DatabaseConfig, HTTPConfig, RedisConfig
 
 
@@ -29,7 +29,7 @@ class BaseConfig(BaseSettings):
     # between api vs worker config but idk or have defaults for all api values.
     # but if I have defaults for the api values an instantiate them on celery,
     # wouldn't be the same if I don't pass the API envs / secrets to the celery
-    # instances. so idk. this may be the best approach to juse default it to none
+    # instances. so idk. this may be the best approach to just default it to none
     api: APIConfig | None = None
     celery: CeleryConfig = CeleryConfig()
     http: HTTPConfig = HTTPConfig()

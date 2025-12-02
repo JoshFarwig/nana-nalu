@@ -6,7 +6,7 @@ from geoalchemy2.functions import ST_MakeEnvelope, ST_Within, ST_Y, ST_X
 from sqlalchemy.orm import Session
 
 from models.surf_spot_model import SurfSpot
-from utils.geo import valid_latitude_range, valid_longitude_range
+from utils.geo_validation import valid_latitude_range, valid_longitude_range
 
 
 class AsyncSurfSpotRepository:
