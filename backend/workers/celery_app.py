@@ -4,22 +4,26 @@ from celery.schedules import crontab
 from core import load_settings
 
 
-def create_celery_app() -> Celery:
+def create_celery_app(service_type: str = "worker") -> Celery:
     """
     Create and configure Celery application.
 
     Architecture:
     - Tasks are ALWAYS lazy loaded (referenced by string, imported on execution)
-    - Worker signals conditionally loaded based on settings.celery.worker
+    - Worker signals conditionally loaded based on service_type
     - Uses prefork pool (multiprocessing) for true CPU parallelism
     - Each worker runs tasks synchronously (no async/await)
     - Worker lifecycle managed via signals in workers/signals.py
 
-    Container modes (controlled via CELERY__WORKER env var):
-    - worker (CELERY__WORKER=true): Loads signals, executes tasks with full dependencies
-    - beat/flower (CELERY__WORKER=false): Minimal deps, no signals, schedules/monitors only
+    Service types:
+    - worker: Executes tasks, needs DB + Redis, loads signals and task modules
+    - scheduler: Celery beat, needs only Redis, no signals/task imports
+    - flower: Monitoring UI, needs only Redis, no signals/task imports
+
+    Args:
+        service_type: Type of Celery service ("worker", "scheduler", or "flower")
     """
-    settings = load_settings()
+    settings = load_settings(service_type)
 
     app = Celery(
         "nana_nalu",
@@ -65,13 +69,9 @@ def create_celery_app() -> Celery:
     # import worker signals / tasks only when running as worker container.
     # allows for beat and flower instances to not have to have eager import
     # resolution and require packages not used by the containers i.e. beat
-    # does not need sqlalchemy
-    if settings.celery.worker:
+    # and flower do not need sqlalchemy
+    if service_type == "worker":
         import workers.signals  # noqa: F401
         import workers.tasks.nwps
 
     return app
-
-
-# create the Celery app instance
-app = create_celery_app()

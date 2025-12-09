@@ -14,12 +14,6 @@ class CeleryConfig(BaseModel):
     # task_routes: dict[str, str]
     # task_annotations: dict[str, str]
 
-    # container mode - controls task/dependency loading
-    # set via CELERY__WORKER env var:
-    #   - true: worker mode - imports all tasks and dependencies (SQLAlchemy, numpy, etc.)
-    #   - false: scheduler mode - lazy loads task names only (beat/flower)
-    worker: bool = False
-
     # worker settings
     worker_pool: str = "prefork"
     worker_concurrency: int = 2

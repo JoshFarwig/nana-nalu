@@ -3,7 +3,7 @@ from fastapi import FastAPI
 
 from core.database import AsyncDatabaseManager
 from core.redis import AsyncRedisManager
-from core.config import BaseConfig
+from core.config import APISettings
 from core.logging.config import configure_logging
 from utils.env import Environment, EnvironmentMapper
 from core.exceptions.base import StartupError
@@ -47,7 +47,7 @@ async def init_app(app: FastAPI, config: Environment | str | None = None) -> Non
     from core.config import load_settings
 
     try:
-        settings = load_settings(env)
+        settings = load_settings("api")
         app.state.settings = settings
         logger.info(
             "Settings loaded successfully",
@@ -108,7 +108,7 @@ async def cleanup_app(app: FastAPI) -> None:
 # ======================================================
 
 
-async def _init_infrastructure(app: FastAPI, settings: BaseConfig) -> None:
+async def _init_infrastructure(app: FastAPI, settings: APISettings) -> None:
     """
     Initialize and attach infrastructure managers to app state.
 

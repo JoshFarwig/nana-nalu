@@ -1,103 +1,156 @@
+"""
+Application configuration for different services.
+
+Each service (API, Worker, Scheduler) has its own settings class that defines
+only the configuration it needs. Environment-specific settings (local, dev, prod)
+are handled via docker-compose env_file or exported environment variables.
+
+Usage:
+    # In API service (api/v1/startup.py or main.py)
+    from core.config import load_settings
+    settings = load_settings("api")
+
+    # In Worker service (workers/worker_app.py)
+    settings = load_settings("worker")
+
+    # In Scheduler services (workers/beat_app.py, workers/flower_app.py)
+    settings = load_settings("scheduler")
+"""
+
 from functools import lru_cache
+from typing import Literal, Union, overload
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from utils.env import Environment, EnvironmentMapper
 from .configs import APIConfig, CeleryConfig, DatabaseConfig, HTTPConfig, RedisConfig
 
 
-class BaseConfig(BaseSettings):
+# ============================================================================
+# Service-Specific Settings Classes
+# ============================================================================
+# Each class defines ONLY the configuration fields that service needs.
+# No inheritance, no dynamic class creation, just explicit field definitions.
+
+
+class APISettings(BaseSettings):
     """
-    Nana Nalu's Configuration, includes all primary configurations for
-    the python backend.
+    Configuration for API service.
+    Requires: Database, Redis, API-specific settings, HTTP client
     """
 
-    # NOTE: nested configurations will only load
-    # such that their var names match
-    # the named prefix and the nested delimiter i.e.
-    # DB__PASSWORD for db.password
-    # of DatabaseConfig object.
+    model_config = SettingsConfigDict(
+        frozen=True,
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        env_nested_max_split=1,
+        extra="ignore",
+    )
 
     db: DatabaseConfig
     redis: RedisConfig
+    api: APIConfig
+    http: HTTPConfig = HTTPConfig()
 
-    # NOTE: nested configurations with sensible defaults
-    # that do not require any env fields should instantiate
-    # with a default config object, env fields will override
 
-    # TODO: since celery does not need reference to api,
-    # setting default to None, I could make an explicit difference
-    # between api vs worker config but idk or have defaults for all api values.
-    # but if I have defaults for the api values an instantiate them on celery,
-    # wouldn't be the same if I don't pass the API envs / secrets to the celery
-    # instances. so idk. this may be the best approach to just default it to none
-    api: APIConfig | None = None
+class WorkerSettings(BaseSettings):
+    """
+    Configuration for Celery worker service.
+    Requires: Database (for task execution), Redis, Celery, HTTP client
+    """
+
+    model_config = SettingsConfigDict(
+        frozen=True,
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        env_nested_max_split=1,
+        extra="ignore",
+    )
+
+    db: DatabaseConfig
+    redis: RedisConfig
     celery: CeleryConfig = CeleryConfig()
     http: HTTPConfig = HTTPConfig()
 
 
-class LocalConfig(BaseConfig):
-    model_config = SettingsConfigDict(
-        frozen=True,
-        env_file=".env.local",
-        env_file_encoding="utf-8",
-        env_nested_delimiter="__",
-        env_nested_max_split=1,
-        extra="ignore",
-    )
+class SchedulerSettings(BaseSettings):
+    """
+    Configuration for Celery beat and Flower services.
+    Requires: Only Redis and Celery (no database, no API config)
+    """
 
-
-class DevelopmentConfig(BaseConfig):
     model_config = SettingsConfigDict(
         frozen=True,
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
         extra="ignore",
-        # secrets_dir="/run/secrets",  # NOTE: docker container secrets
-        # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
-        # once pydantic-settings v2.12 is out, can use secrets via SettingsConfigDict
-        # secrets_nested_delimiter="__"
     )
 
-
-class ProductionConfig(BaseConfig):
-    model_config = SettingsConfigDict(
-        frozen=True,
-        env_file_encoding="utf-8",
-        env_nested_delimiter="__",
-        env_nested_max_split=1,
-        extra="ignore",
-        # secrets_dir="/run/secrets",  # NOTE: docker container secrets
-        # NOTE: pydantic-settings will default delimiter for secrets as the env_nested_delimiter
-        # once pydantic-settings v2.12 is out, can use secrets via SettingsConfigDict
-        # secrets_nested_delimiter="__"
-    )
+    redis: RedisConfig
+    celery: CeleryConfig = CeleryConfig()
 
 
-ENVIRONMENT_CONFIG_REGISTRY: dict[Environment, type[BaseConfig]] = {
-    Environment.LOCAL: LocalConfig,
-    Environment.DEV: DevelopmentConfig,
-    Environment.PROD: ProductionConfig,
-}
+# ============================================================================
+# Settings Factory with Type-Safe Overloads
+# ============================================================================
+# The overloads tell type checkers exactly what type is returned for each
+# service_type literal, enabling full autocomplete and type checking.
+
+
+@overload
+def load_settings(service_type: Literal["api"] = "api") -> APISettings: ...
+
+
+@overload
+def load_settings(service_type: Literal["worker"] = "worker") -> WorkerSettings: ...
+
+
+@overload
+def load_settings(service_type: Literal["scheduler"] = "scheduler") -> SchedulerSettings: ...
 
 
 @lru_cache
-def load_settings(env: Environment | str | None = None) -> BaseConfig:
+def load_settings(
+    service_type: Literal["api", "worker", "scheduler"] = "api",
+) -> Union[APISettings, WorkerSettings, SchedulerSettings]:
     """
-    Load application settings based on environment.
+    Load application settings based on service type.
+
+    Environment-specific configuration (local vs dev vs prod) is handled by:
+    - Docker: --env-file flag in docker-compose command
+    - Local: Exported environment variables or .env.local file
 
     Args:
-        env: Environment to load. If None, reads from ENV environment variable.
-             Can be Environment enum or string that will be normalized.
+        service_type: Type of service ("api", "worker", or "scheduler").
+                     Determines which configuration fields are required.
 
     Returns:
-        Configuration object for the specified environment
-    """
-    # normalize environment using EnvironmentMapper
-    if isinstance(env, Environment):
-        environment = env
-    else:
-        environment = EnvironmentMapper.normalize(env)
+        Configuration object for the specified service type with full type hints.
 
-    cfg_cls = ENVIRONMENT_CONFIG_REGISTRY[environment]
-    return cfg_cls()  # type: ignore[arg-type] api, db and celery are instantiated from ENVS.
+    Examples:
+        >>> # API service
+        >>> settings = load_settings("api")
+        >>> settings.db.host  # Type checker knows this exists
+        >>> settings.api.admin_username  # Autocomplete works!
+
+        >>> # Scheduler service (beat/flower)
+        >>> settings = load_settings("scheduler")
+        >>> settings.redis.host  # Type checker knows this exists
+        >>> settings.db  # ❌ Type checker error: SchedulerSettings has no 'db'
+
+    Notes:
+        - The function is cached with @lru_cache, so calling it multiple times
+          with the same service_type returns the same instance.
+        - Settings are loaded from environment variables with the __ delimiter
+          (e.g., DB__HOST, REDIS__PASSWORD, API__ADMIN_USERNAME).
+        - Missing required environment variables will raise ValidationError at
+          import/startup time (fail-fast behavior).
+    """
+    service_map = {
+        "api": APISettings,
+        "worker": WorkerSettings,
+        "scheduler": SchedulerSettings,
+    }
+
+    ConfigClass = service_map[service_type]
+    return ConfigClass()

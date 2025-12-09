@@ -1,7 +1,7 @@
 import logging
 import json
 from datetime import timedelta, timezone, datetime
-
+from pathlib import Path
 from celery import shared_task, group
 from httpx import HTTPStatusError, NetworkError, TimeoutException
 
@@ -19,6 +19,17 @@ from services.forecast.providers.nwps.availability import NWPSAvailabilityChecke
 from utils.location import Location
 
 logger = logging.getLogger(__name__)
+
+
+# =======================
+# HELPER FUNCTIONS
+# =======================
+
+
+def _remove_grib2_file(file_path: Path):
+    for idx in file_path.parent.glob(f"{file_path.name}.*.idx"):
+        idx.unlink()
+    file_path.unlink()
 
 
 # =======================
@@ -224,7 +235,7 @@ def check_and_fetch_if_new(self, loc: str):
                 result = pipe.execute()
 
                 logger.info(
-                    f"[NWPS] Redis pipeline executed",
+                    "[NWPS] Redis pipeline executed",
                     extra={
                         "location": loc,
                         "commands_executed": len(result),
@@ -232,8 +243,9 @@ def check_and_fetch_if_new(self, loc: str):
                     },
                 )
 
-            # cleanup file and idx
-            file_path.unlink(missing_ok=True)
+            # cleanup grib2 file
+            # TODO: temporarily disabled for debugging variable extraction
+            # _remove_grib2_file(file_path)
 
             logger.info(
                 f"[NWPS] Successfully fetched run {run_id} for {loc}",

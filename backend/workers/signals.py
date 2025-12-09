@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from celery import signals
 
-from core.config import BaseConfig, load_settings
+from core.config import WorkerSettings, load_settings
 from core.logging import configure_logging
 
 from utils.location import Location, load_locations
@@ -28,8 +28,9 @@ class WorkerManagers:
 
 # global (process scoped) managers
 # settings and locations loaded at module import (before fork)
+# NOTE: This module is only imported by worker containers via workers/worker_app.py
 _managers: WorkerManagers | None = None
-_settings: BaseConfig = load_settings()
+_settings: WorkerSettings = load_settings("worker")
 _locations: set[Location] = load_locations()
 
 
@@ -99,7 +100,7 @@ def shutdown_worker_managers(sender=None, **kwargs):
         logger.info("Worker managers shutdown complete")
 
 
-def get_worker_settings() -> BaseConfig:
+def get_worker_settings() -> WorkerSettings:
     return _settings
 
 

@@ -20,9 +20,7 @@ logger = logging.getLogger(__name__)
 class NWPSProvider:
     provider_name: str = "NWPS"
     processing_mode: str = "file"
-    file_path: str = (
-        "/tmp/nwps/"  # TODO: consider changing to tmp/nwps/ instead for os level dir
-    )
+    file_path: str = "/tmp/nwps/"
 
     def __init__(
         self,
@@ -86,10 +84,38 @@ class NWPSProvider:
             is_active=True,
         )
 
+        # clean up any old index files to prevent caching issues
+        for idx_file in file_path.parent.glob(f"{file_path.name}.*.idx"):
+            idx_file.unlink()
+            logger.debug(f"Removed old index file: {idx_file}")
+
         # open dataset (grib2 parsing can be slow)
         ds = xr.open_dataset(
             str(file_path), engine="cfgrib", filter_by_keys={"dataType": "fc"}
         )
+
+        # DEBUG: log all variables found in GRIB file
+        logger.info(
+            f"[NWPS] GRIB variables found in dataset",
+            extra={
+                "file": file_path.name,
+                "data_vars": list(ds.data_vars.keys()),
+                "coords": list(ds.coords.keys()),
+            },
+        )
+
+        # DEBUG: log detailed variable attributes
+        for var_name in ds.data_vars:
+            var = ds[var_name]
+            logger.info(
+                f"[NWPS] Variable details: {var_name}",
+                extra={
+                    "long_name": var.attrs.get("long_name", "N/A"),
+                    "units": var.attrs.get("units", "N/A"),
+                    "GRIB_paramId": var.attrs.get("GRIB_paramId", "N/A"),
+                    "GRIB_shortName": var.attrs.get("GRIB_shortName", "N/A"),
+                },
+            )
 
         # transform spot data into np arrays for xarray data
         spot_ids = np.array([spot["id"] for spot in spots])
@@ -193,7 +219,7 @@ class NWPSProvider:
         distances: np.ndarray,
     ) -> xr.Dataset:
         """
-        Build spot-specific forecast dataset from grid data.
+        Build spot-specific forecast dataset from grid data
         """
         return (
             ds.sel(

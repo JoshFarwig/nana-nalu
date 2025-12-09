@@ -12,9 +12,8 @@ from utils.env import EnvironmentMapper
 # load ENV's
 load_dotenv()
 
-# get settings object, use it's database url
-env = EnvironmentMapper.normalize()
-settings = load_settings(env)
+# get settings object, use it's database url (alembic needs DB access like API/Worker)
+settings = load_settings("api")
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

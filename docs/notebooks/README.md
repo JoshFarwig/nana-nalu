@@ -1,7 +1,7 @@
-# quick n dirty setup
+# quick setup
 
 if for any reason you want to use following notebooks
-(these are primarily just for hacky implementation / data research),
+(these are primarily just for my own hacky implementation / data research),
 do the following
 
 ## environment setup

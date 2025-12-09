@@ -1,5 +1,5 @@
 import logging
-from core.config import BaseConfig, load_settings
+from core.config import APISettings, load_settings
 from core.database import SyncDatabaseManager
 from models.user_model import User
 from repositories.user_repository import SyncUserRepository
@@ -9,7 +9,7 @@ from utils.location import load_locations
 
 
 class SeedManager:
-    def __init__(self, settings: BaseConfig):
+    def __init__(self, settings: APISettings):
         self.settings = settings
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.db_manager = SyncDatabaseManager(settings.db)
@@ -93,7 +93,7 @@ class SeedManager:
 def main():
     """Run the seeder."""
 
-    settings = load_settings()
+    settings = load_settings("api")
     seeder = SeedManager(settings)
     seeder.seed_database()
 

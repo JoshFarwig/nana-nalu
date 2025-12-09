@@ -1,73 +1,126 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim as base
-WORKDIR /backend
-# flags applied to all uv sync commands
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_LOCKED=1 UV_NO_DEV=1
-# https://docs.astral.sh/uv/guides/integration/docker/#getting-started
 
-# install the backend's base dependencies using the lockfile and pyproject
+WORKDIR /backend
+
+# UV configuration
+ENV UV_PYTHON_INSTALL_DIR=/usr/local/python \
+  UV_COMPILE_BYTECODE=1 \
+  UV_LINK_MODE=copy \
+  UV_LOCKED=1 \
+  UV_NO_DEV=1
+
+# install base dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
   --mount=type=bind,source=uv.lock,target=uv.lock \
   --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
   uv sync --no-install-project
 
-# then, add the rest of the project source code and install it
-# separately from its dependencies, allows optimal layer caching
+# copy project and install
 COPY . /backend
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync
 
+# ==============================================================================
+# API service
+# ==============================================================================
 FROM base as api
+
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --group api
 
-ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
+# create non-root user and transfer ownership
+RUN groupadd -r appuser && \
+  useradd -r -g appuser appuser && \
+  chown -R appuser:appuser /backend
+
+ENV PATH="/backend/.venv/bin:$PATH" \
+  PYTHONPATH=/backend
+
+USER appuser
 ENTRYPOINT []
 CMD ["uvicorn", "api.v1.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
+# ==============================================================================
+# Worker service (with eccodes support)
+# Built directly in worker stage rather than separate build stage to avoid
+# cross-stage contamination of Python environment during COPY operations.
+# The single RUN command keeps layers efficient while cleanup removes build tools.
+# ==============================================================================
 FROM base as worker
 
-# detect architecture and install system eccodes library for ARM64 Linux
-# eccodeslib Python package has no ARM64 Linux wheels, so we use system library
-# on x86_64, amd64, and macOS, the Python eccodeslib package provides the binaries
 ARG TARGETARCH
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
-  echo "ARM64 detected: Installing system eccodes library..." && \
-  apt-get update && \
-  apt-get install -y --no-install-recommends \
-  libeccodes-dev \
-  libeccodes-tools && \
-  rm -rf /var/lib/apt/lists/*; \
-  else \
-  echo "Non-ARM64 ($TARGETARCH): Using Python eccodeslib package"; \
-  fi
+ARG TARGETOS
 
-# set environment variables so eccodes Python bindings find system library via findlibs
-# these are only needed on ARM64 Linux, but are harmless on other platforms
-# findlibs will use these to locate system eccodes before falling back to eccodeslib
-# see: https://github.com/ecmwf/findlibs
-ENV ECCODES_DIR=/usr
+COPY scripts/build_eccodes_arm64.sh /tmp/
+RUN chmod +x /tmp/build_eccodes_arm64.sh && \
+  TARGETOS=$TARGETOS TARGETARCH=$TARGETARCH /tmp/build_eccodes_arm64.sh && \
+  rm /tmp/build_eccodes_arm64.sh
+
+# set eccodes environment for findlibs to locate system library 
+# must be in /usr/local or cMake install will corrupt uv's python 
+# build
+# See: https://github.com/ecmwf/findlibs
+ENV ECCODES_DIR=/usr/local
 
 # install worker group dependencies
-# The pyproject.toml override-dependencies ensures eccodeslib is excluded on ARM64 Linux
+# pyproject.toml override-dependencies excludes eccodeslib on ARM64 Linux
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --group worker
 
-ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
-ENTRYPOINT []
-CMD ["celery", "-A", "workers.celery_app", "worker", "-Q", "forecasts,celery", "--loglevel=info", "--pool=prefork", "--concurrency=2"]
+# create non-root user and transfer ownership
+RUN groupadd -r appuser && \
+  useradd -r -g appuser appuser && \
+  chown -R appuser:appuser /backend
 
+ENV PATH="/backend/.venv/bin:$PATH" \
+  PYTHONPATH=/backend
+
+USER appuser
+ENTRYPOINT []
+CMD ["celery", "-A", "workers.worker_app", "worker", \
+  "-Q", "forecasts,celery", \
+  "--loglevel=info", \
+  "--pool=prefork", \
+  "--concurrency=2"]
+
+# ==============================================================================
+# Beat service
+# ==============================================================================
 FROM base as beat
+
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --group beat
 
-ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
-ENTRYPOINT []
-CMD ["celery", "-A", "workers.celery_app", "beat", "--loglevel=info"]
+# create non-root user and transfer ownership
+RUN groupadd -r appuser && \
+  useradd -r -g appuser appuser && \
+  chown -R appuser:appuser /backend
 
+ENV PATH="/backend/.venv/bin:$PATH" \
+  PYTHONPATH=/backend
+
+USER appuser
+ENTRYPOINT []
+# TODO: consider if schedule file persistence is needed via a volume? probably not for 
+# current use case, would need to give write perms for the volume
+CMD ["celery", "-A", "workers.beat_app", "beat", "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"]
+
+# ==============================================================================
+# Flower service
+# ==============================================================================
 FROM base as flower
+
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --group flower
 
-ENV PATH="/backend/.venv/bin:$PATH" PYTHONPATH=/backend
+# create non-root user and transfer ownership
+RUN groupadd -r appuser && \
+  useradd -r -g appuser appuser && \
+  chown -R appuser:appuser /backend
+
+ENV PATH="/backend/.venv/bin:$PATH" \
+  PYTHONPATH=/backend
+
+USER appuser
 ENTRYPOINT []
-CMD ["celery", "-A", "workers.celery_app", "flower", "--port=5555"]
+CMD ["celery", "-A", "workers.flower_app", "flower", "--port=5555"]

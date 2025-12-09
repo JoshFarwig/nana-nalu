@@ -16,3 +16,10 @@ Stamen maps. use Mapunik to edit styles specific to nana-nalu. think dark, light
 and maybe terrain would be more than enough.
 
 shadcn ui + tailwind css for styles etc.
+
+since I only really need marker creation and don't plan to show forecasting in areas,
+leaftlet makes the most sense for the MVP. shadcn ui has a community plugin for leaflet
+as well. can use openfreemap for vector tiling w/ leaflet for best of both worlds. if
+I change gears and want to render map tiles, may need to go maplibre gl js instead.
+
+leaflet makes most sense though to just get something up and running.

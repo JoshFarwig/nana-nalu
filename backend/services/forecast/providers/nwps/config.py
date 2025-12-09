@@ -207,7 +207,7 @@ class NWPSMauiModelConfig(NWPSModelConfig):
     # maximum age of forecast data to accept
     # HFO runs twice daily (~12h gaps), so 18h allows for one missed run + buffer
 
-    max_forecast_age_hours: int = 18
+    max_forecast_age_hours: int = 24
 
     max_nearest_neighbor_distance_km: float = 2.0
     grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl"

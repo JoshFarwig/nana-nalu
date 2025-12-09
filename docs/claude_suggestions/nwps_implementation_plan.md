@@ -1,7 +1,9 @@
 # Forecast Service Implementation Plan
 
 ## Overview
+
 Build a provider-agnostic forecast service supporting multiple providers:
+
 - **File-Based Providers**: NWPS (GRIB2), PacIOOS GridDAP (NetCDF)
 - **API-Based Providers**: Surfline (per-spot HTTP), Open-Meteo (batch HTTP)
 
@@ -12,6 +14,7 @@ Store raw provider data in Redis, transform into standardized views via API laye
 ## Architecture Philosophy
 
 ### Data Storage: Raw Provider Format
+
 **Store exactly what providers give you in Redis** - no normalization at cache layer.
 
 ```
@@ -26,12 +29,14 @@ Value: {"Hsig": 4.2, "Tm01": 11.5, "Pdir01": 285, ...}
 ```
 
 **Benefits:**
+
 - No data loss - preserve provider-specific parameters (NWPS currents, Surfline ratings)
 - Easy to debug - inspect raw Redis values
 - Provider evolution - add new parameters without migrating data
 - Power users - can access raw data if needed
 
 ### API Layer: Standardized Views
+
 **Transform on read** - backend generates UI-friendly views from raw data.
 
 ```python
@@ -46,6 +51,7 @@ GET /spots/{spot_id}/forecast/raw?provider=nwps
 ```
 
 **Benefits:**
+
 - UI stays simple - gets pre-structured data
 - Iterate on views - change presentation without re-fetching provider data
 - Cross-provider queries - backend handles provider differences
@@ -59,32 +65,38 @@ GET /spots/{spot_id}/forecast/raw?provider=nwps
 Define interfaces that all providers must implement using **Protocol** (structural typing).
 
 **Why Protocol?**
+
 - No inheritance required - classes just need matching attributes/methods
 - Type checking without coupling
 - Clean interface definitions
 
 **Key Abstractions:**
+
 - `ForecastProvider` - Base protocol (provider name, update frequency, coverage check)
 - `FileBasedProvider` - Download regional files, extract for multiple spots
 - `APIBasedProvider` - HTTP requests with optional batching
 
 **FileBasedProvider Flow:**
+
 1. Download regional file (e.g., 62MB GRIB2 or 50MB NetCDF)
 2. Extract data for many spots from single file using xarray
 3. Store extracted data in Redis
 4. Clean up file after processing
 
 **Examples:**
+
 - NWPS: GRIB2 files with xarray + cfgrib
 - PacIOOS GridDAP: NetCDF files with xarray (default engine)
 
 **APIBasedProvider Flow:**
+
 1. Make HTTP request(s) to provider API
 2. Parse response (JSON, binary NetCDF, etc.)
 3. Store raw provider data in Redis
 4. No file cleanup needed (in-memory processing)
 
 **Examples:**
+
 - Surfline: Per-spot requests (`supports_batching=False`)
 - Open-Meteo: Batch multiple lat/lons (`supports_batching=True`)
 - PacIOOS NCSS: Per-spot NetCDF-3 binary (`supports_batching=False`)
@@ -106,6 +118,7 @@ regional_providers = registry.get_regional_providers_for_region("maui")
 ```
 
 **Location-Aware Registration:**
+
 - `LOCATION=maui` → Register NWPS with CG4 grid config
 - `LOCATION=oahu` → Register NWPS with different coverage area
 - Future: `LOCATION=california` → Register different regional models
@@ -113,12 +126,14 @@ regional_providers = registry.get_regional_providers_for_region("maui")
 ### 1.3 NWPS Configuration (`services/forecast/providers/nwps_config.py`)
 
 **Per-region GRIB2 configuration:**
+
 - Grid code (e.g., CG4 for Hawaii)
 - Coverage area (lat/lon bounds)
 - Model run times (00Z, 12Z)
 - Base URL for NOAA NOMADS server
 
 **Example:**
+
 ```python
 NWPS_REGIONS = {
     "maui": {
@@ -131,6 +146,7 @@ NWPS_REGIONS = {
 ```
 
 **Why separate file?**
+
 - Location configs are NWPS-specific, not global
 - Easy to add new regions without touching provider code
 - Keeps `core/configs` for app-wide settings
@@ -144,15 +160,18 @@ NWPS_REGIONS = {
 **Implements FileBasedProvider protocol** - processes GRIB2 files with xarray + cfgrib.
 
 **Key Responsibilities:**
+
 1. **Download GRIB2 file** (62MB, ~5-20 sec)
 2. **Extract point data** using xarray + cfgrib (lazy loading, efficient)
 3. **Return raw parameter names** - preserve NOAA's native format
 
 **xarray vs pygrib:**
+
 - ✅ xarray: Cleaner API, lazy loading, easy lat/lon selection
 - ❌ pygrib: More boilerplate, loads entire file into memory
 
 **Example extraction:**
+
 ```python
 ds = xr.open_dataset(grib_file, engine='cfgrib', filter_by_keys={'dataType': 'fc'})
 spot_data = ds.sel(latitude=20.93, longitude=203.64, method='nearest')
@@ -171,6 +190,7 @@ return {
 ```
 
 **GRIB2 Variable Reference:**
+
 - `swh` - Significant wave height (total: swell + wind waves) - **nearshore height**
 - `shts` - Significant height total swell (swell only) - **offshore swell component**
 - `perpw` - Primary wave mean period
@@ -182,6 +202,7 @@ return {
 - `zos` - Sea surface height (**NWPS exclusive**: tide + storm surge + wave setup)
 
 **Why these variables matter:**
+
 - `swh` - What actually hits the beach (physics-based nearshore transformation)
 - `shts` - Offshore swell (comparable to Surfline's deep-water swell)
 - Currents - Safety + paddling effort (no other provider shows this!)
@@ -190,6 +211,7 @@ return {
 ### 2.2 NWPS Architecture Notes
 
 **NWPS Model Components:**
+
 - **Boundary conditions**: WAVEWATCH III (offshore waves)
 - **Wind forcing**: AWIPS forecaster-developed grids (human-refined)
 - **Wave model**: SWAN (nearshore transformation with bathymetry)
@@ -198,6 +220,7 @@ return {
 - **Resolution**: 1.8km to 500m nearshore
 
 **This is a physics-based model** - not statistical like most surf forecasts. It accounts for:
+
 - Reef/bathymetry effects (wave shoaling, refraction)
 - Wave-current interaction
 - Local wind effects
@@ -208,16 +231,19 @@ return {
 **Implements FileBasedProvider protocol** - processes NetCDF files from ERDDAP GridDAP service.
 
 **Why GridDAP vs NCSS?**
+
 - **GridDAP**: Download regional NetCDF grid covering many spots (file-based workflow)
 - **NCSS**: Per-spot queries via HTTP API (API-based workflow)
 - Use GridDAP when you have many spots in a region (more efficient)
 
 **Key Responsibilities:**
+
 1. **Download NetCDF file** from ERDDAP GridDAP (~20-50MB, depends on region/time range)
 2. **Extract point data** using xarray (same as NWPS, but no cfgrib engine needed)
 3. **Return raw PacIOOS variable names** - preserve native format
 
 **Example extraction:**
+
 ```python
 # Download NetCDF from GridDAP
 url = "https://pae-paha.pacioos.hawaii.edu/erddap/griddap/swan_oahu.nc"
@@ -246,6 +272,7 @@ return {
 ```
 
 **NetCDF Variable Reference (PacIOOS SWAN):**
+
 - `Hsig` - Significant wave height (meters)
 - `Tm01` - Mean wave period (seconds)
 - `Pdir01` - Primary wave direction (degrees)
@@ -263,6 +290,7 @@ return {
 | **xarray code** | Nearly identical | Nearly identical |
 
 Both use the same `FileBasedProvider` workflow:
+
 1. Download regional file
 2. Extract with `ds.sel(latitude=..., longitude=..., method='nearest')`
 3. Cache extracted data
@@ -280,6 +308,7 @@ Both use the same `FileBasedProvider` workflow:
 Surfline doesn't have official batch API, but you can:
 
 **Option A: Sequential requests with rate limiting**
+
 ```python
 async def fetch_many(spots: list[SurfSpot]) -> dict[str, dict]:
     results = {}
@@ -293,6 +322,7 @@ async def fetch_many(spots: list[SurfSpot]) -> dict[str, dict]:
 ```
 
 **Option B: Gather with concurrency limit**
+
 ```python
 semaphore = asyncio.Semaphore(10)  # Max 10 concurrent requests
 
@@ -305,6 +335,7 @@ results = await asyncio.gather(*tasks, return_exceptions=True)
 ```
 
 **Return raw Surfline format:**
+
 ```python
 {
     "surf_min": 12,
@@ -322,6 +353,7 @@ results = await asyncio.gather(*tasks, return_exceptions=True)
 ```
 
 **Surfline Data Characteristics:**
+
 - Statistical model (buoy-calibrated)
 - Offshore swell predictions (deep water, no nearshore transformation)
 - `surf_optimal` is their guess at beach height
@@ -336,6 +368,7 @@ results = await asyncio.gather(*tasks, return_exceptions=True)
 
 **1. Smart Scheduling (Recommended)**
 Don't fetch all spots every time:
+
 ```python
 # Celery beat schedule
 'fetch-surfline-priority-spots': {
@@ -352,6 +385,7 @@ Don't fetch all spots every time:
 ```
 
 **2. Concurrent Fetching with Throttling**
+
 ```python
 # Fetch 10 spots at a time (1-2 seconds per batch)
 async def fetch_surfline_batch(spots: list[SurfSpot]):
@@ -362,6 +396,7 @@ async def fetch_surfline_batch(spots: list[SurfSpot]):
 ```
 
 **3. Incremental Updates**
+
 ```python
 # Only fetch spots with stale data
 async def fetch_stale_spots():
@@ -372,6 +407,7 @@ async def fetch_stale_spots():
 ```
 
 **4. User-Triggered Fetching**
+
 ```python
 # When user views a spot, trigger fresh fetch if stale
 @router.get("/spots/{spot_id}/forecast")
@@ -387,11 +423,13 @@ async def get_forecast(spot_id: str):
 ```
 
 **Recommended Approach:** Combination of #1 + #2
+
 - High-traffic spots: Fetch every 10 minutes (small batch)
 - All spots: Fetch every 3-6 hours (large batch with throttling)
 - On-demand: User views trigger background refresh if >1 hour old
 
 **Network Load Estimation:**
+
 - 150 spots × ~50KB response = ~7.5MB per full refresh
 - Every 3 hours = 60MB/day (negligible)
 - With smart scheduling (priority spots every 10min): ~100MB/day
@@ -443,6 +481,7 @@ class OpenMeteoProvider:
 ```
 
 **Benefits of Open-Meteo:**
+
 - ✅ Free, no API key required
 - ✅ Batch 100+ locations in one request
 - ✅ Hourly updates (vs Surfline's 3-6 hour delays)
@@ -596,6 +635,7 @@ class AsyncTask(Task):
 **Three-task orchestration pattern** - used by both NWPS and PacIOOS GridDAP:
 
 **1. `FetchRegionalFileTask` (Orchestrator)**
+
 - Download regional file (GRIB2 or NetCDF)
 - Store file metadata in Redis (path, model run, size, provider)
 - Query DB for all spots in region
@@ -603,6 +643,7 @@ class AsyncTask(Task):
 - Schedule cleanup task (+30 min buffer)
 
 **2. `ExtractSpotDataTask` (Worker)**
+
 - Read file path and provider from Redis
 - Load spot from DB
 - Extract point data using xarray (with appropriate engine)
@@ -612,10 +653,12 @@ class AsyncTask(Task):
 - Set TTL (provider-specific)
 
 **3. `CleanupFileTask` (Cleanup)**
+
 - Delete file from `/tmp`
 - Delete file metadata from Redis
 
 **Parallelization:**
+
 - Main task: 1 (download)
 - Extraction tasks: N (one per spot, run concurrently)
 - Example: 20 spots × 5 sec = 100 sec total (vs 100 sec sequential)
@@ -643,6 +686,7 @@ def fetch_pacioos_griddap(region: str):
 **Single-task pattern** - simpler than file-based (no download/cleanup):
 
 **`FetchAPIProviderTask`**
+
 - Query DB for spots (filter by provider availability)
 - Call provider's `fetch_forecast()` method
   - If `supports_batching=True`: One request for all spots (Open-Meteo)
@@ -676,6 +720,7 @@ async def fetch_open_meteo(region: str):
 ```
 
 **Rate Limiting (for non-batching providers):**
+
 ```python
 # Inside provider implementation
 async def fetch_forecast(self, spots: list[SurfSpot], timestamp: datetime):
@@ -703,11 +748,13 @@ async def fetch_forecast(self, spots: list[SurfSpot], timestamp: datetime):
 ## Redis Storage Format
 
 ### Key Structure
+
 ```
 forecast:{provider}:{spot_id}:{timestamp}
 ```
 
 ### NWPS Example
+
 ```
 Key: forecast:nwps:550e8400-e29b-41d4-a716-446655440000:2025-11-14T12:00:00
 
@@ -730,6 +777,7 @@ TTL: 50400 seconds (14 hours)
 ```
 
 ### Surfline Example
+
 ```
 Key: forecast:surfline:550e8400-e29b-41d4-a716-446655440000:2025-11-14T12:00:00
 
@@ -754,6 +802,7 @@ TTL: 21600 seconds (6 hours)
 ```
 
 ### PacIOOS GridDAP Example
+
 ```
 Key: forecast:pacioos:550e8400-e29b-41d4-a716-446655440000:2025-11-14T12:00:00
 
@@ -773,6 +822,7 @@ TTL: 50400 seconds (14 hours)
 ```
 
 ### Open-Meteo Example
+
 ```
 Key: forecast:open_meteo:550e8400-e29b-41d4-a716-446655440000:2025-11-14T12:00:00
 
@@ -790,6 +840,7 @@ TTL: 7200 seconds (2 hours)
 ```
 
 **Why this format:**
+
 - Simple key structure (easy to query all providers for a spot/time)
 - Raw JSON preserves all provider fields
 - Individual TTLs per forecast hour
@@ -800,6 +851,7 @@ TTL: 7200 seconds (2 hours)
 ## Implementation Order
 
 **Phase 1: Foundation (Week 1)**
+
 1. Create `services/forecast/base.py` - Protocol definitions
 2. Create `services/forecast/registry.py` - Provider registry
 3. Create `services/forecast/providers/nwps_config.py` - NWPS regions
@@ -843,11 +895,13 @@ TTL: 7200 seconds (2 hours)
 ## Files to Create
 
 **Core Services:**
+
 - `backend/services/forecast/base.py` - Protocols (FileBasedProvider, APIBasedProvider)
 - `backend/services/forecast/registry.py` - Provider registry
 - `backend/services/forecast/views.py` - View transformations
 
 **File-Based Providers:**
+
 - `backend/services/forecast/providers/__init__.py`
 - `backend/services/forecast/providers/nwps_config.py` - NWPS regional configs
 - `backend/services/forecast/providers/nwps_provider.py` - GRIB2 extraction
@@ -855,10 +909,12 @@ TTL: 7200 seconds (2 hours)
 - `backend/services/forecast/providers/pacioos_griddap_provider.py` - NetCDF extraction
 
 **API-Based Providers:**
+
 - `backend/services/forecast/providers/surfline_provider.py` - Per-spot HTTP API
 - `backend/services/forecast/providers/open_meteo_provider.py` - Batch HTTP API
 
 **Tasks:**
+
 - `backend/tasks/__init__.py`
 - `backend/tasks/base.py` - AsyncTask base class
 - `backend/tasks/file_based.py` - Shared file-based orchestration (download, extract, cleanup)
@@ -869,13 +925,16 @@ TTL: 7200 seconds (2 hours)
 - `backend/tasks/open_meteo.py` - Open-Meteo task wrappers
 
 **API:**
+
 - `backend/routers/forecast.py` - API endpoints
 
 **Testing:**
+
 - `backend/scripts/test_file_providers.py` - Test NWPS + PacIOOS extraction
 - `backend/scripts/test_api_providers.py` - Test Surfline + Open-Meteo fetching
 
 **Dependencies:**
+
 - Modify `backend/pyproject.toml` - Add xarray, cfgrib, netCDF4, httpx
 
 ---
@@ -901,12 +960,14 @@ TTL: 7200 seconds (2 hours)
 **File-Based Providers:**
 
 **NWPS (GRIB2) - 2x/day:**
+
 - Download: 62MB in 5-20 sec
 - Extraction: 20 spots × 144 hours in 2-5 min (parallel)
 - Storage: ~500KB Redis per model run
 - Network: 124MB/day
 
 **PacIOOS GridDAP (NetCDF) - 4x/day:**
+
 - Download: 20-50MB in 5-15 sec (varies by region/time range)
 - Extraction: 20 spots × 144 hours in 2-5 min (parallel)
 - Storage: ~400KB Redis per model run
@@ -915,15 +976,18 @@ TTL: 7200 seconds (2 hours)
 **API-Based Providers:**
 
 **Surfline - Variable frequency:**
+
 - Priority spots (20): Every 10 min = ~50KB × 144/day = 7MB/day
 - All spots (150): Every 3 hours = 7.5MB × 8/day = 60MB/day
 - Total: ~70MB/day
 
 **Open-Meteo - Hourly (batched):**
+
 - All spots (150): One request = ~200KB × 24/day = ~5MB/day
 - Extremely efficient due to batching
 
 **Total Resource Impact:**
+
 - Network: ~300-400MB/day (negligible on home internet)
 - Redis: ~10-20MB active forecast data (all providers)
 - CPU: 5-10 min processing 4-6x/day (file-based) + minimal for HTTP requests
