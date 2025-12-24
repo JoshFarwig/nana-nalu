@@ -1,0 +1,68 @@
+import logging
+
+from schemas.forecast_schema import (
+    GridMetadata,
+    TideData,
+    ForecastPoint,
+    ForecastProvider,
+    ForecastModel,
+    ProviderForecast,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def map_pacioos_tide_forecast(
+    spot_id: int, location: str, raw_data: dict
+) -> ProviderForecast:
+    """
+    Map PacIOOS Tide model forecast to unified schema.
+
+    Tide model provides:
+    - ssh: Sea surface height (meters)
+
+    Note: Tidal currents (u/v) are not included. For comprehensive currents,
+    use ROMS model which includes tidal + wind + wave-driven components.
+
+    Maps to: tide.height
+    """
+    forecast = []
+
+    for i, valid_time in enumerate(raw_data["valid_times"]):
+        # Sea level from sea surface height
+        tide = TideData(height=raw_data["data"]["ssh"][i])
+
+        forecast.append(ForecastPoint(valid_time=valid_time, tide=tide))
+
+    return ProviderForecast(
+        spot_id=spot_id,
+        provider=ForecastProvider.PACIOOS,
+        model=ForecastModel.TIDE,
+        location=location,
+        grid_metadata=GridMetadata(
+            selected_lat=raw_data["grid_metadata"]["selected_lat"],
+            selected_lon=raw_data["grid_metadata"]["selected_lon"],
+            distance_km=raw_data["grid_metadata"]["distance_km"],
+        ),
+        forecast=forecast,
+    )
+
+
+def map_pacioos_swan_forecast(spot_id: int, location: str, raw_data: dict):
+    """
+    Map PacIOOS SWAN wave model forecast to unified schema.
+
+    Maps to: wave.height, wave.direction_peak, wave.period_peak
+    """
+    # TODO:
+    pass
+
+
+def map_pacioos_wrf_forecast(spot_id: int, location: str, raw_data: dict):
+    """
+    Map PacIOOS WRF atmospheric model forecast to unified schema.
+
+    Maps to: wind.speed, wind.direction (degrees FROM)
+    """
+    # TODO:
+    # pass

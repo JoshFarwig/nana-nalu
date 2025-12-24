@@ -43,6 +43,8 @@ worker = [
   # eccodes Python bindings - uses system libeccodes on ARM64 Linux
   # eccodeslib (bundled binaries) excluded via [tool.uv] override below
   "eccodes>=2.44.0",
+  "netcdf4>=1.7.3",
+  "dask>=2025.12.0",
 ]
 # beat scheduler - minimal dependencies, only schedules tasks
 # uses lazy loading (task names only), no SQLAlchemy or scientific deps

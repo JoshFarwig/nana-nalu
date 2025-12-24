@@ -28,8 +28,7 @@ from .configs import APIConfig, CeleryConfig, DatabaseConfig, HTTPConfig, RedisC
 # ============================================================================
 # Service-Specific Settings Classes
 # ============================================================================
-# Each class defines ONLY the configuration fields that service needs.
-# No inheritance, no dynamic class creation, just explicit field definitions.
+# each class defines ONLY the configuration fields that service needs.
 
 
 class APISettings(BaseSettings):
@@ -98,15 +97,15 @@ class SchedulerSettings(BaseSettings):
 
 
 @overload
-def load_settings(service_type: Literal["api"] = "api") -> APISettings: ...
+def load_settings(service_type: Literal["api"]) -> APISettings: ...
 
 
 @overload
-def load_settings(service_type: Literal["worker"] = "worker") -> WorkerSettings: ...
+def load_settings(service_type: Literal["worker"]) -> WorkerSettings: ...
 
 
 @overload
-def load_settings(service_type: Literal["scheduler"] = "scheduler") -> SchedulerSettings: ...
+def load_settings(service_type: Literal["scheduler"]) -> SchedulerSettings: ...
 
 
 @lru_cache
@@ -126,17 +125,6 @@ def load_settings(
 
     Returns:
         Configuration object for the specified service type with full type hints.
-
-    Examples:
-        >>> # API service
-        >>> settings = load_settings("api")
-        >>> settings.db.host  # Type checker knows this exists
-        >>> settings.api.admin_username  # Autocomplete works!
-
-        >>> # Scheduler service (beat/flower)
-        >>> settings = load_settings("scheduler")
-        >>> settings.redis.host  # Type checker knows this exists
-        >>> settings.db  # ❌ Type checker error: SchedulerSettings has no 'db'
 
     Notes:
         - The function is cached with @lru_cache, so calling it multiple times

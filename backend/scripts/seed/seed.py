@@ -1,11 +1,9 @@
 import logging
 from core.config import APISettings, load_settings
 from core.database import SyncDatabaseManager
-from models.user_model import User
 from repositories.user_repository import SyncUserRepository
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 from scripts.seed.seed_factory import SeedFactory
-from utils.location import load_locations
 
 
 class SeedManager:
@@ -43,6 +41,7 @@ class SeedManager:
                         "last_name": "Admin",
                     }
                 )
+                session.flush()
 
                 self.logger.info(
                     "Seeded admin user",

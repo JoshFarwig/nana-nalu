@@ -6,6 +6,7 @@ from utils.location import Location
 
 if TYPE_CHECKING:
     from models import SurfSpot
+    from schemas.forecast_schema import ProviderForecast
 
 
 class ForecastProvider(Protocol):
@@ -30,7 +31,7 @@ class ForecastProvider(Protocol):
 
 class FileProvider(ForecastProvider, Protocol):
     """
-    Providers that download gridded data files (GRIB2, NetCDF, etc.)
+    Providers that download gridded data files (GRIB2, NetCDF etc.)
     and extract forecast data for multiple spots from a single file.
     """
 
@@ -40,7 +41,7 @@ class FileProvider(ForecastProvider, Protocol):
         """Download forecast file."""
         ...
 
-    def extract_forecast(self, file_path: Path) -> dict:
+    def extract_forecast(self, file_path: Path) -> dict[int, "ProviderForecast"]:
         """Extract forecast data for a avaiable spots from the regional file."""
         ...
 
@@ -53,8 +54,21 @@ class APIProvider(ForecastProvider, Protocol):
     processing_mode: Literal["api"] = "api"
     supports_batching: bool  # can request multiple spots in one API call
 
-    # potientally consider async functionality, but for now, develop the
-    # MVP with sync for celery
-    def fetch_forecast(self, timestamp: datetime) -> dict[str, dict]:
+    def fetch_forecast(self, timestamp: datetime) -> dict[int, "ProviderForecast"]:
         """Fetch forecast data via HTTP API for given spots."""
+        ...
+
+
+class StreamingDataProvider(ForecastProvider, Protocol):
+    """
+    Providers that stream gridded data via protocols like OPeNDAP/THREDDS.
+    Data is subset server-side and loaded lazily.
+    """
+
+    processing_mode: Literal["stream"] = "stream"
+
+    def fetch_forecasts(self) -> dict[int, "ProviderForecast"]:
+        """
+        Stream forecast data for all spots in the configured grid region.
+        """
         ...

@@ -1,6 +1,6 @@
 from datetime import date, time, timedelta, timezone, datetime
 from core.http import SyncHTTPManager
-from .config import NWPSModelConfig
+from .config import NWPSConfig
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class NWPSAvailabilityChecker:
     """Check NOMADS for latest available NWPS run."""
 
-    def __init__(self, config: NWPSModelConfig, http_manager: SyncHTTPManager):
+    def __init__(self, config: NWPSConfig, http_manager: SyncHTTPManager):
         self.config = config
         self.http = http_manager
 

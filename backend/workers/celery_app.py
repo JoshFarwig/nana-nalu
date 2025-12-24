@@ -41,6 +41,7 @@ def create_celery_app(service_type: str = "worker") -> Celery:
         enable_utc=True,
         task_routes={
             "workers.tasks.nwps.*": {"queue": "forecasts"},
+            "workers.tasks.pacioos.*": {"queue": "forecasts"},
         },
     )
 
@@ -50,6 +51,9 @@ def create_celery_app(service_type: str = "worker") -> Celery:
 
     # tasks referenced by string (lazy loading), imported by worker on execution
     app.conf.beat_schedule = {
+        # =========================
+        # NWPS (NOMADS) - 3x daily polling for unpredictable run times
+        # =========================
         "nwps-poll-morning": {
             "task": "workers.tasks.nwps.fetch_all_nwps_forecasts",
             "schedule": crontab(hour=10, minute=0),  # 10:00 UTC
@@ -64,6 +68,13 @@ def create_celery_app(service_type: str = "worker") -> Celery:
                 hour=14, minute=0
             ),  # 14:00 UTC, catches any straggling forecasts
         },
+        # =========================
+        # PacIOOS Tide - weekly (pre-computed predictions extend to Dec 2026)
+        # =========================
+        "pacioos-tide-weekly": {
+            "task": "workers.tasks.pacioos.fetch_all_pacioos_tide_forecasts",
+            "schedule": crontab(day_of_week=0, hour=6, minute=0),  # Sundays 6am UTC
+        },
     }
 
     # import worker signals / tasks only when running as worker container.
@@ -73,5 +84,6 @@ def create_celery_app(service_type: str = "worker") -> Celery:
     if service_type == "worker":
         import workers.signals  # noqa: F401
         import workers.tasks.nwps
+        import workers.tasks.pacioos
 
     return app

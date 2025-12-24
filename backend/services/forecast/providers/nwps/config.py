@@ -2,7 +2,9 @@ import logging
 from datetime import date, time
 from enum import Enum
 from urllib.parse import quote
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from services.forecast.grids import Grid, MauiGrid
 
 from utils.location import Location, load_locations
 from utils.geo_validation import longitude_to_360
@@ -18,45 +20,18 @@ class WFO(str, Enum):
     HONOLULU = "hfo"
 
 
-class NWPSGridConfig(BaseModel):
+class NWPSGridConfig(Grid):
     model_config = ConfigDict(frozen=True)
 
     cg: str = Field(
         pattern=r"^CG\d+$",
     )
-    lat_min: float = Field(
-        ge=-90,
-        le=90,
-    )
-    lat_max: float = Field(
-        ge=-90,
-        le=90,
-    )
-    long_min: float = Field(
-        ge=-180,
-        le=180,
-    )
-    long_max: float = Field(
-        ge=-180,
-        le=180,
-    )
-
-    @model_validator(mode="after")
-    def validate_min_max(self):
-        if self.lat_min >= self.lat_max:
-            raise ValueError(
-                f"lat_min ({self.lat_min}) must be less than lat_max ({self.lat_max})"
-            )
-        if self.long_min >= self.long_max:
-            raise ValueError(
-                f"long_min ({self.long_min}) must be less than long_max ({self.long_max})"
-            )
-        return self
 
 
-class NWPSModelConfig(BaseModel):
+class NWPSConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    location: Location  # Regional variant (e.g., MAUI, OAHU)
     wfo: WFO
 
     # NOTE: NWPS model run times are highly variable and unpredictable
@@ -72,8 +47,7 @@ class NWPSModelConfig(BaseModel):
     # maximum age of forecast data to accept before considering it stale
     # used by polling system to skip fetching old runs
 
-    max_forecast_age_hours: int = 8
-
+    max_forecast_age_hours: int = 6
     grib_filter_base_url: str
 
     # NOTE: filename pattern template for grib2 files
@@ -185,19 +159,15 @@ class NWPSModelConfig(BaseModel):
 # =======================
 
 
-class NWPSMauiGridConfig(NWPSGridConfig):
+class MauiNWPSGridConfig(MauiGrid, NWPSGridConfig):
     model_config = ConfigDict(frozen=True)
-
     cg: str = "CG4"
-    lat_min: float = 20.553
-    lat_max: float = 21.042
-    long_min: float = -156.71
-    long_max: float = -155.954
 
 
-class NWPSMauiModelConfig(NWPSModelConfig):
+class MauiNWPSConfig(NWPSConfig):
     model_config = ConfigDict(frozen=True)
 
+    location: Location = Location.MAUI
     wfo: WFO = WFO.HONOLULU
 
     # NOTE: HFO runs twice daily but at highly unpredictable times
@@ -207,7 +177,7 @@ class NWPSMauiModelConfig(NWPSModelConfig):
     # maximum age of forecast data to accept
     # HFO runs twice daily (~12h gaps), so 18h allows for one missed run + buffer
 
-    max_forecast_age_hours: int = 24
+    max_forecast_age_hours: int = 18
 
     max_nearest_neighbor_distance_km: float = 2.0
     grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl"
@@ -232,41 +202,43 @@ class NWPSMauiModelConfig(NWPSModelConfig):
         "var_WIND",
     ]
     levels: list[str] = ["lev_surface"]
-    grid: NWPSGridConfig = NWPSMauiGridConfig()
+    grid: NWPSGridConfig = MauiNWPSGridConfig()
 
 
 # =================================
 # CONFIG REGISTRY / KEY VALUE STORE
 # =================================
 
-NWPS_CONFIG_REGISTRY: dict[Location, type[NWPSModelConfig]] = {
-    Location.MAUI: NWPSMauiModelConfig
+NWPS_CONFIG_REGISTRY: dict[Location, NWPSConfig] = {
+    Location.MAUI: MauiNWPSConfig(),
 }
 
 
-def get_nwps_configs() -> dict[Location, NWPSModelConfig]:
-    enabled = load_locations()
-    configs = {}
-
-    for location in enabled:
-        try:
-            configs[location] = get_nwps_config(location)
-        except ValueError as e:
-            logger.warning(
-                f"No NWPS configuration for enabled location {location.value}: {e}"
-            )
-
-    return configs
-
-
-def get_nwps_config(location: Location) -> NWPSModelConfig:
+def get_nwps_config(location: Location) -> NWPSConfig:
     if location not in NWPS_CONFIG_REGISTRY:
         valid_locations = ", ".join(loc.value for loc in NWPS_CONFIG_REGISTRY.keys())
         raise ValueError(
-            f"No NWPS configuration for location: {location}. "
+            f"No configuration for location {location} in NWPS_CONFIG_REGISTRY. "
             f"Does the configuration exist in the NWPS_CONFIG_REGISTRY? "
             f"Valid location configurations are: {valid_locations}."
         )
 
     config_cls = NWPS_CONFIG_REGISTRY[location]
-    return config_cls()  # type: ignore[arg-type] all vars in NWPSModelConfig MUST be defined in their child classes
+    return config_cls
+
+
+def get_enabled_locations() -> list[Location]:
+    """
+    Get all enabled locations for NWPS
+
+    Returns:
+        List of enabled locations that support NWPS
+    """
+    enabled_locations = load_locations()
+    locations = []
+
+    for location, _ in NWPS_CONFIG_REGISTRY.items():
+        if location in enabled_locations:
+            locations.append(location)
+
+    return locations

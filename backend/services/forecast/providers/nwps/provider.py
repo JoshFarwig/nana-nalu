@@ -7,9 +7,11 @@ import numpy as np
 from core.http import SyncHTTPManager
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 from services.forecast.providers.nwps.config import (
-    NWPSModelConfig,
+    NWPSConfig,
     NWPS_CONFIG_REGISTRY,
 )
+from services.forecast.providers.nwps.mapper import map_nwps_forecast
+from schemas.forecast_schema import ProviderForecast
 from utils.geo_validation import longitude_to_360
 from utils.geo_spatial import build_forecast_kdtree, query_nearest_forecast_points
 from utils.location import Location
@@ -24,7 +26,7 @@ class NWPSProvider:
 
     def __init__(
         self,
-        config: NWPSModelConfig,
+        config: NWPSConfig,
         http_manager: SyncHTTPManager,
         surf_spot_repo: SyncSurfSpotRepository,
     ):
@@ -39,7 +41,7 @@ class NWPSProvider:
 
         returns True if location is in NWPS_CONFIG_REGISTRY, False otherwise.
         """
-        return location in NWPS_CONFIG_REGISTRY
+        return any(loc == location for loc in NWPS_CONFIG_REGISTRY.keys())
 
     def download_file(
         self, analysis_time: time, forecast_date: date | None = None
@@ -65,8 +67,13 @@ class NWPSProvider:
 
         return file_path
 
-    def extract_forecasts(self, file_path: Path) -> dict:
-        """Core NWPS provider function to extract forecasts for all spots that exist in grid"""
+    def extract_forecasts(self, file_path: Path) -> dict[int, ProviderForecast]:
+        """
+        Core NWPS provider function to extract forecasts for all spots that exist in grid.
+
+        Returns:
+            Dictionary mapping spot_id -> ProviderForecast (unified schema ready for Redis)
+        """
 
         # PERFORMANCE: for future implementations, if extract_forecasts ABSOLUTELY needs optimization
         # consider using a threadpoolexecutor for the cfgrib IO + decompression and the KDtree
@@ -96,7 +103,7 @@ class NWPSProvider:
 
         # DEBUG: log all variables found in GRIB file
         logger.info(
-            f"[NWPS] GRIB variables found in dataset",
+            "GRIB variables found in dataset",
             extra={
                 "file": file_path.name,
                 "data_vars": list(ds.data_vars.keys()),
@@ -108,7 +115,7 @@ class NWPSProvider:
         for var_name in ds.data_vars:
             var = ds[var_name]
             logger.info(
-                f"[NWPS] Variable details: {var_name}",
+                f"Variable details: {var_name}",
                 extra={
                     "long_name": var.attrs.get("long_name", "N/A"),
                     "units": var.attrs.get("units", "N/A"),
@@ -193,8 +200,8 @@ class NWPSProvider:
             valid_distances,
         )
 
-        # build forecast dictionary
-        forecasts = self._build_forecast_dict(
+        # build raw forecast dictionary
+        raw_forecasts = self._build_forecast_dict(
             spot_forecast,
             valid_spot_ids,
             valid_selected_lats,
@@ -206,7 +213,14 @@ class NWPSProvider:
         ds.close()
         spot_forecast.close()
 
-        return forecasts
+        # map to unified schema (location comes from config)
+        location = self.config.location.value
+        provider_forecasts = {
+            spot_id: map_nwps_forecast(spot_id, location, raw_data)
+            for spot_id, raw_data in raw_forecasts.items()
+        }
+
+        return provider_forecasts
 
     def _build_spot_forecast_dataset(
         self,
@@ -258,11 +272,10 @@ class NWPSProvider:
         forecasts = {}
 
         # extract common data once (shared across all spots)
-        # convert numpy datetime64 to ISO format strings for better readability and compatibility
-        analysis_time = Timestamp(spot_forecast.analysis_time.values).isoformat()
-        valid_times = [
-            Timestamp(vt).isoformat() for vt in spot_forecast.valid_time.values
-        ]
+        # convert numpy.datetime64 → pandas.Timestamp (subclass of datetime, Pydantic-compatible)
+        # NOTE: GRIB2 forecast files have mandatory time coordinates; if missing, dataset open would fail
+        analysis_time = Timestamp(spot_forecast.analysis_time.values)
+        valid_times = [Timestamp(vt) for vt in spot_forecast.valid_time.values]
 
         # get all data variable names (exclude coordinates)
         data_vars = [

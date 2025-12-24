@@ -1,0 +1,205 @@
+import logging
+from datetime import datetime, timezone, timedelta
+from enum import Enum
+from typing import Literal
+from pydantic import BaseModel, ConfigDict
+
+from services.forecast.grids import MauiGrid, Grid
+from utils.location import Location, load_locations
+
+logger = logging.getLogger(__name__)
+
+
+# =======================
+# CORE CONFIGURATIONS
+# =======================
+
+
+class PacIOOSModel(str, Enum):
+    """
+    Available PacIOOS ocean models.
+
+    Generic model types - location determines regional variant.
+    """
+
+    TIDE = "tide"
+    SWAN = "swan"
+    WRF = "wrf"
+    ROMS = "roms"
+
+
+class PacIOOSModelConfig(BaseModel):
+    """Base configuration for all PacIOOS models."""
+
+    model_config = ConfigDict(frozen=True)
+
+    location: Location  # regional variant (e.g., MAUI, OAHU)
+    model_name: PacIOOSModel
+    provider_name: Literal["pacioos"] = "pacioos"
+
+    # ERDDAP GridDAP access
+    erddap_base_url: str = "https://pae-paha.pacioos.hawaii.edu/erddap"
+    dataset_id: str
+
+    forecast_horizon_days: int
+    max_forecast_age_hours: int
+    time_step_hours: int
+
+    grid: Grid
+    max_nearest_neighbor_distance_km: float
+
+    # variables to fetch from dataset
+    data_variables: list[str]
+
+    @property
+    def griddap_url(self) -> str:
+        """ERDDAP GridDAP URL for fast grid subset downloads."""
+        return f"{self.erddap_base_url}/griddap/{self.dataset_id}"
+
+    @property
+    def catalog_url(self) -> str:
+        """ERDDAP info page for dataset metadata."""
+        return f"{self.erddap_base_url}/info/{self.dataset_id}/index.html"
+
+    def construct_griddap_url(self) -> str:
+        """
+        Construct GridDAP URL for downloading regional grid subset.
+
+        GridDAP syntax: dataset.nc?var[time_start:stride:time_end][lat_start:stride:lat_end][lon_start:stride:lon_end]
+
+        Returns URL for fetching NetCDF file with spatial and temporal subset.
+        """
+        now = datetime.now(timezone.utc)
+        end_time = now + timedelta(days=self.forecast_horizon_days)
+
+        # Format timestamps for GridDAP (ISO 8601)
+        time_start = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        time_end = end_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Build variable queries with constraints
+        # GridDAP format: var[time_start:stride:time_end][lat_start:stride:lat_end][lon_start:stride:lon_end]
+        var_queries = []
+        for var in self.data_variables:
+            var_query = (
+                f"{var}"
+                f"[({time_start}):1:({time_end})]"
+                f"[({self.grid.lat_min}):1:({self.grid.lat_max})]"
+                f"[({self.grid.long_min}):1:({self.grid.long_max})]"
+            )
+            var_queries.append(var_query)
+
+        # Join all variable queries with commas
+        query_string = ",".join(var_queries)
+
+        # Construct full URL
+        url = f"{self.griddap_url}.nc?{query_string}"
+
+        return url
+
+    def construct_filename(self) -> str:
+        """
+        Construct filename for downloaded NetCDF file.
+
+        Returns filename in format: {model}_{location}_{timestamp}.nc
+        """
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return f"{self.model_name.value}_{self.location.value}_{timestamp}.nc"
+
+
+# =======================
+# TIDAL MODEL CONFIGURATIONS
+# =======================
+
+
+class MauiTideConfig(PacIOOSModelConfig):
+    """
+    Tide configuration for Maui region.
+
+    Uses Main Hawaiian Islands (MHI) tide model which provides
+    pre-computed tidal predictions (sea surface height) through December 2026.
+    Data URL: https://pae-paha.pacioos.hawaii.edu/erddap/griddap/tide_mhi.html
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    location: Location = Location.MAUI
+    model_name: PacIOOSModel = PacIOOSModel.TIDE
+    grid: Grid = MauiGrid()
+
+    # tide model provides hourly predictions extending ~1 year into future
+    # data is pre-computed, we only fetch for Redis TTL maintenance (weekly)
+
+    max_forecast_age_hours: int = 168  # 7 days - weekly refresh sufficient
+    forecast_horizon_days: int = 7  # Fetch 7 days of hourly predictions
+    time_step_hours: int = 1  # Hourly resolution
+
+    # tide model resolution ~1km, allow 1.5x radius for nearest neighbor
+    max_nearest_neighbor_distance_km: float = 1.5
+
+    # tide variable: ssh (sea surface height only, no currents)
+    # Note: Tidal currents (u/v) are available in tide_mhi_vel dataset but not needed for surfers
+    # For comprehensive currents, use ROMS model instead (includes tidal + wind + wave-driven)
+    data_variables: list[str] = ["ssh"]
+
+    # ERDDAP dataset identifier
+    dataset_id: str = "tide_mhi"
+
+
+# =======================
+# REGISTRY & LOOKUP
+# =======================
+
+# registry maps (Location, Model) -> Config class
+# location determines regional variant, Model determines data type
+PACIOOS_CONFIG_REGISTRY: dict[tuple[Location, PacIOOSModel], PacIOOSModelConfig] = {
+    # maui region
+    (Location.MAUI, PacIOOSModel.TIDE): MauiTideConfig(),
+}
+
+
+def get_pacioos_config(location: Location, model: PacIOOSModel) -> PacIOOSModelConfig:
+    """
+    Get a specific PacIOOS configuration.
+
+    Args:
+        location: Geographic location
+        model: PacIOOS model type
+
+    Returns:
+        Instantiated config
+
+    Raises:
+        ValueError: If no configuration exists for this location/model combo
+    """
+    key = (location, model)
+    if key not in PACIOOS_CONFIG_REGISTRY:
+        available = ", ".join(
+            f"{loc.value}/{mod.value}" for loc, mod in PACIOOS_CONFIG_REGISTRY.keys()
+        )
+        raise ValueError(
+            f"No PacIOOS configuration for {location.value}/{model.value}. "
+            f"Available configurations: {available}"
+        )
+
+    config_cls = PACIOOS_CONFIG_REGISTRY[key]
+    return config_cls
+
+
+def get_enabled_locations_for_model(model: PacIOOSModel) -> list[Location]:
+    """
+    Get all enabled locations that have configuration for a specific model.
+
+    Args:
+        model: PacIOOS model type (TIDE, SWAN, WRF)
+
+    Returns:
+        List of enabled locations that support this model
+    """
+    enabled_locations = load_locations()
+    locations = []
+
+    for (location, model_type), _ in PACIOOS_CONFIG_REGISTRY.items():
+        if model_type == model and location in enabled_locations:
+            locations.append(location)
+
+    return locations

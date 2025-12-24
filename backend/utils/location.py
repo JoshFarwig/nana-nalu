@@ -7,7 +7,6 @@ logger = logging.getLogger(__name__)
 
 class Location(str, Enum):
     MAUI = "maui"
-    # OAHU = "oahu"
 
 
 def load_locations(locations_str: str | None = None) -> set[Location]:
@@ -36,7 +35,5 @@ def load_locations(locations_str: str | None = None) -> set[Location]:
     if not valid_locations:
         logger.warning("No valid locations configured. Defaulting to maui.")
         valid_locations.add(Location.MAUI)
-
-    logger.info(f"Enabled locations: {sorted([loc.value for loc in valid_locations])}")
 
     return valid_locations

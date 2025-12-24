@@ -4,13 +4,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from core.config import BaseConfig
+from core.config import APISettings
 from utils.password import hash_password
 from models.user_model import User
 
 
 class AsyncUserRepository:
-    def __init__(self, session: AsyncSession, settings: BaseConfig):
+    def __init__(self, session: AsyncSession, settings: APISettings):
         self.session = session
         self.settings = settings
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
@@ -108,7 +108,7 @@ class AsyncUserRepository:
 
 
 class SyncUserRepository:
-    def __init__(self, session: Session, settings: BaseConfig):
+    def __init__(self, session: Session, settings: APISettings):
         self.session = session
         self.settings = settings
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
