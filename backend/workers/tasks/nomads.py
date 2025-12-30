@@ -12,12 +12,13 @@ from workers.signals import (
 
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 
-from services.forecast.providers.nwps.provider import NWPSProvider
-from services.forecast.providers.nwps.config import (
-    get_enabled_locations,
-    get_nwps_config,
+from services.forecast.providers.nomads.provider import NOMADSProvider
+from services.forecast.providers.nomads.config import (
+    get_enabled_locations_for_model,
+    get_nomads_config,
+    NOMADSModel,
 )
-from services.forecast.providers.nwps.availability import NWPSAvailabilityChecker
+from services.forecast.providers.nomads.availability import NOMADSAvailabilityChecker
 from utils.location import Location
 
 logger = logging.getLogger(__name__)
@@ -40,22 +41,22 @@ def _remove_grib2_file(file_path: Path):
 
 
 class NoNewRunAvailable(Exception):
-    """Raised when NOMADS has no new NWPS run available yet (not an error, just early)"""
+    """Raised when NOMADS has no new run available yet (not an error, just early)"""
 
     pass
 
 
 # =========================
-# PARENT TASK - DISPATCHER
+# PARENT TASK - NWPS DISPATCHER
 # =========================
 
 
 @shared_task
-def fetch_all_forecasts():
+def fetch_all_nwps_forecasts():
     """
-    Parent dispatcher task that checks all enabled locations for new NWPS data.
+    Parent dispatcher task for NOMADS NWPS model.
 
-    Spawns one child task per location to check availability and fetch if new data exists.
+    Spawns one child task per enabled location to check availability and fetch if new data exists.
     Gracefully skips locations that don't have NWPS configuration.
 
     Designed for periodic polling - frequency depends on WFO run schedule:
@@ -64,23 +65,21 @@ def fetch_all_forecasts():
 
     Retry logic is hardcoded: 3 retries × 1hr for "no data", 3 retries × 5min for network errors.
     """
-
-    # get all enabled locations via config
-    locations = get_enabled_locations()
+    locations = get_enabled_locations_for_model(NOMADSModel.NWPS)
 
     if not locations:
-        logger.warning("No enabled locations found")
+        logger.warning("No enabled locations with NWPS configuration")
         return {"locations_dispatched": 0}
 
     job = group(
-        check_and_fetch_if_new.si(loc.value)  # type: ignore
+        fetch_nwps.si(loc.value)  # type: ignore
         for loc in locations
     )
 
     result = job.apply_async()
 
     logger.info(
-        f"Dispatched {len(locations)} polling tasks",
+        f"Dispatched {len(locations)} fetch tasks",
         extra={
             "locations": [loc.value for loc in locations],
             "group_id": result.id,
@@ -95,17 +94,17 @@ def fetch_all_forecasts():
 
 
 # =========================
-# CHILD TASK - PER LOCATION
+# CHILD TASK - NWPS FETCH
 # =========================
 
 
 @shared_task(bind=True, max_retries=3)
-def check_and_fetch_if_new(self, loc: str):
+def fetch_nwps(self, loc: str):
     """
-    Poll NOMADS for new NWPS data and fetch if available.
+    Fetch NOMADS NWPS forecast data for a specific location.
 
-    Args:
-        loc: Location string value (e.g., "maui"), reconstructed to Location enum inside task
+    Polls NOMADS for new NWPS runs, downloads GRIB2 files, and extracts wave/wind forecasts.
+    Stores results in Redis with key pattern: forecast:nomads:nwps:{location}:{spot_id}
 
     Handles unpredictable NWPS run schedules by:
     1. Checking what's actually available on NOMADS (via HEAD requests)
@@ -116,12 +115,26 @@ def check_and_fetch_if_new(self, loc: str):
     - No new run available: Retry 3x with 1hr intervals (model likely still running)
     - Network/download errors: Retry 3x with 5min intervals (transient failures)
     - Already current or too old: Exit immediately, no retry needed
+
+    Args:
+        loc: Location string value (e.g., "maui")
     """
 
     db_manager = get_db_manager()
     redis_manager = get_redis_manager()
     http_manager = get_http_manager()
-    config = get_nwps_config(Location(loc))
+
+    location = Location(loc)
+    config = get_nomads_config(location, NOMADSModel.NWPS)
+
+    logger.info(
+        f"Starting fetch for {loc}",
+        extra={
+            "location": loc,
+            "wfo": config.wfo.value,
+            "grid": config.grid.cg,
+        },
+    )
 
     # get the last run timestamp from Redis to optimize search window
     # key pattern: forecast:{provider}:{model}:{location}:last_run
@@ -133,7 +146,7 @@ def check_and_fetch_if_new(self, loc: str):
     last_run_time = datetime.fromisoformat(last_run_id) if last_run_id else None  # type: ignore
 
     # check what's available (searches back to last_run_time if provided, else 24h)
-    checker = NWPSAvailabilityChecker(config, http_manager)
+    checker = NOMADSAvailabilityChecker(config, http_manager)
     latest_run = checker.get_latest_available_run(last_run_time=last_run_time)
 
     if not latest_run:
@@ -150,7 +163,7 @@ def check_and_fetch_if_new(self, loc: str):
                 },
             )
             raise self.retry(
-                exc=NoNewRunAvailable(f"[NWPS] No new run for {loc}"),
+                exc=NoNewRunAvailable(f"No new run for {loc}"),
                 countdown=retry_countdown,
             )
         else:
@@ -190,7 +203,7 @@ def check_and_fetch_if_new(self, loc: str):
 
     with db_manager.explicit_commit_session() as session:
         surf_spot_repo = SyncSurfSpotRepository(session)
-        provider = NWPSProvider(config, http_manager, surf_spot_repo)
+        provider = NOMADSProvider(config, http_manager, surf_spot_repo)
 
         try:
             # download and extract (returns ProviderForecast objects ready for Redis)

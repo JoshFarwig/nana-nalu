@@ -6,11 +6,12 @@ import numpy as np
 
 from core.http import SyncHTTPManager
 from repositories.surf_spot_repository import SyncSurfSpotRepository
-from services.forecast.providers.nwps.config import (
+from services.forecast.providers.nomads.config import (
     NWPSConfig,
-    NWPS_CONFIG_REGISTRY,
+    NOMADSModel,
+    NOMADS_CONFIG_REGISTRY,
 )
-from services.forecast.providers.nwps.mapper import map_nwps_forecast
+from services.forecast.providers.nomads.mapper import map_nwps_forecast
 from schemas.forecast_schema import ProviderForecast
 from utils.geo_validation import longitude_to_360
 from utils.geo_spatial import build_forecast_kdtree, query_nearest_forecast_points
@@ -19,10 +20,10 @@ from utils.location import Location
 logger = logging.getLogger(__name__)
 
 
-class NWPSProvider:
-    provider_name: str = "NWPS"
+class NOMADSProvider:
+    provider_name: str = "nomads"
     processing_mode: str = "file"
-    file_path: str = "/tmp/nwps/"
+    file_path: str = "/tmp/nomads/"
 
     def __init__(
         self,
@@ -37,11 +38,11 @@ class NWPSProvider:
     @classmethod
     def supports_location(cls, location: Location) -> bool:
         """
-        check if NWPS has configuration for the given location.
+        check if NOMADS has configuration for the given location.
 
-        returns True if location is in NWPS_CONFIG_REGISTRY, False otherwise.
+        returns True if location is in NOMADS_CONFIG_REGISTRY, False otherwise.
         """
-        return any(loc == location for loc in NWPS_CONFIG_REGISTRY.keys())
+        return any(loc == location for loc, _ in NOMADS_CONFIG_REGISTRY.keys())
 
     def download_file(
         self, analysis_time: time, forecast_date: date | None = None

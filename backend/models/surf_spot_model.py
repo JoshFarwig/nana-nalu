@@ -24,7 +24,6 @@ class SurfSpot(Base):
 
     # relationships
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-
     created_by: Mapped["User"] = relationship(back_populates="spots")
     observations: Mapped[list["SpotObservation"]] = relationship(
         back_populates="spot", cascade="all, delete-orphan"

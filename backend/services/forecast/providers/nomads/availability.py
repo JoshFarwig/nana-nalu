@@ -6,8 +6,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class NWPSAvailabilityChecker:
-    """Check NOMADS for latest available NWPS run."""
+class NOMADSAvailabilityChecker:
+    """Check NOMADS server for latest available model run."""
 
     def __init__(self, config: NWPSConfig, http_manager: SyncHTTPManager):
         self.config = config
@@ -19,7 +19,7 @@ class NWPSAvailabilityChecker:
         max_lookback_hours: int = 24,
     ) -> tuple[date, time] | None:
         """
-        Find the most recent available NWPS run by checking NOMADS.
+        Find the most recent available model run by checking NOMADS server.
 
         Searches backward from now until either:
         - Finding an available run, OR
@@ -37,12 +37,10 @@ class NWPSAvailabilityChecker:
         # use last run time as cutoff if provided, otherwise use max lookback
         if last_run_time:
             cutoff = last_run_time
-            logger.debug(f"[NWPS] Searching from now back to last run: {last_run_time}")
+            logger.debug(f"Searching from now back to last run: {last_run_time}")
         else:
             cutoff = now - timedelta(hours=max_lookback_hours)
-            logger.debug(
-                f"[NWPS] No last run time, searching back {max_lookback_hours}h"
-            )
+            logger.debug(f"No last run time, searching back {max_lookback_hours}h")
 
         # walk backward hour by hour from now
         current = now.replace(minute=0, second=0, microsecond=0)
@@ -53,7 +51,7 @@ class NWPSAvailabilityChecker:
 
             if self._run_exists(check_date, analysis_time):
                 logger.info(
-                    f"Found available NWPS run: {check_date} {analysis_time.strftime('%H:%M %Z')}",
+                    f"Found available NOMADS run: {check_date} {analysis_time.strftime('%H:%M %Z')}",
                     extra={"date": str(check_date), "hour": analysis_time.hour},
                 )
                 return (check_date, analysis_time)
@@ -62,10 +60,10 @@ class NWPSAvailabilityChecker:
 
         if last_run_time:
             logger.warning(
-                f"[NWPS] No new runs found since last run at {last_run_time.isoformat()}"
+                f"No new runs found since last run at {last_run_time.isoformat()}"
             )
         else:
-            logger.warning(f"[NWPS] No runs found in last {max_lookback_hours} hours")
+            logger.warning(f"No runs found in last {max_lookback_hours} hours")
         return None
 
     def _run_exists(self, forecast_date: date, analysis_time: time) -> bool:

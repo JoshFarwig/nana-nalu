@@ -2,11 +2,13 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.exceptions.base import NanaNaluException, StartupError
 from core.exceptions.handlers import (
     generic_exception_handler,
     validation_exception_handler,
+    http_exception_handler,
     nana_nalu_exception_handler,
 )
 
@@ -102,6 +104,7 @@ def create_app(config: str | None = None) -> FastAPI:
     # exception handlers
     app.add_exception_handler(NanaNaluException, nana_nalu_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, generic_exception_handler)
 
     # ======================================================
@@ -114,7 +117,6 @@ def create_app(config: str | None = None) -> FastAPI:
         return {
             "message": "nānā-nalu surf forecasting API",
             "api_version": app.version,
-            "docs": "/docs",
         }
 
     @app.get("/health", tags=["health"])

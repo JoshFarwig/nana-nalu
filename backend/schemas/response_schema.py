@@ -1,9 +1,7 @@
-"""Response envelope schemas for consistent API responses."""
-
 from typing import Generic, TypeVar
 from pydantic import BaseModel
 
-T = TypeVar("T")  # Data type for data
+T = TypeVar("T")  # generic type for data
 
 
 class SuccessResponse(BaseModel, Generic[T]):

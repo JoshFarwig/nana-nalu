@@ -22,9 +22,9 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 import redis
 
-from services.forecast.providers.nwps.provider import NWPSProvider
-from services.forecast.providers.nwps.config import get_nwps_config
-from services.forecast.providers.nwps.availability import NWPSAvailabilityChecker
+from services.forecast.providers.nomads.provider import NOMADSProvider
+from services.forecast.providers.nomads.config import get_nomads_config, NOMADSModel
+from services.forecast.providers.nomads.availability import NOMADSAvailabilityChecker
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 from utils.location import Location
 from core.http import SyncHTTPManager
@@ -51,10 +51,10 @@ class TestNWPSPipeline:
         - data contains required fields: swh, perpw, dirpw, swell, etc.
         - data is properly stored in Redis with correct keys
         """
-        config = get_nwps_config(Location.MAUI)
+        config = get_nomads_config(Location.MAUI, NOMADSModel.NWPS)
         repo = SyncSurfSpotRepository(sync_db_session)
-        provider = NWPSProvider(config, http_manager, repo)
-        checker = NWPSAvailabilityChecker(config, http_manager)
+        provider = NOMADSProvider(config, http_manager, repo)
+        checker = NOMADSAvailabilityChecker(config, http_manager)
 
         # find latest available run (search back 24 hours)
         latest_run = checker.get_latest_available_run(max_lookback_hours=24)

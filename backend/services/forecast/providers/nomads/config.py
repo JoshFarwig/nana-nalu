@@ -16,6 +16,17 @@ logger = logging.getLogger(__name__)
 # =======================
 
 
+class NOMADSModel(str, Enum):
+    """
+    Available NOMADS ocean models.
+
+    Generic model types - location determines regional variant.
+    """
+
+    NWPS = "nwps"
+    # Future: SWAN, WRF, etc. if NOMADS provides them
+
+
 class WFO(str, Enum):
     HONOLULU = "hfo"
 
@@ -29,9 +40,13 @@ class NWPSGridConfig(Grid):
 
 
 class NWPSConfig(BaseModel):
+    """Base configuration for NWPS model from NOMADS provider."""
+
     model_config = ConfigDict(frozen=True)
 
     location: Location  # Regional variant (e.g., MAUI, OAHU)
+    model_name: NOMADSModel
+    provider_name: str = "nomads"
     wfo: WFO
 
     # NOTE: NWPS model run times are highly variable and unpredictable
@@ -168,6 +183,7 @@ class MauiNWPSConfig(NWPSConfig):
     model_config = ConfigDict(frozen=True)
 
     location: Location = Location.MAUI
+    model_name: NOMADSModel = NOMADSModel.NWPS
     wfo: WFO = WFO.HONOLULU
 
     # NOTE: HFO runs twice daily but at highly unpredictable times
@@ -209,36 +225,57 @@ class MauiNWPSConfig(NWPSConfig):
 # CONFIG REGISTRY / KEY VALUE STORE
 # =================================
 
-NWPS_CONFIG_REGISTRY: dict[Location, NWPSConfig] = {
-    Location.MAUI: MauiNWPSConfig(),
+# registry maps (Location, Model) -> Config class
+# location determines regional variant, Model determines NOMADS model type
+NOMADS_CONFIG_REGISTRY: dict[tuple[Location, NOMADSModel], NWPSConfig] = {
+    # maui region
+    (Location.MAUI, NOMADSModel.NWPS): MauiNWPSConfig(),
 }
 
 
-def get_nwps_config(location: Location) -> NWPSConfig:
-    if location not in NWPS_CONFIG_REGISTRY:
-        valid_locations = ", ".join(loc.value for loc in NWPS_CONFIG_REGISTRY.keys())
+def get_nomads_config(location: Location, model: NOMADSModel) -> NWPSConfig:
+    """
+    Get a specific NOMADS configuration.
+
+    Args:
+        location: Geographic location
+        model: NOMADS model type
+
+    Returns:
+        Instantiated config
+
+    Raises:
+        ValueError: If no configuration exists for this location/model combo
+    """
+    key = (location, model)
+    if key not in NOMADS_CONFIG_REGISTRY:
+        available = ", ".join(
+            f"{loc.value}/{mod.value}" for loc, mod in NOMADS_CONFIG_REGISTRY.keys()
+        )
         raise ValueError(
-            f"No configuration for location {location} in NWPS_CONFIG_REGISTRY. "
-            f"Does the configuration exist in the NWPS_CONFIG_REGISTRY? "
-            f"Valid location configurations are: {valid_locations}."
+            f"No NOMADS configuration for {location.value}/{model.value}. "
+            f"Available configurations: {available}"
         )
 
-    config_cls = NWPS_CONFIG_REGISTRY[location]
+    config_cls = NOMADS_CONFIG_REGISTRY[key]
     return config_cls
 
 
-def get_enabled_locations() -> list[Location]:
+def get_enabled_locations_for_model(model: NOMADSModel) -> list[Location]:
     """
-    Get all enabled locations for NWPS
+    Get all enabled locations that have configuration for a specific model.
+
+    Args:
+        model: NOMADS model type (NWPS, etc.)
 
     Returns:
-        List of enabled locations that support NWPS
+        List of enabled locations that support this model
     """
     enabled_locations = load_locations()
     locations = []
 
-    for location, _ in NWPS_CONFIG_REGISTRY.items():
-        if location in enabled_locations:
+    for (location, model_type), _ in NOMADS_CONFIG_REGISTRY.items():
+        if model_type == model and location in enabled_locations:
             locations.append(location)
 
     return locations

@@ -39,7 +39,7 @@ def get_settings(request: Request) -> BaseConfig:
     return settings
 
 
-def get_db_manager(request: Request) -> AsyncDatabaseManager:
+def get_async_db_manager(request: Request) -> AsyncDatabaseManager:
     """
     Get database manager from app state.
 
@@ -92,8 +92,8 @@ def get_redis_manager(request: Request) -> AsyncRedisManager:
 # ======================================================
 
 
-async def get_db_session(
-    db_manager: AsyncDatabaseManager = Depends(get_db_manager),
+async def get_async_db_session(
+    db_manager: AsyncDatabaseManager = Depends(get_async_db_manager),
 ) -> AsyncGenerator[AsyncSession, None]:
     """
     Get database session for endpoint injection.

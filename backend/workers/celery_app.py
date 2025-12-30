@@ -40,7 +40,7 @@ def create_celery_app(service_type: str = "worker") -> Celery:
         timezone="UTC",
         enable_utc=True,
         task_routes={
-            "workers.tasks.nwps.*": {"queue": "forecasts"},
+            "workers.tasks.nomads.*": {"queue": "forecasts"},
             "workers.tasks.pacioos.*": {"queue": "forecasts"},
         },
     )
@@ -52,18 +52,18 @@ def create_celery_app(service_type: str = "worker") -> Celery:
     # tasks referenced by string (lazy loading), imported by worker on execution
     app.conf.beat_schedule = {
         # =========================
-        # NWPS (NOMADS) - 3x daily polling for unpredictable run times
+        # NOMADS NWPS - 3x daily polling for unpredictable run times
         # =========================
-        "nwps-poll-morning": {
-            "task": "workers.tasks.nwps.fetch_all_nwps_forecasts",
+        "nomads-nwps-poll-morning": {
+            "task": "workers.tasks.nomads.fetch_all_nwps_forecasts",
             "schedule": crontab(hour=10, minute=0),  # 10:00 UTC
         },
-        "nwps-poll-evening": {
-            "task": "workers.tasks.nwps.fetch_all_nwps_forecasts",
+        "nomads-nwps-poll-evening": {
+            "task": "workers.tasks.nomads.fetch_all_nwps_forecasts",
             "schedule": crontab(hour=21, minute=0),  # 21:00 UTC
         },
-        "nwps-poll-midday": {
-            "task": "workers.tasks.nwps.fetch_all_nwps_forecasts",
+        "nomads-nwps-poll-midday": {
+            "task": "workers.tasks.nomads.fetch_all_nwps_forecasts",
             "schedule": crontab(
                 hour=14, minute=0
             ),  # 14:00 UTC, catches any straggling forecasts
@@ -72,7 +72,7 @@ def create_celery_app(service_type: str = "worker") -> Celery:
         # PacIOOS Tide - weekly (pre-computed predictions extend to Dec 2026)
         # =========================
         "pacioos-tide-weekly": {
-            "task": "workers.tasks.pacioos.fetch_all_pacioos_tide_forecasts",
+            "task": "workers.tasks.pacioos.fetch_all_tide_forecasts",
             "schedule": crontab(day_of_week=0, hour=6, minute=0),  # Sundays 6am UTC
         },
     }
@@ -83,7 +83,7 @@ def create_celery_app(service_type: str = "worker") -> Celery:
     # and flower do not need sqlalchemy
     if service_type == "worker":
         import workers.signals  # noqa: F401
-        import workers.tasks.nwps
+        import workers.tasks.nomads
         import workers.tasks.pacioos
 
     return app

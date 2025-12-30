@@ -40,6 +40,8 @@ class AsyncDatabaseManager:
             pool_timeout=self.settings.async_pool_timeout,
             # a pool pre ping to ensure non-stale connections: https://docs.sqlalchemy.org/en/20/core/pooling.html#dealing-with-disconnects
             pool_pre_ping=self.settings.async_pool_pre_ping,
+            # plugin to add some event listeners
+            plugins=["geoalchemy2"],
         )
 
     def _create_session_factory(self) -> async_sessionmaker[AsyncSession]:
@@ -157,6 +159,7 @@ class SyncDatabaseManager:
             self._engine = create_engine(
                 self.database_url,
                 poolclass=NullPool,
+                plugins=["geoalchemy2"],
             )
         return self._engine
 

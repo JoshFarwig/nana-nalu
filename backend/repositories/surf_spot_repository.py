@@ -26,15 +26,36 @@ class AsyncSurfSpotRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_by_is_active(self, is_active: bool) -> Sequence[SurfSpot] | None:
+    async def get_all(
+        self, offset: int, limit: int, is_active: bool
+    ) -> Sequence[SurfSpot]:
         results = await self.session.execute(
-            select(SurfSpot).where(SurfSpot.is_active == is_active)
+            select(SurfSpot)
+            .where(SurfSpot.is_active == is_active)
+            .offset(offset)
+            .limit(limit)
         )
         return results.scalars().all()
 
-    async def get_all(self, skip: int = 0, limit: int = 20) -> Sequence[SurfSpot]:
-        results = await self.session.execute(select(SurfSpot).offset(skip).limit(limit))
-        return results.scalars().all()
+    async def get_all_with_coordinates(
+        self, offset: int, limit: int, is_active: bool
+    ) -> Sequence[RowMapping]:
+        """Get all surf spots with lat/lon extracted via PostGIS functions."""
+        results = await self.session.execute(
+            select(
+                SurfSpot.id,
+                SurfSpot.name,
+                SurfSpot.description,
+                SurfSpot.is_active,
+                SurfSpot.created_by_id,
+                ST_Y(SurfSpot.location).label("latitude"),
+                ST_X(SurfSpot.location).label("longitude"),
+            )
+            .where(SurfSpot.is_active == is_active)
+            .offset(offset)
+            .limit(limit)
+        )
+        return results.mappings().all()
 
     async def get_all_in_grid(
         self,
