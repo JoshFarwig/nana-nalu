@@ -48,7 +48,7 @@ async def get_all_surf_spots(
 
 # TODO: create surf spot endpoint, also checks user tier and available spots
 @router.post("/", summary="Create a new surf spot")
-async def create_new_surf_spot():
+async def create_surf_spot():
     pass
 
 
@@ -62,7 +62,8 @@ async def get_user_surf_spots(session: AsyncSession = Depends(get_async_db_sessi
 @router.get("/{id}", summary="Get surf spot data")
 async def get_surf_spot(id: int, session: AsyncSession = Depends(get_async_db_session)):
     repo = AsyncSurfSpotRepository(session)
-    spot = await repo.get_by_id(id)
+    spot = await repo.get_by_id(id)  # Raises SurfSpotNotFoundError if not found
+
     spot_response = SurfSpotResponse.model_validate(spot)
 
     return SuccessResponse(
@@ -72,11 +73,17 @@ async def get_surf_spot(id: int, session: AsyncSession = Depends(get_async_db_se
 
 @router.get(
     "/{id}/forecasts",
-    summary="Return all forecast reports from forecast providers for a surf spot",
+    summary="Return all forecast data for a surf spot",
 )
-async def get_surf_spot_forecasts(
-    id: int, session: AsyncSession = Depends(get_async_db_session)
-):
+async def get_forecasts(id: int, session: AsyncSession = Depends(get_async_db_session)):
+    pass
+
+
+@router.get(
+    "/{id}/forecasts/available",
+    summary="Return all the available providers and their forecast models for a surf spot",
+)
+async def get_available_providers():
     pass
 
 
@@ -84,15 +91,15 @@ async def get_surf_spot_forecasts(
     "/{id}/forecasts/{provider}",
     summary="Return all forecast data from a forecast provider",
 )
-async def get_surf_spot_provider_forecasts(id: int, provider: str):
+async def get_provider_forecast(id: int, provider: str):
     pass
 
 
 @router.get(
     "/{id}/forecasts/{provider}/{model}",
-    summary="Return forecast data from a specific forecast model + provider",
+    summary="Return forecast data from a provider's forecast model",
 )
-async def get_surf_spot_model_forecast(id: int, provider: str, model: str):
+async def get_model_forecast(id: int, provider: str, model: str):
     pass
 
 

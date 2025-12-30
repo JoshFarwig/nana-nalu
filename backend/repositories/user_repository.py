@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from core.config import APISettings
+from core.exceptions.users import UserNotFoundError
 from utils.password import hash_password
 from models.user_model import User
 
@@ -38,34 +39,93 @@ class AsyncUserRepository:
         self.session.add(user)
         return user
 
-    async def get_by_id(self, user_id: int) -> User | None:
+    async def get_by_id(self, user_id: int) -> User:
+        """
+        Get user by ID.
+
+        Args:
+            user_id: The ID of the user
+
+        Returns:
+            User model instance
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
+        """
         result = await self.session.execute(select(User).where(User.id == user_id))
-        return result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
 
-    async def get_by_email(self, email: str) -> User | None:
+        if not user:
+            raise UserNotFoundError(user_id, field="id")
+
+        return user
+
+    async def get_by_email(self, email: str) -> User:
+        """
+        Get user by email address.
+
+        Args:
+            email: The email address of the user
+
+        Returns:
+            User model instance
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
+        """
         result = await self.session.execute(select(User).where(User.email == email))
-        return result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
 
-    async def get_by_username(self, username: str) -> User | None:
+        if not user:
+            raise UserNotFoundError(email, field="email")
+
+        return user
+
+    async def get_by_username(self, username: str) -> User:
+        """
+        Get user by username.
+
+        Args:
+            username: The username of the user
+
+        Returns:
+            User model instance
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
+        """
         result = await self.session.execute(
             select(User).where(User.username == username)
         )
-        return result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise UserNotFoundError(username, field="username")
+
+        return user
 
     async def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[User]:
         result = await self.session.execute(select(User).offset(skip).limit(limit))
         return result.scalars().all()
 
-    async def update(self, user_id: int, user_data: dict) -> User | None:
+    async def update(self, user_id: int, user_data: dict) -> User:
         """
         Update user by ID.
 
         Note: For updating passwords, use update_password() method instead.
         This method will NOT automatically hash password fields.
+
+        Args:
+            user_id: The ID of the user
+            user_data: Dictionary of fields to update
+
+        Returns:
+            Updated User model instance
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
         """
         user = await self.get_by_id(user_id)
-        if not user:
-            return None
 
         for key, value in user_data.items():
             if hasattr(user, key):
@@ -73,15 +133,23 @@ class AsyncUserRepository:
 
         return user
 
-    async def update_password(self, user_id: int, new_password: str) -> User | None:
+    async def update_password(self, user_id: int, new_password: str) -> User:
         """
         Update a user's password by ID.
 
         The password will be automatically hashed before storage.
+
+        Args:
+            user_id: The ID of the user
+            new_password: The new plaintext password (will be hashed)
+
+        Returns:
+            Updated User model instance
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
         """
         user = await self.get_by_id(user_id)
-        if not user:
-            return None
 
         user.password = hash_password(
             new_password, rounds=self.settings.api.bcrypt_rounds
@@ -89,10 +157,19 @@ class AsyncUserRepository:
         return user
 
     async def delete(self, user_id: int) -> bool:
-        user = await self.get_by_id(user_id)
-        if not user:
-            return False
+        """
+        Delete a user by ID.
 
+        Args:
+            user_id: The ID of the user
+
+        Returns:
+            True if deleted successfully
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
+        """
+        user = await self.get_by_id(user_id)
         await self.session.delete(user)
         return True
 
@@ -136,6 +213,23 @@ class SyncUserRepository:
         self.session.add(user)
         return user
 
-    def get_by_username(self, username: str) -> User | None:
+    def get_by_username(self, username: str) -> User:
+        """
+        Get user by username.
+
+        Args:
+            username: The username of the user
+
+        Returns:
+            User model instance
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
+        """
         result = self.session.execute(select(User).where(User.username == username))
-        return result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise UserNotFoundError(username, field="username")
+
+        return user

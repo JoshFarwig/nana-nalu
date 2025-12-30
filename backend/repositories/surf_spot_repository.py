@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2.functions import ST_MakeEnvelope, ST_Within, ST_Y, ST_X
 from sqlalchemy.orm import Session
 
+from core.exceptions.surf_spots import InvalidGridBoundsError, SurfSpotNotFoundError
 from models.surf_spot_model import SurfSpot
 from utils.geo_validation import valid_latitude_range, valid_longitude_range
 
@@ -20,11 +21,16 @@ class AsyncSurfSpotRepository:
         self.session.add(surf_spot)
         return surf_spot
 
-    async def get_by_id(self, surf_spot_id: int) -> SurfSpot | None:
+    async def get_by_id(self, surf_spot_id: int) -> SurfSpot:
         result = await self.session.execute(
             select(SurfSpot).where(SurfSpot.id == surf_spot_id)
         )
-        return result.scalar_one_or_none()
+        spot = result.scalar_one_or_none()
+
+        if not spot:
+            raise SurfSpotNotFoundError(surf_spot_id)
+
+        return spot
 
     async def get_all(
         self, offset: int, limit: int, is_active: bool
@@ -69,7 +75,7 @@ class AsyncSurfSpotRepository:
         if not valid_latitude_range(lat_min, lat_max) or not valid_longitude_range(
             long_min, long_max, range_type="signed"
         ):
-            raise ValueError("latitude and longitude values are invalid")
+            raise InvalidGridBoundsError(lat_min, lat_max, long_min, long_max)
 
         bbox = ST_MakeEnvelope(long_min, lat_min, long_max, lat_max, 4326)
 
@@ -82,8 +88,7 @@ class AsyncSurfSpotRepository:
         results = await self.session.execute(query)
         return results.mappings().all()
 
-    async def get_coordinates(self, surf_spot_id: int) -> RowMapping | None:
-        """Get latitude and longitude of a surf spot"""
+    async def get_coordinates(self, surf_spot_id: int) -> RowMapping:
         result = await self.session.execute(
             select(
                 SurfSpot.id,
@@ -91,12 +96,15 @@ class AsyncSurfSpotRepository:
                 ST_X(SurfSpot.location).label("longitude"),
             ).where(SurfSpot.id == surf_spot_id)
         )
-        return result.mappings().one_or_none()
+        coords = result.mappings().one_or_none()
 
-    async def update(self, surf_spot_id: int, surf_spot_data: dict) -> SurfSpot | None:
+        if not coords:
+            raise SurfSpotNotFoundError(surf_spot_id)
+
+        return coords
+
+    async def update(self, surf_spot_id: int, surf_spot_data: dict) -> SurfSpot:
         surf_spot = await self.get_by_id(surf_spot_id)
-        if not surf_spot:
-            return None
 
         for key, value in surf_spot_data.items():
             if hasattr(surf_spot, key):
@@ -106,9 +114,6 @@ class AsyncSurfSpotRepository:
 
     async def delete(self, surf_spot_id: int) -> bool:
         surf_spot = await self.get_by_id(surf_spot_id)
-        if not surf_spot:
-            return False
-
         await self.session.delete(surf_spot)
         return True
 
@@ -134,7 +139,7 @@ class SyncSurfSpotRepository:
         if not valid_latitude_range(lat_min, lat_max) or not valid_longitude_range(
             long_min, long_max, range_type="signed"
         ):
-            raise ValueError("latitude and longitude values are invalid")
+            raise InvalidGridBoundsError(lat_min, lat_max, long_min, long_max)
 
         bbox = ST_MakeEnvelope(long_min, lat_min, long_max, lat_max, 4326)
 
