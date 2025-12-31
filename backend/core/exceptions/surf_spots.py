@@ -44,16 +44,16 @@ class SurfSpotNotFoundError(SurfSpotError):
         )
 
 
-class SurfSpotNotInRegion(SurfSpotError):
+class SurfSpotNotInRegionError(SurfSpotError):
     """Raised when a surf spot is created outside of supported regions"""
 
-    def __init__(self, spot_id: int, lat: float, lon: float):
+    def __init__(self, name: str, lat: float, lon: float):
         super().__init__(
-            message=f"Spot {spot_id} at ({lat}, {lon}) is not in a supported forecast region",
+            message=f"Spot: {name} at ({lat}, {lon}) is not in a supported forecast region",
             error_code="surf_spot_not_in_region",
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             details={
-                "spot_id": spot_id,
+                "name": name,
                 "latitude": lat,
                 "longitude": lon,
                 "supported_regions": [region.value for region in get_enabled_regions()],
@@ -61,15 +61,15 @@ class SurfSpotNotInRegion(SurfSpotError):
         )
 
 
-class InvalidGridBoundsError(SurfSpotError):
-    """Raised when grid bounds are invalid"""
+class InvalidCoordBoundsError(SurfSpotError):
+    """Raised when coordinate bounds are invalid"""
 
     def __init__(
         self, lat_min: float, lat_max: float, long_min: float, long_max: float
     ):
         super().__init__(
-            message=f"Invalid grid bounds: lat({lat_min}, {lat_max}), lon({long_min}, {long_max})",
-            error_code="invalid_grid_bounds",
+            message=f"Invalid coordinate bounds: lat({lat_min}, {lat_max}), lon({long_min}, {long_max})",
+            error_code="invalid_coord_bounds",
             status_code=status.HTTP_400_BAD_REQUEST,
             details={
                 "lat_min": lat_min,

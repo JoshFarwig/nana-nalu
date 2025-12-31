@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SurfSpotBase(BaseModel):
@@ -8,10 +8,39 @@ class SurfSpotBase(BaseModel):
 
 
 class SurfSpotCreate(SurfSpotBase):
-    """Schema for creating a new surf spot."""
+    """Schema for creating a new surf spot using GeoJSON Point geometry."""
 
-    latitude: float = Field(ge=-90, le=90)
-    longitude: float = Field(ge=-180, le=180)
+    geometry: dict = Field(
+        ...,
+        description="GeoJSON Point geometry with coordinates [longitude, latitude]",
+        examples=[{"type": "Point", "coordinates": [-158.053, 21.664]}],
+    )
+
+    @field_validator("geometry")
+    @classmethod
+    def validate_point_geometry(cls, v: dict) -> dict:
+        """Validate GeoJSON Point structure and coordinate ranges."""
+        if not isinstance(v, dict):
+            raise ValueError("geometry must be a GeoJSON object")
+
+        if v.get("type") != "Point":
+            raise ValueError("geometry type must be 'Point'")
+
+        coordinates = v.get("coordinates")
+        if not isinstance(coordinates, list) or len(coordinates) != 2:
+            raise ValueError("Point coordinates must be [longitude, latitude]")
+
+        lon, lat = coordinates
+        if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)):
+            raise ValueError("coordinates must be numeric")
+
+        # Validate coordinate ranges
+        if not -180 <= lon <= 180:
+            raise ValueError(f"longitude must be between -180 and 180, got {lon}")
+        if not -90 <= lat <= 90:
+            raise ValueError(f"latitude must be between -90 and 90, got {lat}")
+
+        return v
 
 
 class SurfSpotUpdate(BaseModel):
@@ -19,17 +48,48 @@ class SurfSpotUpdate(BaseModel):
 
     name: str | None = Field(None, max_length=100)
     description: str | None = Field(None, max_length=500)
-    latitude: float | None = Field(None, ge=-90, le=90)
-    longitude: float | None = Field(None, ge=-180, le=180)
+    geometry: dict | None = Field(
+        None,
+        description="GeoJSON Point geometry with coordinates [longitude, latitude]",
+    )
     is_active: bool | None = None
+
+    @field_validator("geometry")
+    @classmethod
+    def validate_point_geometry(cls, v: dict | None) -> dict | None:
+        """Validate GeoJSON Point structure and coordinate ranges."""
+        if v is None:
+            return v
+
+        if not isinstance(v, dict):
+            raise ValueError("geometry must be a GeoJSON object")
+
+        if v.get("type") != "Point":
+            raise ValueError("geometry type must be 'Point'")
+
+        coordinates = v.get("coordinates")
+        if not isinstance(coordinates, list) or len(coordinates) != 2:
+            raise ValueError("Point coordinates must be [longitude, latitude]")
+
+        lon, lat = coordinates
+        if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)):
+            raise ValueError("coordinates must be numeric")
+
+        # Validate coordinate ranges
+        if not -180 <= lon <= 180:
+            raise ValueError(f"longitude must be between -180 and 180, got {lon}")
+        if not -90 <= lat <= 90:
+            raise ValueError(f"latitude must be between -90 and 90, got {lat}")
+
+        return v
 
 
 class SurfSpotResponse(SurfSpotBase):
-    """Schema for surf spot responses with lat/lng extracted via PostGIS."""
+    """Schema for surf spot responses with GeoJSON geometry."""
 
     id: int
     created_by_id: int
-    latitude: float
-    longitude: float
+    region: str | None
+    geometry: dict  # GeoJSON Point geometry
 
     model_config = {"from_attributes": True}

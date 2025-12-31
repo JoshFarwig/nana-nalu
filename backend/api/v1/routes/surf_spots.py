@@ -62,7 +62,7 @@ async def get_user_surf_spots(session: AsyncSession = Depends(get_async_db_sessi
 @router.get("/{id}", summary="Get surf spot data")
 async def get_surf_spot(id: int, session: AsyncSession = Depends(get_async_db_session)):
     repo = AsyncSurfSpotRepository(session)
-    spot = await repo.get_by_id(id)  # Raises SurfSpotNotFoundError if not found
+    spot = await repo.get_with_coordinates(id)  # Returns dict with GeoJSON geometry
 
     spot_response = SurfSpotResponse.model_validate(spot)
 

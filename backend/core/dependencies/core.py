@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import AsyncDatabaseManager
 from core.redis import AsyncRedisManager
-from core.config import BaseConfig
+from core.config import APISettings
 from core.exceptions.base import DependencyError
 
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # ======================================================
 
 
-def get_settings(request: Request) -> BaseConfig:
+def get_settings(request: Request) -> APISettings:
     """
     Get application settings from app state.
 
@@ -30,10 +30,10 @@ def get_settings(request: Request) -> BaseConfig:
     Raises:
         DependencyError: If settings not configured in app.state
     """
-    settings: BaseConfig | None = getattr(request.app.state, "settings", None)
+    settings: APISettings | None = getattr(request.app.state, "settings", None)
     if settings is None:
         raise DependencyError(
-            "Settings not available in app.state. "
+            "APISettings not available in app.state. "
             "Ensure application initialized properly."
         )
     return settings

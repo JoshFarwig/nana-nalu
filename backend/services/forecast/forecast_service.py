@@ -202,4 +202,4 @@ class ForecastService:
         """
         spot = await self.surf_spot_repo.get_with_coordinates(surf_spot_id)
 
-        return Region(spot.region)
+        return Region(spot["region"])

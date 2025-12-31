@@ -1,13 +1,29 @@
 import logging
+import json
 from typing import Sequence
-from sqlalchemy import RowMapping, select, exists
+from sqlalchemy import RowMapping, select, exists, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from geoalchemy2.functions import ST_MakeEnvelope, ST_Within, ST_Y, ST_X
+from geoalchemy2.functions import (
+    ST_MakeEnvelope,
+    ST_Within,
+    ST_Y,
+    ST_X,
+    ST_GeomFromGeoJSON,
+    ST_AsGeoJSON,
+)
 from sqlalchemy.orm import Session
 
-from core.exceptions.surf_spots import InvalidGridBoundsError, SurfSpotNotFoundError
+from core.exceptions.surf_spots import (
+    InvalidCoordBoundsError,
+    SurfSpotNotFoundError,
+    SurfSpotNotInRegionError,
+)
+
+from schemas.surf_spot_schema import SurfSpotCreate
 from models.surf_spot_model import SurfSpot
+
 from utils.geo_validation import valid_latitude_range, valid_longitude_range
+from utils.region import resolve_region
 
 
 class AsyncSurfSpotRepository:
@@ -15,9 +31,24 @@ class AsyncSurfSpotRepository:
         self.session = session
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
-    async def add(self, surf_spot_data: dict) -> SurfSpot:
-        # TODO: Check if spot is in an enabled region
-        surf_spot = SurfSpot(**surf_spot_data)
+    async def add(self, surf_spot_data: SurfSpotCreate) -> SurfSpot:
+        # extract coordinates from GeoJSON for region validation
+        lon, lat = surf_spot_data.geometry["coordinates"]
+
+        # make sure spot exists in a valid region
+        region = resolve_region(lat, lon)
+        if region is None:
+            raise SurfSpotNotInRegionError(surf_spot_data.name, lat, lon)
+
+        # create surf spot with PostGIS geometry from GeoJSON
+        surf_spot = SurfSpot(
+            name=surf_spot_data.name,
+            description=surf_spot_data.description,
+            location=ST_GeomFromGeoJSON(json.dumps(surf_spot_data.geometry)),
+            region=region,
+            is_active=surf_spot_data.is_active,
+        )
+
         self.session.add(surf_spot)
         return surf_spot
 
@@ -46,7 +77,7 @@ class AsyncSurfSpotRepository:
     async def get_all_with_coordinates(
         self, offset: int, limit: int, is_active: bool
     ) -> Sequence[RowMapping]:
-        """Get all surf spots with lat/lon extracted via PostGIS functions."""
+        """Get all surf spots with GeoJSON geometry."""
         results = await self.session.execute(
             select(
                 SurfSpot.id,
@@ -55,14 +86,19 @@ class AsyncSurfSpotRepository:
                 SurfSpot.region,
                 SurfSpot.is_active,
                 SurfSpot.created_by_id,
-                ST_Y(SurfSpot.location).label("latitude"),
-                ST_X(SurfSpot.location).label("longitude"),
+                func.ST_AsGeoJSON(SurfSpot.location).label("geometry"),
             )
             .where(SurfSpot.is_active == is_active)
             .offset(offset)
             .limit(limit)
         )
-        return results.mappings().all()
+        # parse GeoJSON strings to dicts
+        spots = []
+        for row in results.mappings():
+            spot_dict = dict(row)
+            spot_dict["geometry"] = json.loads(spot_dict["geometry"])
+            spots.append(spot_dict)
+        return spots
 
     async def get_all_in_grid(
         self,
@@ -76,7 +112,7 @@ class AsyncSurfSpotRepository:
         if not valid_latitude_range(lat_min, lat_max) or not valid_longitude_range(
             long_min, long_max, range_type="signed"
         ):
-            raise InvalidGridBoundsError(lat_min, lat_max, long_min, long_max)
+            raise InvalidCoordBoundsError(lat_min, lat_max, long_min, long_max)
 
         bbox = ST_MakeEnvelope(long_min, lat_min, long_max, lat_max, 4326)
 
@@ -89,7 +125,7 @@ class AsyncSurfSpotRepository:
         results = await self.session.execute(query)
         return results.mappings().all()
 
-    async def get_with_coordinates(self, surf_spot_id: int) -> RowMapping:
+    async def get_with_coordinates(self, surf_spot_id: int) -> dict:
         result = await self.session.execute(
             select(
                 SurfSpot.id,
@@ -98,8 +134,7 @@ class AsyncSurfSpotRepository:
                 SurfSpot.region,
                 SurfSpot.is_active,
                 SurfSpot.created_by_id,
-                ST_Y(SurfSpot.location).label("latitude"),
-                ST_X(SurfSpot.location).label("longitude"),
+                func.ST_AsGeoJSON(SurfSpot.location).label("geometry"),
             ).where(SurfSpot.id == surf_spot_id)
         )
         spot = result.mappings().one_or_none()
@@ -107,13 +142,26 @@ class AsyncSurfSpotRepository:
         if not spot:
             raise SurfSpotNotFoundError(surf_spot_id)
 
-        return spot
+        # parse GeoJSON string to dict
+        spot_dict = dict(spot)
+        spot_dict["geometry"] = json.loads(spot_dict["geometry"])
+        return spot_dict
 
     async def update(self, surf_spot_id: int, surf_spot_data: dict) -> SurfSpot:
         surf_spot = await self.get_by_id(surf_spot_id)
 
         for key, value in surf_spot_data.items():
-            if hasattr(surf_spot, key):
+            # handle geometry update - convert GeoJSON to PostGIS geometry
+            if key == "geometry" and value is not None:
+                # extract coordinates for region validation
+                lon, lat = value["coordinates"]
+                region = resolve_region(lat, lon)
+                if region is None:
+                    raise SurfSpotNotInRegionError(surf_spot.name, lat, lon)
+
+                surf_spot.location = ST_GeomFromGeoJSON(json.dumps(value))
+                surf_spot.region = region
+            elif hasattr(surf_spot, key):
                 setattr(surf_spot, key, value)
 
         return surf_spot
@@ -145,7 +193,7 @@ class SyncSurfSpotRepository:
         if not valid_latitude_range(lat_min, lat_max) or not valid_longitude_range(
             long_min, long_max, range_type="signed"
         ):
-            raise InvalidGridBoundsError(lat_min, lat_max, long_min, long_max)
+            raise InvalidCoordBoundsError(lat_min, lat_max, long_min, long_max)
 
         bbox = ST_MakeEnvelope(long_min, lat_min, long_max, lat_max, 4326)
 
