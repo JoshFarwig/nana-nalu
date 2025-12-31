@@ -4,7 +4,7 @@ All exceptions related to user operations, regardless of which layer raises them
 Can be used by repositories, services, or routes.
 """
 
-from fastapi import status
+from http import HTTPStatus
 from core.exceptions.base import NanaNaluException
 
 
@@ -20,7 +20,7 @@ class UserError(NanaNaluException):
         self,
         message: str,
         error_code: str | None = "user_error",
-        status_code: int | None = status.HTTP_500_INTERNAL_SERVER_ERROR,
+        status_code: int | None = HTTPStatus.INTERNAL_SERVER_ERROR,
         details: dict | None = None,
     ):
         super().__init__(message, error_code, status_code, details)
@@ -43,7 +43,7 @@ class UserNotFoundError(UserError):
         super().__init__(
             message=f"User with {field} '{identifier}' not found",
             error_code="user_not_found",
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=HTTPStatus.NOT_FOUND,
             details={"field": field, "value": str(identifier)},
         )
 
@@ -60,6 +60,6 @@ class UserAlreadyExistsError(UserError):
         super().__init__(
             message=f"User with {field} '{value}' already exists",
             error_code="user_already_exists",
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=HTTPStatus.CONFLICT,
             details={"field": field, "value": value},
         )

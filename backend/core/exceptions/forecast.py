@@ -4,7 +4,7 @@ All exceptions related to forecast operations, regardless of which layer raises 
 Can be used by repositories, services, or routes.
 """
 
-from fastapi import status
+from http import HTTPStatus
 from core.exceptions.base import NanaNaluException
 
 
@@ -20,7 +20,7 @@ class ForecastError(NanaNaluException):
         self,
         message: str,
         error_code: str | None = "forecast_error",
-        status_code: int | None = status.HTTP_500_INTERNAL_SERVER_ERROR,
+        status_code: int | None = HTTPStatus.INTERNAL_SERVER_ERROR,
         details: dict | None = None,
     ):
         super().__init__(message, error_code, status_code, details)
@@ -46,7 +46,7 @@ class NoForecastDataError(ForecastError):
         super().__init__(
             message=msg,
             error_code="no_forecast_data",
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=HTTPStatus.NOT_FOUND,
             details={"spot_id": spot_id, "provider": provider, "model": model},
         )
 
@@ -65,7 +65,7 @@ class InvalidProviderError(ForecastError):
         super().__init__(
             message=msg,
             error_code="invalid_provider",
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=HTTPStatus.BAD_REQUEST,
             details=details,
         )
 
@@ -86,6 +86,6 @@ class InvalidModelError(ForecastError):
         super().__init__(
             message=msg,
             error_code="invalid_model",
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=HTTPStatus.BAD_REQUEST,
             details=details,
         )

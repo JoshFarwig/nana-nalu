@@ -1,6 +1,5 @@
 from typing import Any
-
-from fastapi import status
+from http import HTTPStatus
 
 
 class NanaNaluException(Exception):
@@ -20,7 +19,7 @@ class NanaNaluException(Exception):
     ):
         self.message = message
         self.error_code = error_code or self.__class__.__name__
-        self.status_code = status_code or status.HTTP_500_INTERNAL_SERVER_ERROR
+        self.status_code = status_code or HTTPStatus.INTERNAL_SERVER_ERROR
         self.details = details or {}
         super().__init__(self.message)
 
@@ -32,7 +31,7 @@ class StartupError(NanaNaluException):
         self,
         message: str,
         error_code: str | None = "startup",
-        status_code: int | None = status.HTTP_503_SERVICE_UNAVAILABLE,
+        status_code: int | None = HTTPStatus.SERVICE_UNAVAILABLE,
         details: dict[str, Any] | None = None,
     ):
         super().__init__(message, error_code, status_code, details)
@@ -47,7 +46,7 @@ class DependencyError(NanaNaluException):
         self,
         message: str,
         error_code: str | None = "dependency",
-        status_code: int | None = status.HTTP_503_SERVICE_UNAVAILABLE,
+        status_code: int | None = HTTPStatus.SERVICE_UNAVAILABLE,
         details: dict[str, Any] | None = None,
     ):
         super().__init__(message, error_code, status_code, details)

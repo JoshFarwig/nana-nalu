@@ -4,7 +4,7 @@ All exceptions related to surf spot operations, regardless of which layer raises
 Can be used by repositories, services, or routes.
 """
 
-from fastapi import status
+from http import HTTPStatus
 from core.exceptions.base import NanaNaluException
 from utils.region import get_enabled_regions
 
@@ -21,7 +21,7 @@ class SurfSpotError(NanaNaluException):
         self,
         message: str,
         error_code: str | None = "surf_spot_error",
-        status_code: int | None = status.HTTP_500_INTERNAL_SERVER_ERROR,
+        status_code: int | None = HTTPStatus.INTERNAL_SERVER_ERROR,
         details: dict | None = None,
     ):
         super().__init__(message, error_code, status_code, details)
@@ -39,7 +39,7 @@ class SurfSpotNotFoundError(SurfSpotError):
         super().__init__(
             message=f"Surf spot {spot_id} not found",
             error_code="surf_spot_not_found",
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=HTTPStatus.NOT_FOUND,
             details={"spot_id": spot_id},
         )
 
@@ -51,7 +51,7 @@ class SurfSpotNotInRegionError(SurfSpotError):
         super().__init__(
             message=f"Spot: {name} at ({lat}, {lon}) is not in a supported forecast region",
             error_code="surf_spot_not_in_region",
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             details={
                 "name": name,
                 "latitude": lat,
@@ -70,7 +70,7 @@ class InvalidCoordBoundsError(SurfSpotError):
         super().__init__(
             message=f"Invalid coordinate bounds: lat({lat_min}, {lat_max}), lon({long_min}, {long_max})",
             error_code="invalid_coord_bounds",
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=HTTPStatus.BAD_REQUEST,
             details={
                 "lat_min": lat_min,
                 "lat_max": lat_max,

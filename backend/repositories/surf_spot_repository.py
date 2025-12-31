@@ -86,7 +86,7 @@ class AsyncSurfSpotRepository:
                 SurfSpot.region,
                 SurfSpot.is_active,
                 SurfSpot.created_by_id,
-                func.ST_AsGeoJSON(SurfSpot.location).label("geometry"),
+                ST_AsGeoJSON(SurfSpot.location).label("geometry"),
             )
             .where(SurfSpot.is_active == is_active)
             .offset(offset)
@@ -134,7 +134,7 @@ class AsyncSurfSpotRepository:
                 SurfSpot.region,
                 SurfSpot.is_active,
                 SurfSpot.created_by_id,
-                func.ST_AsGeoJSON(SurfSpot.location).label("geometry"),
+                ST_AsGeoJSON(SurfSpot.location).label("geometry"),
             ).where(SurfSpot.id == surf_spot_id)
         )
         spot = result.mappings().one_or_none()
