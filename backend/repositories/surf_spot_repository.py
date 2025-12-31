@@ -16,7 +16,7 @@ class AsyncSurfSpotRepository:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     async def add(self, surf_spot_data: dict) -> SurfSpot:
-        # TODO: add functionality to attach w/ surf spot.
+        # TODO: Check if spot is in an enabled region
         surf_spot = SurfSpot(**surf_spot_data)
         self.session.add(surf_spot)
         return surf_spot
@@ -52,6 +52,7 @@ class AsyncSurfSpotRepository:
                 SurfSpot.id,
                 SurfSpot.name,
                 SurfSpot.description,
+                SurfSpot.region,
                 SurfSpot.is_active,
                 SurfSpot.created_by_id,
                 ST_Y(SurfSpot.location).label("latitude"),
@@ -88,20 +89,25 @@ class AsyncSurfSpotRepository:
         results = await self.session.execute(query)
         return results.mappings().all()
 
-    async def get_coordinates(self, surf_spot_id: int) -> RowMapping:
+    async def get_with_coordinates(self, surf_spot_id: int) -> RowMapping:
         result = await self.session.execute(
             select(
                 SurfSpot.id,
+                SurfSpot.name,
+                SurfSpot.description,
+                SurfSpot.region,
+                SurfSpot.is_active,
+                SurfSpot.created_by_id,
                 ST_Y(SurfSpot.location).label("latitude"),
                 ST_X(SurfSpot.location).label("longitude"),
             ).where(SurfSpot.id == surf_spot_id)
         )
-        coords = result.mappings().one_or_none()
+        spot = result.mappings().one_or_none()
 
-        if not coords:
+        if not spot:
             raise SurfSpotNotFoundError(surf_spot_id)
 
-        return coords
+        return spot
 
     async def update(self, surf_spot_id: int, surf_spot_data: dict) -> SurfSpot:
         surf_spot = await self.get_by_id(surf_spot_id)

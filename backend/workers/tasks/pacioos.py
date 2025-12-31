@@ -14,9 +14,9 @@ from services.forecast.providers.pacioos.provider import PacIOOSProvider
 from services.forecast.providers.pacioos.config import (
     PacIOOSModel,
     get_pacioos_config,
-    get_enabled_locations_for_model,
+    get_enabled_regions_for_model,
 )
-from utils.location import Location
+from utils.region import Region
 
 logger = logging.getLogger(__name__)
 
@@ -31,34 +31,34 @@ def fetch_all_tide_forecasts():
     """
     Parent dispatcher task for PacIOOS Tide model.
 
-    Spawns one child task per enabled location that has tide configuration.
+    Spawns one child task per enabled region that has tide configuration.
     Runs weekly since tidal predictions are pre-computed through Dec 2026.
     We only need fresh data for Redis TTL maintenance.
     """
-    locations = get_enabled_locations_for_model(PacIOOSModel.TIDE)
+    regions = get_enabled_regions_for_model(PacIOOSModel.TIDE)
 
-    if not locations:
-        logger.warning("No enabled locations with tide configuration")
-        return {"locations_dispatched": 0}
+    if not regions:
+        logger.warning("No enabled regions with tide configuration")
+        return {"regions_dispatched": 0}
 
     job = group(
-        fetch_tide.si(loc.value)  # type: ignore
-        for loc in locations  # type: ignore
+        fetch_tide.si(r.value)  # type: ignore
+        for r in regions  # type: ignore
     )
 
     result = job.apply_async()
 
     logger.info(
-        f"Dispatched {len(locations)} fetch tasks",
+        f"Dispatched {len(regions)} fetch tasks",
         extra={
-            "locations": [loc.value for loc in locations],
+            "regions": [r.value for r in regions],
             "group_id": result.id,
         },
     )
 
     return {
-        "locations_dispatched": len(locations),
-        "locations": [loc.value for loc in locations],
+        "regions_dispatched": len(regions),
+        "regions": [r.value for r in regions],
         "group_id": result.id,
     }
 
@@ -69,30 +69,30 @@ def fetch_all_tide_forecasts():
 
 
 @shared_task(bind=True, max_retries=3)
-def fetch_tide(self, loc: str):
+def fetch_tide(self, region_str: str):
     """
-    Fetch PacIOOS Tide forecast data for a specific location.
+    Fetch PacIOOS Tide forecast data for a specific region.
 
     Downloads NetCDF subset via ERDDAP GridDAP, then extracts sea surface height (tide).
-    Stores results in Redis with key pattern: forecast:pacioos:tide:{location}:{spot_id}
+    Stores results in Redis with key pattern: forecast:pacioos:tide:{region}:{spot_id}
 
     Note: Only fetches sea surface height (ssh). Tidal currents (u/v) not included.
     For comprehensive ocean currents, use ROMS model instead.
 
     Args:
-        loc: Location string value (e.g., "maui")
+        region_str: Region string value (e.g., "maui")
     """
     db_manager = get_db_manager()
     redis_manager = get_redis_manager()
     http_manager = get_http_manager()
 
-    location = Location(loc)
-    config = get_pacioos_config(location, PacIOOSModel.TIDE)
+    region = Region(region_str)
+    config = get_pacioos_config(region, PacIOOSModel.TIDE)
 
     logger.info(
-        f"Starting fetch for {loc}",
+        f"Starting fetch for {region_str}",
         extra={
-            "location": loc,
+            "region": region_str,
             "dataset_id": config.dataset_id,
             "griddap_url": config.griddap_url,
         },
@@ -111,15 +111,15 @@ def fetch_tide(self, loc: str):
 
             if not forecasts:
                 logger.warning(
-                    f"No forecasts extracted for {loc}",
-                    extra={"location": loc},
+                    f"No forecasts extracted for {region_str}",
+                    extra={"region": region_str},
                 )
-                return {"status": "no_spots", "location": loc}
+                return {"status": "no_spots", "region": region_str}
 
             logger.info(
                 f"[PacIOOS:Tide] Extracted forecasts for {len(forecasts)} spots",
                 extra={
-                    "location": loc,
+                    "region": region_str,
                     "spot_ids": list(forecasts.keys()),
                 },
             )
@@ -129,11 +129,11 @@ def fetch_tide(self, loc: str):
 
             with redis_manager.client.pipeline() as pipe:
                 for spot_id, provider_forecast in forecasts.items():
-                    key = f"forecast:pacioos:tide:{loc}:{spot_id}"
+                    key = f"forecast:pacioos:tide:{region_str}:{spot_id}"
                     pipe.setex(key, ttl, provider_forecast.to_redis_json())
 
                 # track last successful fetch
-                last_run_key = f"forecast:pacioos:tide:{loc}:last_run"
+                last_run_key = f"forecast:pacioos:tide:{region_str}:last_run"
                 pipe.set(last_run_key, datetime.now(timezone.utc).isoformat())
 
                 result = pipe.execute()
@@ -141,31 +141,31 @@ def fetch_tide(self, loc: str):
                 logger.info(
                     "Redis pipeline executed",
                     extra={
-                        "location": loc,
+                        "region": region_str,
                         "commands_executed": len(result),
                         "last_run_key": last_run_key,
                     },
                 )
 
             logger.info(
-                f"Successfully fetched for {loc}",
+                f"Successfully fetched for {region_str}",
                 extra={
-                    "location": loc,
+                    "region": region_str,
                     "spots_processed": len(forecasts),
                 },
             )
 
             return {
                 "status": "success",
-                "location": loc,
+                "region": region_str,
                 "spots_processed": len(forecasts),
             }
 
     except Exception as e:
         logger.exception(
-            f"Error fetching for {loc}",
+            f"Error fetching for {region_str}",
             extra={
-                "location": loc,
+                "region": region_str,
                 "error": str(e),
                 "attempt": self.request.retries + 1,
                 "max_retries": self.max_retries,

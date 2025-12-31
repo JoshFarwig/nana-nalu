@@ -2,7 +2,7 @@ from datetime import datetime, time
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from utils.location import Location
+from utils.region import Region
 
 if TYPE_CHECKING:
     from models import SurfSpot
@@ -15,12 +15,12 @@ class ForecastProvider(Protocol):
     provider_name: str
 
     @classmethod
-    def supports_location(cls, location: Location) -> bool:
+    def supports_region(cls, region: Region) -> bool:
         """
-        Check if this provider has configuration for the given location.
+        Check if this provider has configuration for the given region.
 
         Returns:
-            True if provider can fetch data for this location, False otherwise.
+            True if provider can fetch data for this region, False otherwise.
         """
         ...
 

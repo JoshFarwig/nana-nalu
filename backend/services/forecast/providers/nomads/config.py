@@ -4,9 +4,7 @@ from enum import Enum
 from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from services.forecast.grids import Grid, MauiGrid
-
-from utils.location import Location, load_locations
+from utils.region import Region, RegionGrid, get_enabled_regions
 from utils.geo_validation import longitude_to_360
 
 logger = logging.getLogger(__name__)
@@ -31,23 +29,18 @@ class WFO(str, Enum):
     HONOLULU = "hfo"
 
 
-class NWPSGridConfig(Grid):
-    model_config = ConfigDict(frozen=True)
-
-    cg: str = Field(
-        pattern=r"^CG\d+$",
-    )
-
-
 class NWPSConfig(BaseModel):
     """Base configuration for NWPS model from NOMADS provider."""
 
     model_config = ConfigDict(frozen=True)
 
-    location: Location  # Regional variant (e.g., MAUI, OAHU)
+    region: Region  # Geographic region (MAUI, OAHU, etc.)
     model_name: NOMADSModel
     provider_name: str = "nomads"
     wfo: WFO
+
+    # NWPS computational grid identifier (CG0-CG5)
+    cg: str = Field(pattern=r"^CG\d+$")
 
     # NOTE: NWPS model run times are highly variable and unpredictable
     # model completions usually take 1-1.5hrs after start time,
@@ -85,7 +78,7 @@ class NWPSConfig(BaseModel):
     # will essentially make sure that IF any SurfSpots are placed
     # very inland, they won't select the nearest ocean cell outside
     # of the max distance set. Refer to the NWPS resolution of your
-    # location / grib2 file to calculate the max distance.
+    # region / grib2 file to calculate the max distance.
 
     # EXAMPLE:
     # maui's NWPS resolution ~500m x 500m. want around ~4 cells
@@ -97,10 +90,14 @@ class NWPSConfig(BaseModel):
     max_nearest_neighbor_distance_km: float = 4.5
 
     filename_pattern: str = "{wfo}_nwps_{cg}_{date}_{time}.grib2"
-    region: str
+    nomads_region: str  # NOMADS region code (e.g., "pr" for Pacific)
     params: list[str]
     levels: list[str]
-    grid: NWPSGridConfig
+
+    @property
+    def grid(self) -> RegionGrid:
+        """Get grid bounds from the region."""
+        return self.region.grid
 
     @field_validator("params")
     @classmethod
@@ -131,7 +128,7 @@ class NWPSConfig(BaseModel):
         analysis_time_hour = analysis_time.strftime("%H")
 
         filename = self.filename_pattern.format(
-            wfo=self.wfo.value, cg=self.grid.cg, date=date_str, time=analysis_time_str
+            wfo=self.wfo.value, cg=self.cg, date=date_str, time=analysis_time_str
         )
 
         return date_str, analysis_time_str, analysis_time_hour, filename
@@ -150,7 +147,7 @@ class NWPSConfig(BaseModel):
         )
 
         # construct dir path
-        dir_path = f"/{self.region}.{date_str}/{self.wfo.value}/{analysis_time_hour}/{self.grid.cg}"
+        dir_path = f"/{self.nomads_region}.{date_str}/{self.wfo.value}/{analysis_time_hour}/{self.cg}"
 
         # build all query parameters
         query_parts = [
@@ -174,17 +171,13 @@ class NWPSConfig(BaseModel):
 # =======================
 
 
-class MauiNWPSGridConfig(MauiGrid, NWPSGridConfig):
-    model_config = ConfigDict(frozen=True)
-    cg: str = "CG4"
-
-
 class MauiNWPSConfig(NWPSConfig):
     model_config = ConfigDict(frozen=True)
 
-    location: Location = Location.MAUI
+    region: Region = Region.MAUI
     model_name: NOMADSModel = NOMADSModel.NWPS
     wfo: WFO = WFO.HONOLULU
+    cg: str = "CG4"
 
     # NOTE: HFO runs twice daily but at highly unpredictable times
     # observed patterns: early run finishes ~7-9:30 UTC, late run finishes ~17-20 UTC
@@ -198,7 +191,7 @@ class MauiNWPSConfig(NWPSConfig):
     max_nearest_neighbor_distance_km: float = 2.0
     grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl"
     filename_pattern: str = "{wfo}_nwps_{cg}_{date}_{time}.grib2"
-    region: str = "pr"
+    nomads_region: str = "pr"
 
     # refer to https://nomads.ncep.noaa.gov/gribfilter.php?ds=prnwps for the valid params / levels
     # removed current speed and dir since RTOFS-Global is turned off on the model runs (and its like a 9km
@@ -218,42 +211,41 @@ class MauiNWPSConfig(NWPSConfig):
         "var_WIND",
     ]
     levels: list[str] = ["lev_surface"]
-    grid: NWPSGridConfig = MauiNWPSGridConfig()
 
 
 # =================================
 # CONFIG REGISTRY / KEY VALUE STORE
 # =================================
 
-# registry maps (Location, Model) -> Config class
-# location determines regional variant, Model determines NOMADS model type
-NOMADS_CONFIG_REGISTRY: dict[tuple[Location, NOMADSModel], NWPSConfig] = {
+# registry maps (Region, Model) -> Config class
+# region determines geographic variant, Model determines NOMADS model type
+NOMADS_CONFIG_REGISTRY: dict[tuple[Region, NOMADSModel], NWPSConfig] = {
     # maui region
-    (Location.MAUI, NOMADSModel.NWPS): MauiNWPSConfig(),
+    (Region.MAUI, NOMADSModel.NWPS): MauiNWPSConfig(),
 }
 
 
-def get_nomads_config(location: Location, model: NOMADSModel) -> NWPSConfig:
+def get_nomads_config(region: Region, model: NOMADSModel) -> NWPSConfig:
     """
     Get a specific NOMADS configuration.
 
     Args:
-        location: Geographic location
+        region: Geographic region
         model: NOMADS model type
 
     Returns:
         Instantiated config
 
     Raises:
-        ValueError: If no configuration exists for this location/model combo
+        ValueError: If no configuration exists for this region/model combo
     """
-    key = (location, model)
+    key = (region, model)
     if key not in NOMADS_CONFIG_REGISTRY:
         available = ", ".join(
-            f"{loc.value}/{mod.value}" for loc, mod in NOMADS_CONFIG_REGISTRY.keys()
+            f"{r.value}/{m.value}" for r, m in NOMADS_CONFIG_REGISTRY.keys()
         )
         raise ValueError(
-            f"No NOMADS configuration for {location.value}/{model.value}. "
+            f"No NOMADS configuration for {region.value}/{model.value}. "
             f"Available configurations: {available}"
         )
 
@@ -261,21 +253,21 @@ def get_nomads_config(location: Location, model: NOMADSModel) -> NWPSConfig:
     return config_cls
 
 
-def get_enabled_locations_for_model(model: NOMADSModel) -> list[Location]:
+def get_enabled_regions_for_model(model: NOMADSModel) -> list[Region]:
     """
-    Get all enabled locations that have configuration for a specific model.
+    Get all enabled regions that have configuration for a specific model.
 
     Args:
         model: NOMADS model type (NWPS, etc.)
 
     Returns:
-        List of enabled locations that support this model
+        List of enabled regions that support this model
     """
-    enabled_locations = load_locations()
-    locations = []
+    enabled_regions = get_enabled_regions()
+    regions = []
 
-    for (location, model_type), _ in NOMADS_CONFIG_REGISTRY.items():
-        if model_type == model and location in enabled_locations:
-            locations.append(location)
+    for (region, model_type), _ in NOMADS_CONFIG_REGISTRY.items():
+        if model_type == model and region in enabled_regions:
+            regions.append(region)
 
-    return locations
+    return regions

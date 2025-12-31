@@ -14,12 +14,12 @@ from repositories.surf_spot_repository import SyncSurfSpotRepository
 
 from services.forecast.providers.nomads.provider import NOMADSProvider
 from services.forecast.providers.nomads.config import (
-    get_enabled_locations_for_model,
+    get_enabled_regions_for_model,
     get_nomads_config,
     NOMADSModel,
 )
 from services.forecast.providers.nomads.availability import NOMADSAvailabilityChecker
-from utils.location import Location
+from utils.region import Region
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +56,8 @@ def fetch_all_nwps_forecasts():
     """
     Parent dispatcher task for NOMADS NWPS model.
 
-    Spawns one child task per enabled location to check availability and fetch if new data exists.
-    Gracefully skips locations that don't have NWPS configuration.
+    Spawns one child task per enabled region to check availability and fetch if new data exists.
+    Gracefully skips regions that don't have NWPS configuration.
 
     Designed for periodic polling - frequency depends on WFO run schedule:
     - HFO (Hawaii): 2x daily polls for unpredictable 2x daily runs (e.g., 7:00 & 17:00 UTC)
@@ -65,30 +65,30 @@ def fetch_all_nwps_forecasts():
 
     Retry logic is hardcoded: 3 retries × 1hr for "no data", 3 retries × 5min for network errors.
     """
-    locations = get_enabled_locations_for_model(NOMADSModel.NWPS)
+    regions = get_enabled_regions_for_model(NOMADSModel.NWPS)
 
-    if not locations:
-        logger.warning("No enabled locations with NWPS configuration")
-        return {"locations_dispatched": 0}
+    if not regions:
+        logger.warning("No enabled regions with NWPS configuration")
+        return {"regions_dispatched": 0}
 
     job = group(
-        fetch_nwps.si(loc.value)  # type: ignore
-        for loc in locations
+        fetch_nwps.si(r.value)  # type: ignore
+        for r in regions
     )
 
     result = job.apply_async()
 
     logger.info(
-        f"Dispatched {len(locations)} fetch tasks",
+        f"Dispatched {len(regions)} fetch tasks",
         extra={
-            "locations": [loc.value for loc in locations],
+            "regions": [r.value for r in regions],
             "group_id": result.id,
         },
     )
 
     return {
-        "locations_dispatched": len(locations),
-        "locations": [loc.value for loc in locations],
+        "regions_dispatched": len(regions),
+        "regions": [r.value for r in regions],
         "group_id": result.id,
     }
 
@@ -99,12 +99,12 @@ def fetch_all_nwps_forecasts():
 
 
 @shared_task(bind=True, max_retries=3)
-def fetch_nwps(self, loc: str):
+def fetch_nwps(self, region_str: str):
     """
-    Fetch NOMADS NWPS forecast data for a specific location.
+    Fetch NOMADS NWPS forecast data for a specific region.
 
     Polls NOMADS for new NWPS runs, downloads GRIB2 files, and extracts wave/wind forecasts.
-    Stores results in Redis with key pattern: forecast:nomads:nwps:{location}:{spot_id}
+    Stores results in Redis with key pattern: forecast:nomads:nwps:{region}:{spot_id}
 
     Handles unpredictable NWPS run schedules by:
     1. Checking what's actually available on NOMADS (via HEAD requests)
@@ -117,28 +117,28 @@ def fetch_nwps(self, loc: str):
     - Already current or too old: Exit immediately, no retry needed
 
     Args:
-        loc: Location string value (e.g., "maui")
+        region_str: Region string value (e.g., "maui")
     """
 
     db_manager = get_db_manager()
     redis_manager = get_redis_manager()
     http_manager = get_http_manager()
 
-    location = Location(loc)
-    config = get_nomads_config(location, NOMADSModel.NWPS)
+    region = Region(region_str)
+    config = get_nomads_config(region, NOMADSModel.NWPS)
 
     logger.info(
-        f"Starting fetch for {loc}",
+        f"Starting fetch for {region_str}",
         extra={
-            "location": loc,
+            "region": region_str,
             "wfo": config.wfo.value,
-            "grid": config.grid.cg,
+            "cg": config.cg,
         },
     )
 
     # get the last run timestamp from Redis to optimize search window
-    # key pattern: forecast:{provider}:{model}:{location}:last_run
-    last_run_key = f"forecast:nomads:nwps:{loc}:last_run"
+    # key pattern: forecast:{provider}:{model}:{region}:last_run
+    last_run_key = f"forecast:nomads:nwps:{region_str}:last_run"
     last_run_id = redis_manager.client.get(last_run_key)
 
     # parse last run time if it exists, otherwise None
@@ -154,22 +154,22 @@ def fetch_nwps(self, loc: str):
         if self.request.retries < self.max_retries:
             retry_countdown = 3600  # 1 hour in seconds
             logger.info(
-                f"No new run available for {loc}, will retry in {retry_countdown // 60}min",
+                f"No new run available for {region_str}, will retry in {retry_countdown // 60}min",
                 extra={
-                    "location": loc,
+                    "region": region_str,
                     "attempt": self.request.retries + 1,
                     "max_retries": self.max_retries,
                     "retry_in_seconds": retry_countdown,
                 },
             )
             raise self.retry(
-                exc=NoNewRunAvailable(f"No new run for {loc}"),
+                exc=NoNewRunAvailable(f"No new run for {region_str}"),
                 countdown=retry_countdown,
             )
         else:
             logger.warning(
-                f"No new runs found for {loc} after {self.max_retries} retries, giving up until next beat",
-                extra={"location": loc, "attempts": self.max_retries + 1},
+                f"No new runs found for {region_str} after {self.max_retries} retries, giving up until next beat",
+                extra={"region": region_str, "attempts": self.max_retries + 1},
             )
             return {"status": "no_data_available", "retries_exhausted": True}
 
@@ -213,16 +213,16 @@ def fetch_nwps(self, loc: str):
             logger.info(
                 f"Extracted forecasts for {len(forecasts)} spots",
                 extra={
-                    "location": loc,
+                    "region": region_str,
                     "spot_ids": list(forecasts.keys()),
                     "run_id": run_id,
                 },
             )
 
-            # store in Redis with new key pattern: forecast:{provider}:{model}:{location}:{spot_id}
+            # store in Redis with new key pattern: forecast:{provider}:{model}:{region}:{spot_id}
             with redis_manager.client.pipeline() as pipe:
                 for spot_id, provider_forecast in forecasts.items():
-                    key = f"forecast:nomads:nwps:{loc}:{spot_id}"
+                    key = f"forecast:nomads:nwps:{region_str}:{spot_id}"
                     pipe.setex(
                         key, timedelta(hours=14), provider_forecast.to_redis_json()
                     )
@@ -234,7 +234,7 @@ def fetch_nwps(self, loc: str):
                 logger.info(
                     "Redis pipeline executed",
                     extra={
-                        "location": loc,
+                        "region": region_str,
                         "commands_executed": len(result),
                         "last_run_key": last_run_key,
                     },
@@ -244,9 +244,9 @@ def fetch_nwps(self, loc: str):
             _remove_grib2_file(file_path)
 
             logger.info(
-                f"Successfully fetched run {run_id} for {loc}",
+                f"Successfully fetched run {run_id} for {region_str}",
                 extra={
-                    "location": loc,
+                    "region": region_str,
                     "run_id": run_id,
                     "spots_processed": len(forecasts),
                 },
@@ -263,9 +263,9 @@ def fetch_nwps(self, loc: str):
             if self.request.retries < self.max_retries:
                 download_retry_countdown = 300  # 5 minutes for transient errors
                 logger.warning(
-                    f"Forecast extraction for {loc} at {run_id}, will retry in {download_retry_countdown // 60}min",
+                    f"Forecast extraction for {region_str} at {run_id}, will retry in {download_retry_countdown // 60}min",
                     extra={
-                        "location": loc,
+                        "region": region_str,
                         "run_id": run_id,
                         "retry_in_seconds": download_retry_countdown,
                         "attempt": self.request.retries + 1,
@@ -276,9 +276,9 @@ def fetch_nwps(self, loc: str):
                 raise self.retry(exc=e, countdown=download_retry_countdown)
             else:
                 logger.error(
-                    f"Forecast extraction for {loc} at {run_id} after {self.max_retries} retries",
+                    f"Forecast extraction for {region_str} at {run_id} after {self.max_retries} retries",
                     extra={
-                        "location": loc,
+                        "region": region_str,
                         "run_id": run_id,
                         "attempts": self.max_retries + 1,
                         "error": str(e),
@@ -288,9 +288,9 @@ def fetch_nwps(self, loc: str):
 
         except Exception as e:
             logger.exception(
-                f"Unexpected error extracting forecast for {loc} at {run_id}",
+                f"Unexpected error extracting forecast for {region_str} at {run_id}",
                 extra={
-                    "location": loc,
+                    "region": region_str,
                     "run_id": run_id,
                     "error": str(e),
                 },

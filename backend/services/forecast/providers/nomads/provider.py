@@ -15,7 +15,7 @@ from services.forecast.providers.nomads.mapper import map_nwps_forecast
 from schemas.forecast_schema import ProviderForecast
 from utils.geo_validation import longitude_to_360
 from utils.geo_spatial import build_forecast_kdtree, query_nearest_forecast_points
-from utils.location import Location
+from utils.region import Region
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +36,13 @@ class NOMADSProvider:
         self.surf_spot_repo = surf_spot_repo
 
     @classmethod
-    def supports_location(cls, location: Location) -> bool:
+    def supports_region(cls, region: Region) -> bool:
         """
-        check if NOMADS has configuration for the given location.
+        Check if NOMADS has configuration for the given region.
 
-        returns True if location is in NOMADS_CONFIG_REGISTRY, False otherwise.
+        Returns True if region is in NOMADS_CONFIG_REGISTRY, False otherwise.
         """
-        return any(loc == location for loc, _ in NOMADS_CONFIG_REGISTRY.keys())
+        return any(r == region for r, _ in NOMADS_CONFIG_REGISTRY.keys())
 
     def download_file(
         self, analysis_time: time, forecast_date: date | None = None
@@ -214,10 +214,10 @@ class NOMADSProvider:
         ds.close()
         spot_forecast.close()
 
-        # map to unified schema (location comes from config)
-        location = self.config.location.value
+        # map to unified schema (region comes from config)
+        region = self.config.region.value
         provider_forecasts = {
-            spot_id: map_nwps_forecast(spot_id, location, raw_data)
+            spot_id: map_nwps_forecast(spot_id, region, raw_data)
             for spot_id, raw_data in raw_forecasts.items()
         }
 

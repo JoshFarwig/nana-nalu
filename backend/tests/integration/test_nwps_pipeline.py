@@ -26,7 +26,7 @@ from services.forecast.providers.nomads.provider import NOMADSProvider
 from services.forecast.providers.nomads.config import get_nomads_config, NOMADSModel
 from services.forecast.providers.nomads.availability import NOMADSAvailabilityChecker
 from repositories.surf_spot_repository import SyncSurfSpotRepository
-from utils.location import Location
+from utils.region import Region
 from core.http import SyncHTTPManager
 
 
@@ -51,7 +51,7 @@ class TestNWPSPipeline:
         - data contains required fields: swh, perpw, dirpw, swell, etc.
         - data is properly stored in Redis with correct keys
         """
-        config = get_nomads_config(Location.MAUI, NOMADSModel.NWPS)
+        config = get_nomads_config(Region.MAUI, NOMADSModel.NWPS)
         repo = SyncSurfSpotRepository(sync_db_session)
         provider = NOMADSProvider(config, http_manager, repo)
         checker = NOMADSAvailabilityChecker(config, http_manager)
@@ -150,14 +150,14 @@ class TestNWPSPipeline:
                 assert len(forecast_data["valid_times"]) > 0
 
             # store in Redis (simulating the Celery task behavior)
-            location = Location.MAUI
+            region = Region.MAUI
             for spot_id, spot_data in forecasts.items():
-                key = f"forecast:nwps:{location.value}:{spot_id}"
+                key = f"forecast:nwps:{region.value}:{spot_id}"
                 sync_redis_client.setex(key, 3600, json.dumps(spot_data))  # 1 hour TTL
 
             # verify Redis storage
             for spot_id in forecasts.keys():
-                key = f"forecast:nwps:{location.value}:{spot_id}"
+                key = f"forecast:nwps:{region.value}:{spot_id}"
                 stored_data = sync_redis_client.get(key)
 
                 assert stored_data is not None, f"no data found in Redis for key {key}"

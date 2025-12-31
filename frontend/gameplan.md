@@ -23,3 +23,5 @@ as well. can use openfreemap for vector tiling w/ leaflet for best of both world
 I change gears and want to render map tiles, may need to go maplibre gl js instead.
 
 leaflet makes most sense though to just get something up and running.
+
+tanstack query for handling the forecast data

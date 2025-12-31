@@ -6,6 +6,7 @@ Can be used by repositories, services, or routes.
 
 from fastapi import status
 from core.exceptions.base import NanaNaluException
+from utils.region import get_enabled_regions
 
 
 # =======================
@@ -40,6 +41,23 @@ class SurfSpotNotFoundError(SurfSpotError):
             error_code="surf_spot_not_found",
             status_code=status.HTTP_404_NOT_FOUND,
             details={"spot_id": spot_id},
+        )
+
+
+class SurfSpotNotInRegion(SurfSpotError):
+    """Raised when a surf spot is created outside of supported regions"""
+
+    def __init__(self, spot_id: int, lat: float, lon: float):
+        super().__init__(
+            message=f"Spot {spot_id} at ({lat}, {lon}) is not in a supported forecast region",
+            error_code="surf_spot_not_in_region",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={
+                "spot_id": spot_id,
+                "latitude": lat,
+                "longitude": lon,
+                "supported_regions": [region.value for region in get_enabled_regions()],
+            },
         )
 
 

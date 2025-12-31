@@ -20,6 +20,7 @@ class SurfSpot(Base):
     location: Mapped[str] = mapped_column(
         Geometry(geometry_type="POINT", srid=4326), nullable=False
     )
+    region: Mapped[str | None] = mapped_column(String(50), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # relationships

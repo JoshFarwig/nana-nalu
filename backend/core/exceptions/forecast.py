@@ -31,18 +31,6 @@ class ForecastError(NanaNaluException):
 # =======================
 
 
-class LocationNotSupportedError(ForecastError):
-    """Raised when spot is in unsupported forecast location"""
-
-    def __init__(self, spot_id: int, lat: float, lon: float):
-        super().__init__(
-            message=f"Spot {spot_id} at ({lat}, {lon}) is not in a supported forecast region",
-            error_code="location_not_supported",
-            status_code=status.HTTP_404_NOT_FOUND,
-            details={"spot_id": spot_id, "latitude": lat, "longitude": lon},
-        )
-
-
 class NoForecastDataError(ForecastError):
     """Raised when no forecast data available in Redis"""
 

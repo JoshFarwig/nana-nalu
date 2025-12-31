@@ -8,7 +8,7 @@ from celery import signals
 from core.config import WorkerSettings, load_settings
 from core.logging import configure_logging
 
-from utils.location import Location, load_locations
+from utils.region import Region, get_enabled_regions
 
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ class WorkerManagers:
 # NOTE: This module is only imported by worker containers via workers/worker_app.py
 _managers: WorkerManagers | None = None
 _settings: WorkerSettings = load_settings("worker")
-_locations: set[Location] = load_locations()
+_regions: frozenset[Region] = get_enabled_regions()
 
 
 @signals.setup_logging.connect
@@ -104,8 +104,8 @@ def get_worker_settings() -> WorkerSettings:
     return _settings
 
 
-def get_worker_locations() -> set[Location]:
-    return _locations
+def get_worker_regions() -> set[Region]:
+    return _regions
 
 
 def get_worker_managers() -> WorkerManagers:

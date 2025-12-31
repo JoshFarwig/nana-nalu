@@ -20,7 +20,7 @@ from services.forecast.providers.pacioos.mapper import (
     map_pacioos_wrf_forecast,
 )
 from utils.geo_spatial import build_forecast_kdtree, query_nearest_forecast_points
-from utils.location import Location
+from utils.region import Region
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +53,13 @@ class PacIOOSProvider:
         self.surf_spot_repo = surf_spot_repo
 
     @classmethod
-    def supports_location(cls, location: Location) -> bool:
+    def supports_region(cls, region: Region) -> bool:
         """
-        Check if PacIOOS has configuration for the given location.
+        Check if PacIOOS has configuration for the given region.
 
-        Returns True if location is in PACIOOS_CONFIG_REGISTRY, False otherwise.
+        Returns True if region is in PACIOOS_CONFIG_REGISTRY, False otherwise.
         """
-        return any(loc == location for loc, _ in PACIOOS_CONFIG_REGISTRY.keys())
+        return any(r == region for r, _ in PACIOOS_CONFIG_REGISTRY.keys())
 
     def download_file(self) -> Path:
         """
@@ -237,10 +237,10 @@ class PacIOOSProvider:
                 f"No mapper registered for PacIOOS model: {self.config.model_name}"
             )
 
-        # map to unified schema (location comes from config)
-        location = self.config.location.value
+        # map to unified schema (region comes from config)
+        region = self.config.region.value
         provider_forecasts = {
-            spot_id: mapper(spot_id, location, raw_data)
+            spot_id: mapper(spot_id, region, raw_data)
             for spot_id, raw_data in raw_forecasts.items()
         }
 

@@ -4,8 +4,7 @@ from enum import Enum
 from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
-from services.forecast.grids import MauiGrid, Grid
-from utils.location import Location, load_locations
+from utils.region import Region, RegionGrid, get_enabled_regions
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ class PacIOOSModelConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    location: Location  # regional variant (e.g., MAUI, OAHU)
+    region: Region  # geographic region (MAUI, OAHU, etc.)
     model_name: PacIOOSModel
     provider_name: Literal["pacioos"] = "pacioos"
 
@@ -45,11 +44,15 @@ class PacIOOSModelConfig(BaseModel):
     max_forecast_age_hours: int
     time_step_hours: int
 
-    grid: Grid
     max_nearest_neighbor_distance_km: float
 
     # variables to fetch from dataset
     data_variables: list[str]
+
+    @property
+    def grid(self) -> RegionGrid:
+        """Get grid bounds from the region."""
+        return self.region.grid
 
     @property
     def griddap_url(self) -> str:
@@ -100,10 +103,10 @@ class PacIOOSModelConfig(BaseModel):
         """
         Construct filename for downloaded NetCDF file.
 
-        Returns filename in format: {model}_{location}_{timestamp}.nc
+        Returns filename in format: {model}_{region}_{timestamp}.nc
         """
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        return f"{self.model_name.value}_{self.location.value}_{timestamp}.nc"
+        return f"{self.model_name.value}_{self.region.value}_{timestamp}.nc"
 
 
 # =======================
@@ -122,9 +125,8 @@ class MauiTideConfig(PacIOOSModelConfig):
 
     model_config = ConfigDict(frozen=True)
 
-    location: Location = Location.MAUI
+    region: Region = Region.MAUI
     model_name: PacIOOSModel = PacIOOSModel.TIDE
-    grid: Grid = MauiGrid()
 
     # tide model provides hourly predictions extending ~1 year into future
     # data is pre-computed, we only fetch for Redis TTL maintenance (weekly)
@@ -149,35 +151,35 @@ class MauiTideConfig(PacIOOSModelConfig):
 # REGISTRY & LOOKUP
 # =======================
 
-# registry maps (Location, Model) -> Config class
-# location determines regional variant, Model determines data type
-PACIOOS_CONFIG_REGISTRY: dict[tuple[Location, PacIOOSModel], PacIOOSModelConfig] = {
+# registry maps (Region, Model) -> Config class
+# region determines geographic variant, Model determines data type
+PACIOOS_CONFIG_REGISTRY: dict[tuple[Region, PacIOOSModel], PacIOOSModelConfig] = {
     # maui region
-    (Location.MAUI, PacIOOSModel.TIDE): MauiTideConfig(),
+    (Region.MAUI, PacIOOSModel.TIDE): MauiTideConfig(),
 }
 
 
-def get_pacioos_config(location: Location, model: PacIOOSModel) -> PacIOOSModelConfig:
+def get_pacioos_config(region: Region, model: PacIOOSModel) -> PacIOOSModelConfig:
     """
     Get a specific PacIOOS configuration.
 
     Args:
-        location: Geographic location
+        region: Geographic region
         model: PacIOOS model type
 
     Returns:
         Instantiated config
 
     Raises:
-        ValueError: If no configuration exists for this location/model combo
+        ValueError: If no configuration exists for this region/model combo
     """
-    key = (location, model)
+    key = (region, model)
     if key not in PACIOOS_CONFIG_REGISTRY:
         available = ", ".join(
-            f"{loc.value}/{mod.value}" for loc, mod in PACIOOS_CONFIG_REGISTRY.keys()
+            f"{r.value}/{m.value}" for r, m in PACIOOS_CONFIG_REGISTRY.keys()
         )
         raise ValueError(
-            f"No PacIOOS configuration for {location.value}/{model.value}. "
+            f"No PacIOOS configuration for {region.value}/{model.value}. "
             f"Available configurations: {available}"
         )
 
@@ -185,21 +187,21 @@ def get_pacioos_config(location: Location, model: PacIOOSModel) -> PacIOOSModelC
     return config_cls
 
 
-def get_enabled_locations_for_model(model: PacIOOSModel) -> list[Location]:
+def get_enabled_regions_for_model(model: PacIOOSModel) -> list[Region]:
     """
-    Get all enabled locations that have configuration for a specific model.
+    Get all enabled regions that have configuration for a specific model.
 
     Args:
         model: PacIOOS model type (TIDE, SWAN, WRF)
 
     Returns:
-        List of enabled locations that support this model
+        List of enabled regions that support this model
     """
-    enabled_locations = load_locations()
-    locations = []
+    enabled_regions = get_enabled_regions()
+    regions = []
 
-    for (location, model_type), _ in PACIOOS_CONFIG_REGISTRY.items():
-        if model_type == model and location in enabled_locations:
-            locations.append(location)
+    for (region, model_type), _ in PACIOOS_CONFIG_REGISTRY.items():
+        if model_type == model and region in enabled_regions:
+            regions.append(region)
 
-    return locations
+    return regions
