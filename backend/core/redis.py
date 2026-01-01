@@ -4,11 +4,12 @@ import redis.asyncio as aioredis
 
 from core.configs.redis_config import RedisConfig
 
+logger = logging.getLogger(__name__)
+
 
 class AsyncRedisManager:
     def __init__(self, settings: RedisConfig, db_url: str):
         self.settings = settings
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.redis_url = db_url
         self._client: aioredis.Redis | None = None
 
@@ -37,7 +38,7 @@ class AsyncRedisManager:
             await self.client.ping()  # type: ignore[] (pyright not recognizing | Awaitable(bool))
             return True
         except Exception as e:
-            self.logger.error("Health check failed", exc_info=e)
+            logger.error("Health check failed", exc_info=e)
             return False
 
     async def close(self) -> None:
@@ -50,7 +51,6 @@ class AsyncRedisManager:
 class SyncRedisManager:
     def __init__(self, settings: RedisConfig, db_url: str):
         self.settings = settings
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.redis_url = db_url
         self._client: redis.Redis | None = None
 
@@ -79,7 +79,7 @@ class SyncRedisManager:
             self.client.ping()
             return True
         except Exception as e:
-            self.logger.error("Health check failed", exc_info=e)
+            logger.error("Health check failed", exc_info=e)
             return False
 
     def close(self) -> None:

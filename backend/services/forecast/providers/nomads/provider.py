@@ -217,7 +217,9 @@ class NOMADSProvider:
         # map to unified schema (region comes from config)
         region = self.config.region.value
         provider_forecasts = {
-            spot_id: map_nwps_forecast(spot_id, region, raw_data)
+            spot_id: map_nwps_forecast(
+                spot_id, region, raw_data, self.config.data_summary
+            )
             for spot_id, raw_data in raw_forecasts.items()
         }
 

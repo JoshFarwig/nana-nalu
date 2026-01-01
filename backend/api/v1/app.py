@@ -131,8 +131,10 @@ def create_app(config: str | None = None) -> FastAPI:
 
     # TODO: Include routers
     # from backend.api.v1.routes import users, spots, forecasts
+    from api.v1.routes import surf_spots
+
     # app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
-    # app.include_router(spots.router, prefix="/api/v1/spots", tags=["spots"])
+    app.include_router(surf_spots.router, prefix="/v1")
     # app.include_router(forecasts.router, prefix="/api/v1/forecasts", tags=["forecasts"])
 
     return app

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def map_pacioos_tide_forecast(
-    spot_id: int, location: str, raw_data: dict
+    spot_id: int, location: str, raw_data: dict, data_summary: dict[str, str]
 ) -> ProviderForecast:
     """
     Map PacIOOS Tide model forecast to unified schema.
@@ -44,21 +44,26 @@ def map_pacioos_tide_forecast(
             selected_lon=raw_data["grid_metadata"]["selected_lon"],
             distance_km=raw_data["grid_metadata"]["distance_km"],
         ),
+        data_summary=data_summary,
         forecast=forecast,
     )
 
 
-def map_pacioos_swan_forecast(spot_id: int, location: str, raw_data: dict):
+def map_pacioos_swan_forecast(
+    spot_id: int, location: str, raw_data: dict, data_summary: dict[str, str]
+):
     """
     Map PacIOOS SWAN wave model forecast to unified schema.
 
-    Maps to: wave.height, wave.direction_peak, wave.period_peak
+    Maps to: wave.height, wave.peak_direction, wave.peak_period
     """
     # TODO:
     pass
 
 
-def map_pacioos_wrf_forecast(spot_id: int, location: str, raw_data: dict):
+def map_pacioos_wrf_forecast(
+    spot_id: int, location: str, raw_data: dict, data_summary: dict[str, str]
+):
     """
     Map PacIOOS WRF atmospheric model forecast to unified schema.
 

@@ -1,18 +1,23 @@
 import logging
+
 from core.config import APISettings, load_settings
+from core.exceptions.users import UserNotFoundError
 from core.database import SyncDatabaseManager
+
 from repositories.user_repository import SyncUserRepository
 from repositories.surf_spot_repository import SyncSurfSpotRepository
+
 from scripts.seed.seed_factory import SeedFactory
+
+logger = logging.getLogger(__name__)
 
 
 class SeedManager:
     def __init__(self, settings: APISettings):
         self.settings = settings
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.db_manager = SyncDatabaseManager(settings.db)
 
-        self.logger.info("SeedManager initialized")
+        logger.info("SeedManager initialized")
 
     def get_or_seed_admin(self) -> int:
         """Get existing admin user or seed admin user and return ID."""
@@ -21,17 +26,17 @@ class SeedManager:
             user_repo = SyncUserRepository(session, self.settings)
 
             # return existing admin or seed and return new admin user
-            admin_user = user_repo.get_by_username(
-                self.settings.api.admin_username.get_secret_value()
-            )
-
-            if admin_user:
-                self.logger.info(
+            try:
+                admin_user = user_repo.get_by_username(
+                    self.settings.api.admin_username.get_secret_value()
+                )
+                logger.info(
                     "Found existing admin user",
                     extra={"id": admin_user.id},
                 )
                 return admin_user.id
-            else:
+
+            except UserNotFoundError:
                 admin_user = user_repo.add(
                     {
                         "username": self.settings.api.admin_username.get_secret_value(),
@@ -43,7 +48,7 @@ class SeedManager:
                 )
                 session.flush()
 
-                self.logger.info(
+                logger.info(
                     "Seeded admin user",
                     extra={"id": admin_user.id},
                 )
@@ -56,19 +61,19 @@ class SeedManager:
             surf_spot_repo = SyncSurfSpotRepository(session)
 
             if surf_spot_repo.any_exist():
-                self.logger.info("Surf spots already exist")
+                logger.info("Surf spots already exist")
                 return
 
             # Get all surf spots for all enabled locations
             surf_spots = SeedFactory.get_all_surf_spots(admin_user_id)
 
             if not surf_spots:
-                self.logger.warning("No surf spots loaded from any enabled location")
+                logger.warning("No surf spots loaded from any enabled location")
                 return
 
             session.add_all(surf_spots)
 
-            self.logger.info(
+            logger.info(
                 f"Seeded {len(surf_spots)} surf spots across enabled locations",
                 extra={
                     "count": len(surf_spots),
@@ -83,7 +88,7 @@ class SeedManager:
             admin_user_id = self.get_or_seed_admin()
             self.seed_surf_spots(admin_user_id)
         except Exception as e:
-            self.logger.exception("Error seeding database", extra={"error": str(e)})
+            logger.exception("Error seeding database", extra={"error": str(e)})
             raise
         finally:
             self.db_manager.close()

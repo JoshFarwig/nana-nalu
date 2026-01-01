@@ -63,7 +63,7 @@ def get_async_db_manager(request: Request) -> AsyncDatabaseManager:
     return manager
 
 
-def get_redis_manager(request: Request) -> AsyncRedisManager:
+def get_async_redis_manager(request: Request) -> AsyncRedisManager:
     """
     Get Redis manager from app state.
 

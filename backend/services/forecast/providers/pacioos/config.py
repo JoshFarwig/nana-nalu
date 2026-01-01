@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Literal
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from utils.region import Region, RegionGrid, get_enabled_regions
 
@@ -48,6 +48,12 @@ class PacIOOSModelConfig(BaseModel):
 
     # variables to fetch from dataset
     data_variables: list[str]
+
+    # human-readable descriptions of data categories for client context
+    data_summary: dict[str, str] = Field(
+        default={},
+        description="Category-level descriptions of what each data type represents",
+    )
 
     @property
     def grid(self) -> RegionGrid:
@@ -145,6 +151,11 @@ class MauiTideConfig(PacIOOSModelConfig):
 
     # ERDDAP dataset identifier
     dataset_id: str = "tide_mhi"
+
+    # Category-level descriptions for client tooltips and context
+    data_summary: dict[str, str] = {
+        "tide": "Astronomical tide predictions from harmonic analysis (does not include storm surge or wind effects)"
+    }
 
 
 # =======================

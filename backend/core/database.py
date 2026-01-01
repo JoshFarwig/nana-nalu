@@ -23,7 +23,6 @@ class AsyncDatabaseManager:
 
     def __init__(self, settings: DatabaseConfig):
         self.settings = settings
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.database_url = settings.get_async_url()
         self._engine: AsyncEngine | None = None
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -128,7 +127,7 @@ class AsyncDatabaseManager:
     async def close(self) -> None:
         if self._engine:
             await self._engine.dispose()
-            self.logger.info("Successfully closed")
+            logger.info("Successfully closed")
             self._engine = None
             self._session_factory = None
 
@@ -141,7 +140,6 @@ class SyncDatabaseManager:
 
     def __init__(self, settings: DatabaseConfig) -> None:
         self.settings = settings
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.database_url = settings.get_sync_url()
         self._engine: Engine | None = None
         self._session_factory: sessionmaker[Session] | None = None
@@ -216,6 +214,6 @@ class SyncDatabaseManager:
     def close(self):
         if self.engine:
             self.engine.dispose()
-            self.logger.info("Successfully closed")
+            logger.info("Successfully closed")
         self._engine = None
         self._session_factory = None

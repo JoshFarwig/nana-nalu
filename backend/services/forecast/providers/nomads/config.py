@@ -42,6 +42,12 @@ class NWPSConfig(BaseModel):
     # NWPS computational grid identifier (CG0-CG5)
     cg: str = Field(pattern=r"^CG\d+$")
 
+    # Human-readable descriptions of data categories for client context
+    data_summary: dict[str, str] = Field(
+        default={},
+        description="Category-level descriptions of what each data type represents",
+    )
+
     # NOTE: NWPS model run times are highly variable and unpredictable
     # model completions usually take 1-1.5hrs after start time,
     # start times vary by WFO due to model dependencies (WW3, wind grids, etc.).
@@ -192,6 +198,13 @@ class MauiNWPSConfig(NWPSConfig):
     grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl"
     filename_pattern: str = "{wfo}_nwps_{cg}_{date}_{time}.grib2"
     nomads_region: str = "pr"
+
+    # Category-level descriptions for client tooltips and context
+    data_summary: dict[str, str] = {
+        "tide": "Total water level including astronomical tide, storm surge, and wind setup",
+        "wave": "Nearshore wave predictions including wind waves and swell components",
+        "wind": "Surface-level wind forecasts from atmospheric model",
+    }
 
     # refer to https://nomads.ncep.noaa.gov/gribfilter.php?ds=prnwps for the valid params / levels
     # removed current speed and dir since RTOFS-Global is turned off on the model runs (and its like a 9km

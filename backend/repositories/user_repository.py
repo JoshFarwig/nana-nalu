@@ -9,12 +9,13 @@ from core.exceptions.users import UserNotFoundError
 from utils.password import hash_password
 from models.user_model import User
 
+logger = logging.getLogger(__name__)
+
 
 class AsyncUserRepository:
     def __init__(self, session: AsyncSession, settings: APISettings):
         self.session = session
         self.settings = settings
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     async def add(self, user_data: dict) -> User:
         """
@@ -188,7 +189,6 @@ class SyncUserRepository:
     def __init__(self, session: Session, settings: APISettings):
         self.session = session
         self.settings = settings
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     def add(self, user_data: dict) -> User:
         """

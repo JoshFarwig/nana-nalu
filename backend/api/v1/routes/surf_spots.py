@@ -5,31 +5,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.dependencies.core import get_async_db_session
 
+from core.dependencies.services import get_forecast_service
 from repositories.surf_spot_repository import AsyncSurfSpotRepository
 
 from schemas.response_schema import SuccessResponse
 from schemas.surf_spot_schema import SurfSpotResponse
 from schemas.filters_schema import SurfSpotFilters
+from schemas.forecast_schema import ProviderForecastResponse
+from services.forecast.forecast_service import ForecastService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/surf_spots", tags=["surf_spots"])
 
-# api/surf_spots
-#   - return all surf spots with base data.
-#   - this will probably depend on the user's
-#     type, if its admin, it should be all spots
-#     else, it should just show a user's spots.
-#   - if "crews" are implemented, should be able to get all surf spots from a crew.
-#   - maybe, endpoint to get a users surf spots should be api/surf_spots/me or /{id as your user id}?
-#     and the same for the crew execept as api/surf_spots/crew/{id}?
-
 
 # TODO: add JWT check for user role for admin, for now exclusive to admin
-# may add to user if they wanna get global + created + crew spots.
 
 
-# maybe convert query params in to a pydantic model? idk
 @router.get("/", summary="List all surf spots")
 async def get_all_surf_spots(
     filters: Annotated[SurfSpotFilters, Query()],
@@ -47,22 +39,23 @@ async def get_all_surf_spots(
 
 
 # TODO: create surf spot endpoint, also checks user tier and available spots
-@router.post("/", summary="Create a new surf spot")
-async def create_surf_spot():
-    pass
+# @router.post("/", summary="Create a new surf spot")
+# async def create_surf_spot():
+#     pass
 
 
 # TODO: add auth, get user id from JWT
-@router.get("/me", summary="List of all surf spots created by the user")
-async def get_user_surf_spots(session: AsyncSession = Depends(get_async_db_session)):
-    pass
+# @router.get("/me", summary="List of all surf spots created by the user")
+# async def get_user_surf_spots(session: AsyncSession = Depends(get_async_db_session)):
+#     pass
+#
 
 
 # TODO: add auth check to verify spot data is created from user, in crew, or from admin
 @router.get("/{id}", summary="Get surf spot data")
 async def get_surf_spot(id: int, session: AsyncSession = Depends(get_async_db_session)):
     repo = AsyncSurfSpotRepository(session)
-    spot = await repo.get_with_coordinates(id)  # Returns dict with GeoJSON geometry
+    spot = await repo.get_with_coordinates(id)
 
     spot_response = SurfSpotResponse.model_validate(spot)
 
@@ -75,39 +68,84 @@ async def get_surf_spot(id: int, session: AsyncSession = Depends(get_async_db_se
     "/{id}/forecasts",
     summary="Return all forecast data for a surf spot",
 )
-async def get_forecasts(id: int, session: AsyncSession = Depends(get_async_db_session)):
-    pass
+async def get_forecasts(
+    id: int, forecast_service: ForecastService = Depends(get_forecast_service)
+):
+    forecasts = await forecast_service.get_forecasts(id)
+
+    # Convert to clean response dicts (excludes None, computes units)
+    forecast_responses = [
+        ProviderForecastResponse.from_provider_forecast(f).to_response_dict()
+        for f in forecasts
+    ]
+
+    return SuccessResponse(
+        message=f"Retrieved {len(forecast_responses)} forecast provider(s)",
+        data=forecast_responses,
+    )
 
 
 @router.get(
     "/{id}/forecasts/available",
     summary="Return all the available providers and their forecast models for a surf spot",
 )
-async def get_available_providers():
-    pass
+async def get_available_providers(
+    id: int, forecast_service: ForecastService = Depends(get_forecast_service)
+):
+    providers = await forecast_service.get_available_providers(id)
+
+    return SuccessResponse(
+        message=f"{len(providers)} forecast provider(s) available", data=providers
+    )
 
 
 @router.get(
     "/{id}/forecasts/{provider}",
     summary="Return all forecast data from a forecast provider",
+    response_model_exclude_none=True,
 )
-async def get_provider_forecast(id: int, provider: str):
-    pass
+async def get_provider_forecast(
+    id: int,
+    provider: str,
+    forecast_service: ForecastService = Depends(get_forecast_service),
+):
+    provider_forecasts = await forecast_service.get_forecast_by_provider(id, provider)
+
+    # Convert to response schema
+    forecast_responses = [
+        ProviderForecastResponse.from_provider_forecast(f).to_response_dict()
+        for f in provider_forecasts
+    ]
+
+    return SuccessResponse(
+        message=f"Retrieved {provider} provider forecast(s) for spot {id}",
+        data=forecast_responses,
+    )
 
 
 @router.get(
     "/{id}/forecasts/{provider}/{model}",
     summary="Return forecast data from a provider's forecast model",
+    response_model_exclude_none=True,
 )
-async def get_model_forecast(id: int, provider: str, model: str):
-    pass
+async def get_model_forecast(
+    id: int,
+    provider: str,
+    model: str,
+    forecast_service: ForecastService = Depends(get_forecast_service),
+):
+    model_forecast = await forecast_service.get_forecast_by_model(id, provider, model)
 
+    # handle None case (no data in Redis)
+    forecast_response = (
+        ProviderForecastResponse.from_provider_forecast(
+            model_forecast
+        ).to_response_dict()
+        if model_forecast
+        else None
+    )
 
-# api/surf_spots/{id}
-#   - return base data of the surf_spot
-#
-# api/surf_spots/{id}/forecasts -> can have different providers
-#   - this would return all forecast proviers and their data for this spot
-#
-# api/surf_spots/{id}/forecasts/{provider}
-#   - returns specific provider forecast data
+    return SuccessResponse(
+        message=f"Retrieved {model} forecast for provider {provider} for spot {id}",
+        data=forecast_response,
+    )

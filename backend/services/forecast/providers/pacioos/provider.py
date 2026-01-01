@@ -156,7 +156,9 @@ class PacIOOSProvider:
         logger.info(
             "NetCDF dataset loaded",
             extra={
-                "dataset_dims": dict(ds.sizes),  # Use .sizes instead of .dims to avoid FutureWarning
+                "dataset_dims": dict(
+                    ds.sizes
+                ),  # Use .sizes instead of .dims to avoid FutureWarning
                 "dataset_vars": list(ds.data_vars.keys()),
             },
         )
@@ -240,7 +242,7 @@ class PacIOOSProvider:
         # map to unified schema (region comes from config)
         region = self.config.region.value
         provider_forecasts = {
-            spot_id: mapper(spot_id, region, raw_data)
+            spot_id: mapper(spot_id, region, raw_data, self.config.data_summary)
             for spot_id, raw_data in raw_forecasts.items()
         }
 

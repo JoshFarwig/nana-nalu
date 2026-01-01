@@ -94,6 +94,6 @@ class NOMADSAvailabilityChecker:
         # direct NOMADS path to the actual GRIB2 file
         return (
             f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/nwps/prod/"
-            f"{self.config.region}.{date_str}/{self.config.wfo.value}/"
-            f"{hour_str}/{self.config.grid.cg}/{filename}"
+            f"{self.config.nomads_region}.{date_str}/{self.config.wfo.value}/"
+            f"{hour_str}/{self.config.cg}/{filename}"
         )

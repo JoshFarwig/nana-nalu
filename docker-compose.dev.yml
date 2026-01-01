@@ -34,6 +34,9 @@ services:
           path: ./backend/services
           target: /backend/services
         - action: sync+restart
+          path: ./backend/scripts
+          target: /backend/scripts
+        - action: sync+restart
           path: ./backend/models
           target: /backend/models
         - action: sync+restart

@@ -1,8 +1,8 @@
-"""Initial migration
+"""Initial Migration
 
-Revision ID: c5cdbf94e230
+Revision ID: 8d6d0b07b906
 Revises: 
-Create Date: 2025-11-13 12:44:24.071862
+Create Date: 2025-12-31 10:42:07.221508
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from geoalchemy2 import Geometry
 
 # revision identifiers, used by Alembic.
-revision: str = 'c5cdbf94e230'
+revision: str = '8d6d0b07b906'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -37,6 +37,7 @@ def upgrade() -> None:
     sa.Column('name', sa.String(length=100), nullable=False),
     sa.Column('description', sa.String(length=500), nullable=True),
     sa.Column('location', Geometry(geometry_type='POINT', srid=4326, dimension=2, spatial_index=False, from_text='ST_GeomFromEWKT', name='geometry', nullable=False), nullable=False),
+    sa.Column('region', sa.String(length=50), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('created_by_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['created_by_id'], ['users.id'], ),

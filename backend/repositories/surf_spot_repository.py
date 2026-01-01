@@ -26,10 +26,12 @@ from utils.geo_validation import valid_latitude_range, valid_longitude_range
 from utils.region import resolve_region
 
 
+logger = logging.getLogger(__name__)
+
+
 class AsyncSurfSpotRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     async def add(self, surf_spot_data: SurfSpotCreate) -> SurfSpot:
         # extract coordinates from GeoJSON for region validation
@@ -175,7 +177,6 @@ class AsyncSurfSpotRepository:
 class SyncSurfSpotRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     def any_exist(self) -> bool:
         result = self.session.execute(exists(SurfSpot.id).select())

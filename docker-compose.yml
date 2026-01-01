@@ -34,6 +34,8 @@ services:
     # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12:
       REDIS__PASSWORD: ${REDIS__PASSWORD}
     restart: always
+    volumes: 
+      - redis_data:/data
     networks: [nn_network]
     healthcheck:
       test: |
@@ -51,7 +53,7 @@ services:
       target: api
     environment:
       ENV: ${ENV}
-      LOCATIONS: ${LOCATIONS}
+      REGIONS: ${REGIONS}
       # use __ nested env delimiter syntax for nested pydantic-settings objects
       # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12
       API__ADMIN_USERNAME: ${API__ADMIN_USERNAME}
@@ -86,7 +88,7 @@ services:
       target: worker
     environment:
       ENV: ${ENV}
-      LOCATIONS: ${LOCATIONS}
+      REGIONS: ${REGIONS}
       DB__HOST: ${DB__HOST}
       DB__PORT: ${DB__PORT}
       DB__USERNAME: ${DB__USERNAME}
@@ -116,7 +118,7 @@ services:
       target: beat
     environment:
       ENV: ${ENV}
-      LOCATIONS: ${LOCATIONS}
+      REGIONS: ${REGIONS}
       REDIS__HOST: ${REDIS__HOST}
       REDIS__PORT: ${REDIS__PORT}
       REDIS__PASSWORD: ${REDIS__PASSWORD}
@@ -150,6 +152,8 @@ services:
 
 volumes:
   pg_data:
+  redis_data:
+
 
 networks: 
   nn_network:

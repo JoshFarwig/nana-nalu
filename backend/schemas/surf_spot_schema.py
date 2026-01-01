@@ -20,9 +20,6 @@ class SurfSpotCreate(SurfSpotBase):
     @classmethod
     def validate_point_geometry(cls, v: dict) -> dict:
         """Validate GeoJSON Point structure and coordinate ranges."""
-        if not isinstance(v, dict):
-            raise ValueError("geometry must be a GeoJSON object")
-
         if v.get("type") != "Point":
             raise ValueError("geometry type must be 'Point'")
 
@@ -61,9 +58,6 @@ class SurfSpotUpdate(BaseModel):
         if v is None:
             return v
 
-        if not isinstance(v, dict):
-            raise ValueError("geometry must be a GeoJSON object")
-
         if v.get("type") != "Point":
             raise ValueError("geometry type must be 'Point'")
 
@@ -89,7 +83,7 @@ class SurfSpotResponse(SurfSpotBase):
 
     id: int
     created_by_id: int
-    region: str | None
+    region: str
     geometry: dict  # GeoJSON Point geometry
 
     model_config = {"from_attributes": True}

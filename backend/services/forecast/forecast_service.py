@@ -27,7 +27,9 @@ class ForecastService:
     """
 
     def __init__(
-        self, redis_manager: AsyncRedisManager, surf_spot_repo: AsyncSurfSpotRepository
+        self,
+        redis_manager: AsyncRedisManager,
+        surf_spot_repo: AsyncSurfSpotRepository,
     ):
         self.redis = redis_manager
         self.surf_spot_repo = surf_spot_repo
