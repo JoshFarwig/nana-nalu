@@ -4,6 +4,7 @@ from core.redis import AsyncRedisManager
 from core.exceptions.forecast import (
     InvalidProviderError,
     InvalidModelError,
+    NoForecastDataError,
 )
 
 from repositories.surf_spot_repository import AsyncSurfSpotRepository
@@ -44,6 +45,7 @@ class ForecastService:
 
         Returns:
             List of ProviderForecast objects from all available providers/models
+            (returns empty list if no data available - client should check length)
 
         Raises:
             SurfSpotNotFoundError: If surf spot doesn't exist
@@ -62,7 +64,13 @@ class ForecastService:
                 forecasts.append(forecast)
             else:
                 logger.warning(
-                    f"No forecast data in Redis for {provider}:{model}:{region.value}:{surf_spot_id}"
+                    f"No forecast data in Redis for {provider}:{model}:{region.value}:{surf_spot_id}",
+                    extra={
+                        "spot_id": surf_spot_id,
+                        "provider": provider,
+                        "model": model,
+                        "region": region.value,
+                    },
                 )
 
         return forecasts
@@ -80,6 +88,7 @@ class ForecastService:
         Raises:
             SurfSpotNotFoundError: If surf spot doesn't exist
             InvalidProviderError: If provider is not available for this region
+            NoForecastDataError: If no forecast data exists for any model from this provider
         """
         region = await self._get_spot_region(surf_spot_id)
         available_grouped = self._get_available_forecasts_grouped(region)
@@ -99,25 +108,40 @@ class ForecastService:
                 forecast = ProviderForecast.from_redis_json(data)
                 forecasts.append(forecast)
             else:
-                logger.debug(
-                    f"No forecast data in Redis for forecast:{provider}:{model}:{region.value}:{surf_spot_id}"
+                logger.warning(
+                    f"No forecast data in Redis for {provider}:{model}:{region.value}:{surf_spot_id}",
+                    extra={
+                        "spot_id": surf_spot_id,
+                        "provider": provider,
+                        "model": model,
+                        "region": region.value,
+                    },
                 )
+
+        # If no forecasts found for this provider, raise exception
+        if not forecasts:
+            raise NoForecastDataError(
+                spot_id=surf_spot_id,
+                provider=provider,
+                reason=f"No models from {provider} have data available. Check if provider is running or data has expired.",
+            )
 
         return forecasts
 
     async def get_forecast_by_model(
         self, surf_spot_id: int, provider: str, model: str
-    ) -> ProviderForecast | None:
+    ) -> ProviderForecast:
         """
         Get forecast from a specific provider's model for a surf spot.
 
         Returns:
-            ProviderForecast object if data exists, None otherwise
+            ProviderForecast object
 
         Raises:
             SurfSpotNotFoundError: If surf spot doesn't exist
             InvalidProviderError: If provider is not available for this region
             InvalidModelError: If model is not available for this provider
+            NoForecastDataError: If no forecast data exists for this specific model
         """
         region = await self._get_spot_region(surf_spot_id)
         available_grouped = self._get_available_forecasts_grouped(region)
@@ -137,10 +161,22 @@ class ForecastService:
         data = await self.redis.client.get(key)
 
         if not data:
-            logger.debug(
-                f"No forecast data in Redis for forecast:{provider}:{model}:{region.value}:{surf_spot_id}"
+            logger.warning(
+                f"No forecast data in Redis for {provider}:{model}:{region.value}:{surf_spot_id}",
+                extra={
+                    "spot_id": surf_spot_id,
+                    "provider": provider,
+                    "model": model,
+                    "region": region.value,
+                    "redis_key": key,
+                },
             )
-            return None
+            raise NoForecastDataError(
+                spot_id=surf_spot_id,
+                provider=provider,
+                model=model,
+                reason=f"Model run may have been skipped, data expired (TTL), or not yet available.",
+            )
 
         return ProviderForecast.from_redis_json(data)
 

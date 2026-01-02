@@ -38,16 +38,16 @@ async def get_all_surf_spots(
     )
 
 
-# TODO: create surf spot endpoint, also checks user tier and available spots
 # @router.post("/", summary="Create a new surf spot")
 # async def create_surf_spot():
 #     pass
 
 
-# TODO: add auth, get user id from JWT
-# @router.get("/me", summary="List of all surf spots created by the user")
-# async def get_user_surf_spots(session: AsyncSession = Depends(get_async_db_session)):
-#     pass
+@router.get("/me", summary="List of all surf spots created by the user")
+async def get_user_surf_spots(session: AsyncSession = Depends(get_async_db_session)):
+    pass
+
+
 #
 
 
@@ -73,7 +73,7 @@ async def get_forecasts(
 ):
     forecasts = await forecast_service.get_forecasts(id)
 
-    # Convert to clean response dicts (excludes None, computes units)
+    # convert to clean response dicts (excludes None, computes units)
     forecast_responses = [
         ProviderForecastResponse.from_provider_forecast(f).to_response_dict()
         for f in forecasts
@@ -111,7 +111,7 @@ async def get_provider_forecast(
 ):
     provider_forecasts = await forecast_service.get_forecast_by_provider(id, provider)
 
-    # Convert to response schema
+    # convert to response schema
     forecast_responses = [
         ProviderForecastResponse.from_provider_forecast(f).to_response_dict()
         for f in provider_forecasts
@@ -126,7 +126,6 @@ async def get_provider_forecast(
 @router.get(
     "/{id}/forecasts/{provider}/{model}",
     summary="Return forecast data from a provider's forecast model",
-    response_model_exclude_none=True,
 )
 async def get_model_forecast(
     id: int,
@@ -134,16 +133,12 @@ async def get_model_forecast(
     model: str,
     forecast_service: ForecastService = Depends(get_forecast_service),
 ):
+    # will raise NoForecastDataError (404) if data doesn't exist
     model_forecast = await forecast_service.get_forecast_by_model(id, provider, model)
 
-    # handle None case (no data in Redis)
-    forecast_response = (
-        ProviderForecastResponse.from_provider_forecast(
-            model_forecast
-        ).to_response_dict()
-        if model_forecast
-        else None
-    )
+    forecast_response = ProviderForecastResponse.from_provider_forecast(
+        model_forecast
+    ).to_response_dict()
 
     return SuccessResponse(
         message=f"Retrieved {model} forecast for provider {provider} for spot {id}",

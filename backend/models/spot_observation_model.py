@@ -3,7 +3,9 @@ from datetime import datetime, timezone
 from enum import Enum
 from sqlalchemy import String, Float, Integer, ForeignKey, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base_model import Base
+
+from models.base_model import Base
+from models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from models.user_model import User
@@ -22,7 +24,7 @@ class TideHeightEnum(Enum):
     LOW = "low"
 
 
-class SpotObservation(Base):
+class SpotObservation(Base, TimestampMixin):
     __tablename__ = "spot_observations"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

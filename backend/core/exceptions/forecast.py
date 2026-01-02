@@ -32,22 +32,36 @@ class ForecastError(NanaNaluException):
 
 
 class NoForecastDataError(ForecastError):
-    """Raised when no forecast data available in Redis"""
+    """Raised when no forecast data available in Redis (could be expired, not yet fetched, or provider down)"""
 
     def __init__(
-        self, spot_id: int, provider: str | None = None, model: str | None = None
+        self,
+        spot_id: int,
+        provider: str | None = None,
+        model: str | None = None,
+        reason: str | None = None,
     ):
         msg = f"No forecast data available for spot {spot_id}"
         if provider and model:
-            msg += f" from {provider}/{model}"
+            msg += f" from {provider}:{model}"
         elif provider:
             msg += f" from provider {provider}"
+
+        # Add helpful context about why data might be missing
+        if reason:
+            msg += f". {reason}"
+        else:
+            msg += ". Data may be expired (TTL), not yet available, or provider skipped this run."
+
+        details = {"spot_id": spot_id, "provider": provider, "model": model}
+        if reason:
+            details["reason"] = reason
 
         super().__init__(
             message=msg,
             error_code="no_forecast_data",
             status_code=HTTPStatus.NOT_FOUND,
-            details={"spot_id": spot_id, "provider": provider, "model": model},
+            details=details,
         )
 
 

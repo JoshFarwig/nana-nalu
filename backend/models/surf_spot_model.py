@@ -3,32 +3,31 @@ from sqlalchemy import String, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geometry
 
-from .base_model import Base
+from models.base_model import Base
+from models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from models.user_model import User
     from models.spot_observation_model import SpotObservation
-    from models.surfline_spot import SurflineSpot
 
 
-class SurfSpot(Base):
+class SurfSpot(Base, TimestampMixin):
     __tablename__ = "surf_spots"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500))
     location: Mapped[str] = mapped_column(
         Geometry(geometry_type="POINT", srid=4326), nullable=False
     )
-    region: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    region: Mapped[str] = mapped_column(String(50))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # relationships
-    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_by: Mapped["User"] = relationship(back_populates="spots")
     observations: Mapped[list["SpotObservation"]] = relationship(
         back_populates="spot", cascade="all, delete-orphan"
-    )
-    surfline_spot: Mapped["SurflineSpot"] = relationship(
-        back_populates="spot", uselist=False, cascade="all, delete-orphan"
     )

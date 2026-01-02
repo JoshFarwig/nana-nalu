@@ -87,7 +87,6 @@ class AsyncSurfSpotRepository:
                 SurfSpot.description,
                 SurfSpot.region,
                 SurfSpot.is_active,
-                SurfSpot.created_by_id,
                 ST_AsGeoJSON(SurfSpot.location).label("geometry"),
             )
             .where(SurfSpot.is_active == is_active)
@@ -135,7 +134,6 @@ class AsyncSurfSpotRepository:
                 SurfSpot.description,
                 SurfSpot.region,
                 SurfSpot.is_active,
-                SurfSpot.created_by_id,
                 ST_AsGeoJSON(SurfSpot.location).label("geometry"),
             ).where(SurfSpot.id == surf_spot_id)
         )

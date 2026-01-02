@@ -2,7 +2,6 @@ from schemas.user_schema import UserCreate, UserResponse
 
 
 class AuthService:
-
     def __init__(self, user_repository, token_service):
         self.user_repository = user_repository
         self.token_service = token_service  # Do I need a token service?
