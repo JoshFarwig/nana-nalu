@@ -18,7 +18,7 @@ dependencies = [
 [dependency-groups]
 # api service - FastAPI + database access + caching
 api = [
-  "fastapi[standard]>=0.115.12",
+  "fastapi[standard]~=0.128.0",
   "uvicorn>=0.34.3",
   "sqlalchemy[asyncio]~=2.0.44",
   "geoalchemy2~=0.18.0",
@@ -27,6 +27,7 @@ api = [
   "alembic~=1.16.1",
   "redis~=7.0.1",
   "bcrypt~=5.0.0",
+  "pyJWT~=2.10.1"
 ]
 # worker service - task execution with scientific computing + database access
 worker = [

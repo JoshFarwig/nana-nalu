@@ -19,7 +19,7 @@ from core.exceptions.surf_spots import (
     SurfSpotNotInRegionError,
 )
 
-from schemas.surf_spot_schema import SurfSpotCreate
+from schemas.surf_spot_schema import DemoSurfSpotCreate, SurfSpotCreate
 from models.surf_spot_model import SurfSpot
 
 from utils.geo_validation import valid_latitude_range, valid_longitude_range
@@ -33,27 +33,6 @@ class AsyncSurfSpotRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def add(self, surf_spot_data: SurfSpotCreate) -> SurfSpot:
-        # extract coordinates from GeoJSON for region validation
-        lon, lat = surf_spot_data.geometry["coordinates"]
-
-        # make sure spot exists in a valid region
-        region = resolve_region(lat, lon)
-        if region is None:
-            raise SurfSpotNotInRegionError(surf_spot_data.name, lat, lon)
-
-        # create surf spot with PostGIS geometry from GeoJSON
-        surf_spot = SurfSpot(
-            name=surf_spot_data.name,
-            description=surf_spot_data.description,
-            location=ST_GeomFromGeoJSON(json.dumps(surf_spot_data.geometry)),
-            region=region,
-            is_active=surf_spot_data.is_active,
-        )
-
-        self.session.add(surf_spot)
-        return surf_spot
-
     async def get_by_id(self, surf_spot_id: int) -> SurfSpot:
         result = await self.session.execute(
             select(SurfSpot).where(SurfSpot.id == surf_spot_id)
@@ -66,7 +45,10 @@ class AsyncSurfSpotRepository:
         return spot
 
     async def get_all(
-        self, offset: int, limit: int, is_active: bool
+        self,
+        offset: int,
+        limit: int,
+        is_active: bool,
     ) -> Sequence[SurfSpot]:
         results = await self.session.execute(
             select(SurfSpot)
@@ -87,6 +69,7 @@ class AsyncSurfSpotRepository:
                 SurfSpot.description,
                 SurfSpot.region,
                 SurfSpot.is_active,
+                SurfSpot.is_demo,
                 ST_AsGeoJSON(SurfSpot.location).label("geometry"),
             )
             .where(SurfSpot.is_active == is_active)
@@ -121,7 +104,10 @@ class AsyncSurfSpotRepository:
             SurfSpot.id,
             ST_Y(SurfSpot.location).label("latitude"),
             ST_X(SurfSpot.location).label("longitude"),
-        ).where(SurfSpot.is_active == is_active, ST_Within(SurfSpot.location, bbox))
+        ).where(
+            SurfSpot.is_active == is_active,
+            ST_Within(SurfSpot.location, bbox),
+        )
 
         results = await self.session.execute(query)
         return results.mappings().all()
@@ -146,6 +132,31 @@ class AsyncSurfSpotRepository:
         spot_dict = dict(spot)
         spot_dict["geometry"] = json.loads(spot_dict["geometry"])
         return spot_dict
+
+    async def create(
+        self, user_id: int, surf_spot_data: SurfSpotCreate | DemoSurfSpotCreate
+    ) -> SurfSpot:
+        # extract coordinates from GeoJSON for region validation
+        lon, lat = surf_spot_data.geometry["coordinates"]
+
+        # make sure spot exists in a valid region
+        region = resolve_region(lat, lon)
+        if region is None:
+            raise SurfSpotNotInRegionError(surf_spot_data.name, lat, lon)
+
+        # create surf spot with all schema fields (except geometry)
+        # geometry needs special handling for PostGIS conversion
+        spot_data = surf_spot_data.model_dump(exclude={"geometry"})
+
+        surf_spot = SurfSpot(
+            **spot_data,
+            user_id=user_id,
+            location=ST_GeomFromGeoJSON(json.dumps(surf_spot_data.geometry)),
+            region=region,
+        )
+
+        self.session.add(surf_spot)
+        return surf_spot
 
     async def update(self, surf_spot_id: int, surf_spot_data: dict) -> SurfSpot:
         surf_spot = await self.get_by_id(surf_spot_id)

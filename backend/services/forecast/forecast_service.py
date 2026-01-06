@@ -8,7 +8,7 @@ from core.exceptions.forecast import (
 )
 
 from repositories.surf_spot_repository import AsyncSurfSpotRepository
-from schemas.forecast_schema import ProviderForecast
+from services.forecast.forecast_schema import ProviderForecast
 from utils.region import Region
 
 from services.forecast.config_registries import provider_config_registries

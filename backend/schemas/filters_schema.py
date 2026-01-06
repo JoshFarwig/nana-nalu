@@ -8,3 +8,4 @@ class FiltersBase(BaseModel):
 
 class SurfSpotFilters(FiltersBase):
     is_active: bool = True
+    is_demo: bool = False

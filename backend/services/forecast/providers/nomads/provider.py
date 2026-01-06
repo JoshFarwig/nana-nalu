@@ -1,5 +1,7 @@
 from datetime import time, date, datetime, timezone
 from pathlib import Path
+from typing import Callable
+
 import logging
 import xarray as xr
 import numpy as np
@@ -12,12 +14,17 @@ from services.forecast.providers.nomads.config import (
     NOMADS_CONFIG_REGISTRY,
 )
 from services.forecast.providers.nomads.mapper import map_nwps_forecast
-from schemas.forecast_schema import ProviderForecast
+from services.forecast.forecast_schema import ProviderForecast
 from utils.geo_validation import longitude_to_360
 from utils.geo_spatial import build_forecast_kdtree, query_nearest_forecast_points
 from utils.region import Region
 
 logger = logging.getLogger(__name__)
+
+# Model-specific mapper registry
+NOMADS_MAPPER_REGISTRY: dict[NOMADSModel, Callable] = {
+    NOMADSModel.NWPS: map_nwps_forecast
+}
 
 
 class NOMADSProvider:

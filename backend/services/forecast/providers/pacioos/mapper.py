@@ -1,6 +1,6 @@
 import logging
 
-from schemas.forecast_schema import (
+from services.forecast.forecast_schema import (
     GridMetadata,
     TideData,
     ForecastPoint,

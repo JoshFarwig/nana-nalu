@@ -1,12 +1,13 @@
 import logging
 
 from core.config import APISettings, load_settings
-from core.exceptions.users import UserNotFoundError
 from core.database import SyncDatabaseManager
 
+from repositories.account_tier_repository import SyncAccountTierRepository
 from repositories.user_repository import SyncUserRepository
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 
+from schemas.user_schema import AdminCreate
 from scripts.seed.seed_factory import SeedFactory
 
 logger = logging.getLogger(__name__)
@@ -17,64 +18,59 @@ class SeedManager:
         self.settings = settings
         self.db_manager = SyncDatabaseManager(settings.db)
 
-        logger.info("SeedManager initialized")
+    def seed_tiers(self):
+        """Seed tiers and return the default tier"""
+        with self.db_manager.auto_commit_session() as session:
+            account_tier_repo = SyncAccountTierRepository(session)
+            account_tier_repo.create_defaults()
 
-    def get_or_seed_admin(self) -> int:
-        """Get existing admin user or seed admin user and return ID."""
+            free_tier = account_tier_repo.get_by_name("free")
+
+            return free_tier
+
+    def seed_admin(self, free_tier_id: int) -> int:
+        """Seed admin user and return ID."""
 
         with self.db_manager.auto_commit_session() as session:
             user_repo = SyncUserRepository(session, self.settings)
+            admin_user = user_repo.create(
+                tier_id=free_tier_id,
+                user_data=AdminCreate(
+                    username=self.settings.api.admin_username.get_secret_value(),
+                    email=self.settings.api.admin_email.get_secret_value(),
+                    name=self.settings.api.admin_name,
+                    password=self.settings.api.admin_password.get_secret_value(),
+                ),
+            )
+            session.flush()
 
-            # return existing admin or seed and return new admin user
-            try:
-                admin_user = user_repo.get_by_username(
-                    self.settings.api.admin_username.get_secret_value()
-                )
-                logger.info(
-                    "Found existing admin user",
-                    extra={"id": admin_user.id},
-                )
-                return admin_user.id
+            logger.info(
+                "Seeded admin user",
+                extra={"id": admin_user.id},
+            )
+            return admin_user.id
 
-            except UserNotFoundError:
-                admin_user = user_repo.add(
-                    {
-                        "username": self.settings.api.admin_username.get_secret_value(),
-                        "email": self.settings.api.admin_email.get_secret_value(),
-                        "password": self.settings.api.admin_password.get_secret_value(),
-                        "first_name": "Admin",
-                        "last_name": "Admin",
-                    }
-                )
-                session.flush()
-
-                logger.info(
-                    "Seeded admin user",
-                    extra={"id": admin_user.id},
-                )
-                return admin_user.id
-
-    def seed_surf_spots(self, admin_user_id: int) -> None:
-        """Seed initial surf spots based on enabled locations."""
+    def seed_demo_surf_spots(self, admin_user_id: int) -> None:
+        """Seed initial demo surf spots based on enabled locations."""
 
         with self.db_manager.auto_commit_session() as session:
             surf_spot_repo = SyncSurfSpotRepository(session)
 
             if surf_spot_repo.any_exist():
-                logger.info("Surf spots already exist")
+                logger.warning("Surf spots already exist")
                 return
 
-            # Get all surf spots for all enabled locations
-            surf_spots = SeedFactory.get_all_surf_spots(admin_user_id)
+            # get all demo surf spots for all enabled regions
+            surf_spots = SeedFactory.get_all_demo_surf_spots(admin_user_id)
 
             if not surf_spots:
-                logger.warning("No surf spots loaded from any enabled location")
+                logger.warning("No surf spots loaded from any enabled regions")
                 return
 
             session.add_all(surf_spots)
 
             logger.info(
-                f"Seeded {len(surf_spots)} surf spots across enabled locations",
+                f"Seeded {len(surf_spots)} surf spots across enabled regions",
                 extra={
                     "count": len(surf_spots),
                     "created_by_id": admin_user_id,
@@ -82,11 +78,12 @@ class SeedManager:
             )
 
     def seed_database(self) -> None:
-        """Main seeding method."""
+        """Main seeding method, applies all seed methods defined"""
 
         try:
-            admin_user_id = self.get_or_seed_admin()
-            self.seed_surf_spots(admin_user_id)
+            free_tier = self.seed_tiers()
+            admin_user_id = self.seed_admin(free_tier.id)
+            self.seed_demo_surf_spots(admin_user_id)
         except Exception as e:
             logger.exception("Error seeding database", extra={"error": str(e)})
             raise

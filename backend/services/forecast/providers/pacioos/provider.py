@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 import logging
 from pathlib import Path
 from typing import Callable
@@ -8,7 +7,7 @@ import xarray as xr
 
 from core.http import SyncHTTPManager
 from repositories.surf_spot_repository import SyncSurfSpotRepository
-from schemas.forecast_schema import ProviderForecast
+from services.forecast.forecast_schema import ProviderForecast
 from services.forecast.providers.pacioos.config import (
     PacIOOSModel,
     PacIOOSModelConfig,

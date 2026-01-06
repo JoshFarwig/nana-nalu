@@ -15,11 +15,12 @@ class APIConfig(BaseModel):
     admin_username: SecretStr
     admin_password: SecretStr
     admin_email: SecretStr
+    admin_name: str = "Admin"
 
-    bcrypt_rounds: int = 12
-
-    # JWT Authentication
+    # auth
     jwt_secret_key: SecretStr
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+
+    bcrypt_rounds: int = 12

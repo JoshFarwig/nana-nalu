@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class SurfSpotBase(BaseModel):
     name: str = Field(max_length=100)
-    description: str | None = Field(None, max_length=500)
+    description: str | None = Field(default=None, max_length=500)
     is_active: bool = True
 
 
@@ -11,9 +11,7 @@ class SurfSpotCreate(SurfSpotBase):
     """Schema for creating a new surf spot using GeoJSON Point geometry."""
 
     geometry: dict = Field(
-        ...,
         description="GeoJSON Point geometry with coordinates [longitude, latitude]",
-        examples=[{"type": "Point", "coordinates": [-158.053, 21.664]}],
     )
 
     @field_validator("geometry")
@@ -31,7 +29,7 @@ class SurfSpotCreate(SurfSpotBase):
         if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)):
             raise ValueError("coordinates must be numeric")
 
-        # Validate coordinate ranges
+        # validate coordinate ranges
         if not -180 <= lon <= 180:
             raise ValueError(f"longitude must be between -180 and 180, got {lon}")
         if not -90 <= lat <= 90:
@@ -40,13 +38,17 @@ class SurfSpotCreate(SurfSpotBase):
         return v
 
 
+class DemoSurfSpotCreate(SurfSpotCreate):
+    is_demo: bool = True
+
+
 class SurfSpotUpdate(BaseModel):
     """Schema for updating a surf spot."""
 
-    name: str | None = Field(None, max_length=100)
-    description: str | None = Field(None, max_length=500)
+    name: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
     geometry: dict | None = Field(
-        None,
+        default=None,
         description="GeoJSON Point geometry with coordinates [longitude, latitude]",
     )
     is_active: bool | None = None
@@ -69,7 +71,7 @@ class SurfSpotUpdate(BaseModel):
         if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)):
             raise ValueError("coordinates must be numeric")
 
-        # Validate coordinate ranges
+        # validate coordinate ranges
         if not -180 <= lon <= 180:
             raise ValueError(f"longitude must be between -180 and 180, got {lon}")
         if not -90 <= lat <= 90:
@@ -84,6 +86,6 @@ class SurfSpotResponse(SurfSpotBase):
     id: int
     created_by_id: int
     region: str
-    geometry: dict  # GeoJSON Point geometry
+    geometry: dict  # GeoJSON point geometry
 
     model_config = {"from_attributes": True}

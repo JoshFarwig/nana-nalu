@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from core.config import APISettings
 from core.exceptions.users import UserNotFoundError
+from schemas.user_schema import AdminCreate, UserCreate, UserUpdate
 from utils.password import hash_password
 from models.user_model import User
 
@@ -17,42 +18,17 @@ class AsyncUserRepository:
         self.session = session
         self.settings = settings
 
-    async def add(self, user_data: dict) -> User:
-        """
-        Add a new user to the session.
+    async def exists_by_email(self, email: str) -> bool:
+        result = await self.session.execute(select(User.id).where(User.email == email))
+        return result.scalar_one_or_none() is not None
 
-        If user_data contains a 'password' field, it will be automatically hashed.
-        To provide a pre-hashed password, use 'hashed_password' field instead.
-        """
-        user_data_copy = user_data.copy()
-
-        # handle password hashing
-        if "password" in user_data_copy:
-            plain_password = user_data_copy.pop("password")
-            user_data_copy["password"] = hash_password(
-                plain_password, rounds=self.settings.api.bcrypt_rounds
-            )
-        elif "hashed_password" in user_data_copy:
-            # if already hashed, just rename the field
-            user_data_copy["password"] = user_data_copy.pop("hashed_password")
-
-        user = User(**user_data_copy)
-        self.session.add(user)
-        return user
+    async def exists_by_username(self, username: str) -> bool:
+        result = await self.session.execute(
+            select(User.id).where(User.username == username)
+        )
+        return result.scalar_one_or_none() is not None
 
     async def get_by_id(self, user_id: int) -> User:
-        """
-        Get user by ID.
-
-        Args:
-            user_id: The ID of the user
-
-        Returns:
-            User model instance
-
-        Raises:
-            UserNotFoundError: If user doesn't exist
-        """
         result = await self.session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
 
@@ -62,18 +38,6 @@ class AsyncUserRepository:
         return user
 
     async def get_by_email(self, email: str) -> User:
-        """
-        Get user by email address.
-
-        Args:
-            email: The email address of the user
-
-        Returns:
-            User model instance
-
-        Raises:
-            UserNotFoundError: If user doesn't exist
-        """
         result = await self.session.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
 
@@ -83,18 +47,6 @@ class AsyncUserRepository:
         return user
 
     async def get_by_username(self, username: str) -> User:
-        """
-        Get user by username.
-
-        Args:
-            username: The username of the user
-
-        Returns:
-            User model instance
-
-        Raises:
-            UserNotFoundError: If user doesn't exist
-        """
         result = await self.session.execute(
             select(User).where(User.username == username)
         )
@@ -109,7 +61,17 @@ class AsyncUserRepository:
         result = await self.session.execute(select(User).offset(skip).limit(limit))
         return result.scalars().all()
 
-    async def update(self, user_id: int, user_data: dict) -> User:
+    async def create(self, tier_id: int, user_data: UserCreate | AdminCreate) -> User:
+        # handle password hashing
+        user_data.password = hash_password(
+            password=user_data.password, rounds=self.settings.api.bcrypt_rounds
+        )
+
+        user = User(tier_id=tier_id, **user_data.model_dump())
+        self.session.add(user)
+        return user
+
+    async def update(self, user_id: int, user_data: UserUpdate) -> User:
         """
         Update user by ID.
 
@@ -128,7 +90,7 @@ class AsyncUserRepository:
         """
         user = await self.get_by_id(user_id)
 
-        for key, value in user_data.items():
+        for key, value in user_data.model_dump().items():
             if hasattr(user, key):
                 setattr(user, key, value)
 
@@ -174,44 +136,11 @@ class AsyncUserRepository:
         await self.session.delete(user)
         return True
 
-    async def exists_by_email(self, email: str) -> bool:
-        result = await self.session.execute(select(User.id).where(User.email == email))
-        return result.scalar_one_or_none() is not None
-
-    async def exists_by_username(self, username: str) -> bool:
-        result = await self.session.execute(
-            select(User.id).where(User.username == username)
-        )
-        return result.scalar_one_or_none() is not None
-
 
 class SyncUserRepository:
     def __init__(self, session: Session, settings: APISettings):
         self.session = session
         self.settings = settings
-
-    def add(self, user_data: dict) -> User:
-        """
-        Add a new user to the session.
-
-        If user_data contains a 'password' field, it will be automatically hashed.
-        To provide a pre-hashed password, use 'hashed_password' field instead.
-        """
-        user_data_copy = user_data.copy()
-
-        # handle password hashing
-        if "password" in user_data_copy:
-            plain_password = user_data_copy.pop("password")
-            user_data_copy["password"] = hash_password(
-                plain_password, rounds=self.settings.api.bcrypt_rounds
-            )
-        elif "hashed_password" in user_data_copy:
-            # if already hashed, just rename the field
-            user_data_copy["password"] = user_data_copy.pop("hashed_password")
-
-        user = User(**user_data_copy)
-        self.session.add(user)
-        return user
 
     def get_by_username(self, username: str) -> User:
         """
@@ -232,4 +161,18 @@ class SyncUserRepository:
         if not user:
             raise UserNotFoundError(username, field="username")
 
+        return user
+
+    def create(self, tier_id: int, user_data: UserCreate | AdminCreate) -> User:
+        """
+        Add a new user to the session and automatically hash their password.
+        """
+
+        # handle password hashing
+        user_data.password = hash_password(
+            password=user_data.password, rounds=self.settings.api.bcrypt_rounds
+        )
+
+        user = User(tier_id=tier_id, **user_data.model_dump())
+        self.session.add(user)
         return user

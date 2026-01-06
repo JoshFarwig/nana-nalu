@@ -6,7 +6,7 @@ from utils.region import Region
 
 if TYPE_CHECKING:
     from models import SurfSpot
-    from schemas.forecast_schema import ProviderForecast
+    from services.forecast.forecast_schema import ProviderForecast
 
 
 class ForecastProvider(Protocol):

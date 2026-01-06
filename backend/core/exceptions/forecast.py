@@ -47,7 +47,6 @@ class NoForecastDataError(ForecastError):
         elif provider:
             msg += f" from provider {provider}"
 
-        # Add helpful context about why data might be missing
         if reason:
             msg += f". {reason}"
         else:

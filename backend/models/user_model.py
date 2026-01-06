@@ -14,14 +14,13 @@ if TYPE_CHECKING:
 class User(Base, TimestampMixin):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     tier_id: Mapped[int] = mapped_column(ForeignKey("account_tiers.id"))
 
-    first_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    last_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    password: Mapped[str] = mapped_column(String(255), nullable=False)
+    username: Mapped[str] = mapped_column(String(50), unique=True)
+    email: Mapped[str] = mapped_column(String(100), unique=True)
+    password: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(50))
 
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     # if there is enough of a support backing behind the app, may expand limits and

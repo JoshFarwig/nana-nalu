@@ -11,7 +11,8 @@ from repositories.surf_spot_repository import AsyncSurfSpotRepository
 from schemas.response_schema import SuccessResponse
 from schemas.surf_spot_schema import SurfSpotResponse
 from schemas.filters_schema import SurfSpotFilters
-from schemas.forecast_schema import ProviderForecastResponse
+
+from services.forecast.forecast_schema import ProviderForecastResponse
 from services.forecast.forecast_service import ForecastService
 
 logger = logging.getLogger(__name__)
