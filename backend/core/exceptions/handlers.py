@@ -20,6 +20,7 @@ def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         extra={
             "path": request.url.path,
             "method": request.method,
+            "exception_class": exc.__class__.__name__,
         },
     )
 
@@ -87,30 +88,52 @@ def nana_nalu_exception_handler(
     """Exception handler used for NanaNaluExceptions"""
 
     status_code = getattr(exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
-    log_level = (
-        logging.WARNING
-        if status_code < status.HTTP_500_INTERNAL_SERVER_ERROR
-        else logging.ERROR
-    )
+    log_level = logging.WARNING
+
+    # routine client errors that don't require investigation
+    client_errors = [
+        status.HTTP_400_BAD_REQUEST,  # malformed request
+        status.HTTP_401_UNAUTHORIZED,  # invalid credentials (failed login, maybe bad if repeated)
+        status.HTTP_404_NOT_FOUND,  # resource doesn't exist
+        status.HTTP_422_UNPROCESSABLE_ENTITY,  # valid request, invalid business logic
+    ]
+
+    if status_code in client_errors:
+        log_level = logging.INFO
+    elif status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+        log_level = logging.ERROR
+
+    # Build base log context
+    log_extra = {
+        "path": request.url.path,
+        "method": request.method,
+        "exception_class": exc.__class__.__name__,
+        "error_code": exc.error_code,
+        "status_code": exc.status_code,
+    }
+
+    # Log IP and details only for security-related events
+    security_codes = [status.HTTP_403_FORBIDDEN, status.HTTP_401_UNAUTHORIZED]
+    if status_code in security_codes:
+        log_extra["client_ip"] = request.client.host if request.client else "unknown"
+        if exc.details:
+            log_extra["security_details"] = exc.details
 
     log_message = f"{exc.__class__.__name__}: {exc.message}"
     logger.log(
         log_level,
         log_message,
         exc_info=status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR,
-        extra={
-            "path": request.url.path,
-            "method": request.method,
-            "exception_class": exc.__class__.__name__,
-            "error_code": exc.error_code,
-            "status_code": exc.status_code,
-        },
+        extra=log_extra,
     )
+
+    # don't expose internal security details to client for 403 errors
+    response_details = None if status_code == status.HTTP_403_FORBIDDEN else exc.details
 
     response = ErrorResponse(
         message=exc.message,
         error_code=exc.error_code,
-        details=exc.details,
+        details=response_details,
     )
 
     return JSONResponse(

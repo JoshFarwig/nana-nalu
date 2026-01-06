@@ -7,6 +7,7 @@ from core.dependencies.core import get_security_manager
 from core.exceptions.auth import (
     InvalidAccessTokenError,
     TokenExpiredError,
+    InsufficientPermissionsError,
 )
 from schemas.user_schema import CurrentUser
 
@@ -28,6 +29,7 @@ def get_current_user(
             email=payload["email"],
             name=payload["name"],
             tier=payload["tier"],
+            tier_id=payload["tier_id"],
             is_admin=payload["is_admin"],
         )
 
@@ -36,3 +38,13 @@ def get_current_user(
     except jwt.InvalidTokenError:
         raise InvalidAccessTokenError()
 
+
+def require_admin(current_user: CurrentUser = Depends(get_current_user)):
+    if not current_user.is_admin:
+        raise InsufficientPermissionsError(
+            details={
+                "user_id": current_user.user_id,
+                "username": current_user.username,
+                "attempted_action": "admin_access",
+            }
+        )

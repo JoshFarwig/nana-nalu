@@ -49,4 +49,5 @@ class CurrentUser(BaseModel):
     email: str
     name: str
     tier: str
+    tier_id: int
     is_admin: bool

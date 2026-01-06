@@ -2,7 +2,7 @@ import logging
 from typing import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from core.config import APISettings
 from core.exceptions.users import UserNotFoundError
@@ -19,16 +19,19 @@ class AsyncUserRepository:
         self.settings = settings
 
     async def exists_by_email(self, email: str) -> bool:
+        """Check if user exists by email."""
         result = await self.session.execute(select(User.id).where(User.email == email))
         return result.scalar_one_or_none() is not None
 
     async def exists_by_username(self, username: str) -> bool:
+        """Check if user exists by username."""
         result = await self.session.execute(
             select(User.id).where(User.username == username)
         )
         return result.scalar_one_or_none() is not None
 
     async def get_by_id(self, user_id: int) -> User:
+        """Get user by ID."""
         result = await self.session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
 
@@ -38,6 +41,7 @@ class AsyncUserRepository:
         return user
 
     async def get_by_email(self, email: str) -> User:
+        """Get user by email."""
         result = await self.session.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
 
@@ -47,6 +51,7 @@ class AsyncUserRepository:
         return user
 
     async def get_by_username(self, username: str) -> User:
+        """Get user by username."""
         result = await self.session.execute(
             select(User).where(User.username == username)
         )
@@ -57,11 +62,66 @@ class AsyncUserRepository:
 
         return user
 
+    async def get_by_email_with_tier(self, email: str) -> User:
+        """
+        Get user by email with tier relationship eagerly loaded.
+
+        Use this in auth flows (login/register/refresh) where tier info is needed
+        for token generation.
+        """
+        result = await self.session.execute(
+            select(User).where(User.email == email).options(selectinload(User.tier))
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise UserNotFoundError(email, field="email")
+
+        return user
+
+    async def get_by_username_with_tier(self, username: str) -> User:
+        """
+        Get user by username with tier relationship eagerly loaded.
+
+        Use this in auth flows (login/register/refresh) where tier info is needed
+        for token generation.
+        """
+        result = await self.session.execute(
+            select(User)
+            .where(User.username == username)
+            .options(selectinload(User.tier))
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise UserNotFoundError(username, field="username")
+
+        return user
+
+    async def get_by_id_with_tier(self, user_id: int) -> User:
+        """
+        Get user by ID with tier relationship eagerly loaded.
+
+        Use this in auth flows (refresh) where tier info is needed
+        for token generation.
+        """
+        result = await self.session.execute(
+            select(User).where(User.id == user_id).options(selectinload(User.tier))
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise UserNotFoundError(user_id, field="id")
+
+        return user
+
     async def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[User]:
+        """Get all users with pagination."""
         result = await self.session.execute(select(User).offset(skip).limit(limit))
         return result.scalars().all()
 
     async def create(self, tier_id: int, user_data: UserCreate | AdminCreate) -> User:
+        """Create a new user with hashed password."""
         # handle password hashing
         user_data.password = hash_password(
             password=user_data.password, rounds=self.settings.api.bcrypt_rounds

@@ -83,7 +83,7 @@ def create_app(config: str | None = None) -> FastAPI:
     import os
     from utils.env import EnvironmentMapper
 
-    # Normalize config if provided as string, otherwise use ENV variable
+    # normalize config if provided as string, otherwise use ENV variable
     if config:
         env = EnvironmentMapper.normalize(config)
         config = env.value
@@ -108,7 +108,7 @@ def create_app(config: str | None = None) -> FastAPI:
     app.add_exception_handler(Exception, generic_exception_handler)
 
     # ======================================================
-    # Routes
+    # Root Routes
     # ======================================================
 
     @app.get("/", tags=["root"])
@@ -129,12 +129,19 @@ def create_app(config: str | None = None) -> FastAPI:
         """
         return {"status": "healthy", "service": "nānā-nalu-api"}
 
-    # TODO: Include routers
-    # from backend.api.v1.routes import users, spots, forecasts
-    from api.v1.routes import surf_spots
+    # ======================================================
+    # API v1 Router Setup
+    # ======================================================
 
-    # app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
-    app.include_router(surf_spots.router, prefix="/v1")
-    # app.include_router(forecasts.router, prefix="/api/v1/forecasts", tags=["forecasts"])
+    from fastapi import APIRouter
+    from api.v1.routes import auth, users, surf_spots
+
+    api_v1_router = APIRouter(prefix="/api/v1")
+    api_v1_router.include_router(auth.router)
+    api_v1_router.include_router(surf_spots.router)
+    api_v1_router.include_router(users.router)
+
+    # mount the entire v1 API under /api/v1
+    app.include_router(api_v1_router)
 
     return app

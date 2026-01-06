@@ -34,6 +34,7 @@ class AsyncSurfSpotRepository:
         self.session = session
 
     async def get_by_id(self, surf_spot_id: int) -> SurfSpot:
+        """Get surf spot by ID."""
         result = await self.session.execute(
             select(SurfSpot).where(SurfSpot.id == surf_spot_id)
         )
@@ -50,6 +51,7 @@ class AsyncSurfSpotRepository:
         limit: int,
         is_active: bool,
     ) -> Sequence[SurfSpot]:
+        """Get all surf spots with pagination and active status filter."""
         results = await self.session.execute(
             select(SurfSpot)
             .where(SurfSpot.is_active == is_active)
@@ -113,6 +115,7 @@ class AsyncSurfSpotRepository:
         return results.mappings().all()
 
     async def get_with_coordinates(self, surf_spot_id: int) -> dict:
+        """Get surf spot by ID with GeoJSON coordinates."""
         result = await self.session.execute(
             select(
                 SurfSpot.id,
@@ -136,6 +139,7 @@ class AsyncSurfSpotRepository:
     async def create(
         self, user_id: int, surf_spot_data: SurfSpotCreate | DemoSurfSpotCreate
     ) -> SurfSpot:
+        """Create a new surf spot with PostGIS geometry and region validation."""
         # extract coordinates from GeoJSON for region validation
         lon, lat = surf_spot_data.geometry["coordinates"]
 
@@ -159,6 +163,7 @@ class AsyncSurfSpotRepository:
         return surf_spot
 
     async def update(self, surf_spot_id: int, surf_spot_data: dict) -> SurfSpot:
+        """Update surf spot by ID, handling geometry and region validation."""
         surf_spot = await self.get_by_id(surf_spot_id)
 
         for key, value in surf_spot_data.items():
@@ -178,6 +183,7 @@ class AsyncSurfSpotRepository:
         return surf_spot
 
     async def delete(self, surf_spot_id: int) -> bool:
+        """Delete surf spot by ID."""
         surf_spot = await self.get_by_id(surf_spot_id)
         await self.session.delete(surf_spot)
         return True
@@ -188,6 +194,7 @@ class SyncSurfSpotRepository:
         self.session = session
 
     def any_exist(self) -> bool:
+        """Check if any surf spots exist in database."""
         result = self.session.execute(exists(SurfSpot.id).select())
         return bool(result.scalar())
 

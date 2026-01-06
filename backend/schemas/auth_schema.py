@@ -3,17 +3,24 @@ from pydantic import BaseModel, EmailStr
 
 
 class RefreshToken(BaseModel):
-    """Refresh token exchange request"""
+    """Refresh tokens exchange request"""
 
     refresh_token: str
 
 
-class TokenResponse(BaseModel):
-    """Standard token response on login/register/refresh"""
+class Tokens(BaseModel):
+    """Tokens structure returned by AuthService"""
 
     access_token: str
     refresh_token: str
-    token_type: Literal["bearer"]
+    access_token_type: Literal["bearer"]
+
+
+class TokenReponse(BaseModel):
+    """Standard access token response for login/register/refresh routers"""
+
+    access_token: str
+    access_token_type: Literal["bearer"]
 
 
 class UserEmailLogin(BaseModel):

@@ -20,6 +20,7 @@ class AsyncAccountTierRepository:
         self.session = session
 
     async def get_by_id(self, account_tier_id: int) -> AccountTier:
+        """Get account tier by ID."""
         result = await self.session.execute(
             select(AccountTier).where(AccountTier.id == account_tier_id)
         )
@@ -32,6 +33,7 @@ class AsyncAccountTierRepository:
         return account_tier
 
     async def get_by_name(self, name: str) -> AccountTier:
+        """Get account tier by name (e.g., 'free', 'kokua')."""
         result = await self.session.execute(
             select(AccountTier).where(AccountTier.name == name)
         )
@@ -44,11 +46,13 @@ class AsyncAccountTierRepository:
         return account_tier
 
     async def create(self, account_tier_data: AccountTierCreate) -> AccountTier:
+        """Create a new account tier."""
         account_tier = AccountTier(**account_tier_data.model_dump())
         self.session.add(account_tier)
         return account_tier
 
     async def update(self, account_tier_id: int, account_tier_data: AccountTierUpdate):
+        """Update account tier by ID."""
         account_tier = await self.get_by_id(account_tier_id)
 
         for key, value in account_tier_data.model_dump().items():
@@ -63,6 +67,7 @@ class SyncAccountTierRepository:
         self.session = session
 
     def get_by_id(self, account_tier_id: int) -> AccountTier:
+        """Get account tier by ID."""
         result = self.session.execute(
             select(AccountTier).where(AccountTier.id == account_tier_id)
         )
@@ -75,6 +80,7 @@ class SyncAccountTierRepository:
         return account_tier
 
     def get_by_name(self, name: str) -> AccountTier:
+        """Get account tier by name (e.g., 'free', 'kokua')."""
         result = self.session.execute(
             select(AccountTier).where(AccountTier.name == name)
         )
@@ -87,12 +93,13 @@ class SyncAccountTierRepository:
         return account_tier
 
     def create(self, account_tier_data: AccountTierCreate) -> AccountTier:
+        """Create a new account tier."""
         account_tier = AccountTier(**account_tier_data.model_dump())
         self.session.add(account_tier)
         return account_tier
 
     def create_defaults(self):
-        """Create default tiers for seeding"""
+        """Create default tiers for seeding."""
         defaults = set()
 
         for _, tier_data in DEFAULT_TIERS.items():
@@ -110,6 +117,7 @@ class SyncAccountTierRepository:
         return defaults
 
     def update(self, account_tier_id: int, account_tier_data: AccountTierUpdate):
+        """Update account tier by ID."""
         account_tier = self.get_by_id(account_tier_id)
 
         for key, value in account_tier_data.model_dump().items():

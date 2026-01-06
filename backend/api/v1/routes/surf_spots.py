@@ -49,9 +49,6 @@ async def get_user_surf_spots(session: AsyncSession = Depends(get_async_db_sessi
     pass
 
 
-#
-
-
 # TODO: add auth check to verify spot data is created from user, in crew, or from admin
 @router.get("/{id}", summary="Get surf spot data")
 async def get_surf_spot(id: int, session: AsyncSession = Depends(get_async_db_session)):

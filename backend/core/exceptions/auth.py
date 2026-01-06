@@ -108,20 +108,28 @@ class TokenExpiredError(AuthenticationError):
 class InsufficientPermissionsError(AuthorizationError):
     """Raised when user lacks required permissions"""
 
-    def __init__(self, message: str = "Insufficient permissions for this action"):
+    def __init__(
+        self,
+        message: str = "Insufficient permissions for this action",
+        details: dict | None = None,
+    ):
         super().__init__(
             message=message,
             error_code="insufficient_permissions",
             status_code=HTTPStatus.FORBIDDEN,
+            details=details,
         )
 
 
 class AccountDisabledError(AuthorizationError):
     """Raised when attempting to authenticate with disabled account"""
 
-    def __init__(self, message: str = "Account has been disabled"):
+    def __init__(
+        self, message: str = "Account has been disabled", details: dict | None = None
+    ):
         super().__init__(
             message=message,
             error_code="account_disabled",
             status_code=HTTPStatus.FORBIDDEN,
+            details=details,
         )

@@ -9,7 +9,7 @@ class SuccessResponse(BaseModel, Generic[T]):
 
     success: bool = True
     message: str = "Success"
-    data: T
+    data: T | None = None
 
 
 class ErrorResponse(BaseModel):

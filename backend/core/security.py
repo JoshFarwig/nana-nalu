@@ -5,7 +5,6 @@ import jwt
 from datetime import datetime, timedelta, timezone
 
 from core.config import APISettings
-from schemas.user_schema import CurrentUser
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +20,7 @@ class SecurityManager:
         email: str,
         name: str,
         tier: str,
+        tier_id: int,
         is_admin: bool,
     ):
         """Create a short-lived JWT acccess token (15mins)"""
@@ -33,6 +33,7 @@ class SecurityManager:
             "email": email,
             "name": name,
             "tier": tier,
+            "tier_id": tier_id,
             "is_admin": is_admin,
             "iat": now,
             "exp": expires_at,
