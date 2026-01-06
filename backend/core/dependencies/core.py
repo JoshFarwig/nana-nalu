@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import security
 from core.database import AsyncDatabaseManager
 from core.redis import AsyncRedisManager
 from core.config import APISettings
@@ -85,6 +86,13 @@ def get_async_redis_manager(request: Request) -> AsyncRedisManager:
             "Ensure application initialized properly."
         )
     return manager
+
+
+def get_security_manager(settings: APISettings = Depends(get_settings)):
+    """
+    Get lightweight security manager for token management
+    """
+    return security.SecurityManager(settings)
 
 
 # ======================================================

@@ -39,3 +39,14 @@ class UserResponse(UserBase):
 
     id: int
     model_config = {"from_attributes": True}
+
+
+class CurrentUser(BaseModel):
+    """Schema representing the authenticated user from JWT token."""
+
+    user_id: int
+    username: str
+    email: str
+    name: str
+    tier: str
+    is_admin: bool

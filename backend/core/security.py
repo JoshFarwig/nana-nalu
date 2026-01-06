@@ -5,6 +5,7 @@ import jwt
 from datetime import datetime, timedelta, timezone
 
 from core.config import APISettings
+from schemas.user_schema import CurrentUser
 
 logger = logging.getLogger(__name__)
 
@@ -46,20 +47,11 @@ class SecurityManager:
     def decode_access_token(self, token: str):
         """Decodes an access token, will throw jwt.Error(s) if unable to decode"""
 
-        payload = jwt.decode(
+        return jwt.decode(
             token,
             key=self.settings.jwt_secret_key.get_secret_value(),
             algorithms=[self.settings.jwt_algorithm],
         )
-
-        return {
-            "user_id": payload["sub"],
-            "username": payload["username"],
-            "email": payload["email"],
-            "name": payload["name"],
-            "tier": payload["tier"],
-            "is_admin": payload["is_admin"],
-        }
 
     def create_hashed_refresh_token(self):
         return self.hash_refresh_token(self.create_refresh_token())
