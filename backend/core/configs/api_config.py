@@ -19,7 +19,18 @@ class APIConfig(BaseModel):
 
     jwt_secret_key: SecretStr
     jwt_algorithm: str = "HS256"
+
+    # token / magic link expirations
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+    email_verification_expire_minutes: int = 30
+    password_reset_expire_minutes: int = 15
+    crew_invite_expire_hours: int = 24
 
     bcrypt_rounds: int = 12
+
+    resend_api_key: SecretStr
+    app_url: str  # front-end url for token redirect
+    # TODO: register valid from_email w/ domain?
+    # for now using my email
+    from_email: str = "noreply@nananalu.com"

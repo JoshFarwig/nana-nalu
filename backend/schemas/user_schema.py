@@ -1,30 +1,42 @@
 from pydantic import BaseModel, EmailStr, Field
 
 
+# ============================================================================
+# Shared Base Models
+# ============================================================================
+
+
 class UserBase(BaseModel):
-    username: str = Field(max_length=50)
-    email: EmailStr = Field(max_length=100)
-    name: str = Field(max_length=50)
+    """Only truly shared required fields across all user schemas."""
+
+    username: str = Field(min_length=8, max_length=25)
+    email: EmailStr
+    first_name: str = Field(max_length=25)
+    last_name: str = Field(max_length=25)
+
+
+# ============================================================================
+# API Request Schemas
+# ============================================================================
 
 
 class UserCreate(UserBase):
-    """Schema for creating a new user."""
+    """Schema for creating a new user via registration."""
 
+    bio: str | None = Field(default=None, max_length=150)
+    location: str | None = Field(default=None, max_length=50)
     password: str = Field(min_length=8, max_length=256)
 
 
-class AdminCreate(UserCreate):
-    """Schema for creating a new user."""
-
-    is_admin: bool = True
-
-
 class UserUpdate(BaseModel):
-    """Schema for updating a user (excludes password - use UserPasswordUpdate for that)."""
+    """Schema for updating a user profile (excludes password - use UserPasswordUpdate for that)."""
 
-    username: str | None = Field(None, min_length=3, max_length=50)
-    email: EmailStr | None = None
-    name: str | None = Field(None, max_length=50)
+    username: str | None = Field(default=None, min_length=8, max_length=25)
+    email: EmailStr | None = Field(default=None)
+    first_name: str | None = Field(default=None, max_length=25)
+    last_name: str | None = Field(default=None, max_length=25)
+    bio: str | None = Field(default=None, max_length=150)
+    location: str | None = Field(default=None, max_length=50)
 
 
 class UserPasswordUpdate(BaseModel):
@@ -34,11 +46,23 @@ class UserPasswordUpdate(BaseModel):
     new_password: str = Field(min_length=8, max_length=256)
 
 
+# ============================================================================
+# API Response Schemas
+# ============================================================================
+
+
 class UserResponse(UserBase):
     """Schema for user responses (excludes password)."""
 
     id: int
+    bio: str = Field(max_length=150)
+    location: str = Field(max_length=50)
     model_config = {"from_attributes": True}
+
+
+# ============================================================================
+# Internal DTOs (JWT Token Payload)
+# ============================================================================
 
 
 class CurrentUser(BaseModel):
@@ -47,7 +71,8 @@ class CurrentUser(BaseModel):
     user_id: int
     username: str
     email: str
-    name: str
+    first_name: str
+    last_name: str
     tier: str
     tier_id: int
     is_admin: bool

@@ -1,8 +1,11 @@
 import logging
+from pathlib import Path
 from fastapi import FastAPI
 
 from core.database import AsyncDatabaseManager
+from core.http import AsyncHTTPManager
 from core.redis import AsyncRedisManager
+from core.templates import TemplateRenderer
 from core.config import APISettings
 from core.logging.config import configure_logging
 from utils.env import Environment, EnvironmentMapper
@@ -135,6 +138,28 @@ async def _init_infrastructure(app: FastAPI, settings: APISettings) -> None:
         },
     )
 
+    # initialize HTTP manager for external API calls
+    http_manager = AsyncHTTPManager(settings.http)
+    app.state.http_manager = http_manager
+    logger.debug(
+        "HTTP manager created",
+        extra={
+            "timeout": settings.http.timeout,
+            "max_attempts": settings.http.max_attempts,
+        },
+    )
+
+    # initialize template renderer for email templates
+    # Templates are stored in backend/templates/emails/
+    backend_dir = Path(__file__).parent.parent.parent
+    templates_dir = backend_dir / "templates" / "emails"
+    template_renderer = TemplateRenderer(templates_dir)
+    app.state.template_renderer = template_renderer
+    logger.debug(
+        "Template renderer created",
+        extra={"templates_dir": str(templates_dir)}
+    )
+
 
 async def _health_check_infrastructure(app: FastAPI) -> None:
     """
@@ -161,6 +186,13 @@ async def _health_check_infrastructure(app: FastAPI) -> None:
         logger.error("Redis health check failed")
         raise RuntimeError("Redis health check failed")
     logger.info("Redis health check passed")
+
+    # check template renderer
+    template_healthy = app.state.template_renderer.health_check()
+    if not template_healthy:
+        logger.error("Template renderer health check failed")
+        raise RuntimeError("Template renderer health check failed")
+    logger.info("Template renderer health check passed")
 
 
 async def _cleanup_infrastructure(app: FastAPI) -> None:
@@ -200,5 +232,24 @@ async def _cleanup_infrastructure(app: FastAPI) -> None:
             )
         finally:
             app.state.redis_manager = None
+
+    # clean up HTTP manager
+    http_manager: AsyncHTTPManager | None = getattr(app.state, "http_manager", None)
+    if http_manager:
+        try:
+            await http_manager.close()
+            logger.info("HTTP manager closed successfully")
+        except Exception as e:
+            logger.error(
+                "Error closing HTTP manager", extra={"error": str(e)}, exc_info=True
+            )
+        finally:
+            app.state.http_manager = None
+
+    # clean up template renderer (no connections to close, just clear reference)
+    template_renderer: TemplateRenderer | None = getattr(app.state, "template_renderer", None)
+    if template_renderer:
+        app.state.template_renderer = None
+        logger.info("Template renderer cleaned up")
 
     logger.debug("Infrastructure cleanup complete")

@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.dependencies.auth import require_admin
 from core.dependencies.core import get_async_db_session
 
 from core.dependencies.services import get_forecast_service
@@ -20,10 +21,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/surf_spots", tags=["surf_spots"])
 
 
-# TODO: add JWT check for user role for admin, for now exclusive to admin
+# =============================
+# Base Surf Spot Routes
+# =============================
 
 
-@router.get("/", summary="List all surf spots")
+@router.get("/", summary="List all surf spots", dependencies=[Depends(require_admin)])
 async def get_all_surf_spots(
     filters: Annotated[SurfSpotFilters, Query()],
     session: AsyncSession = Depends(get_async_db_session),
@@ -60,6 +63,11 @@ async def get_surf_spot(id: int, session: AsyncSession = Depends(get_async_db_se
     return SuccessResponse(
         message=f"Retrieved data for {spot_response.name}", data=spot_response
     )
+
+
+# =============================
+# Surf Spot Forecast Routes
+# =============================
 
 
 @router.get(

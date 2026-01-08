@@ -1,7 +1,7 @@
 import logging
 
 from core.redis import AsyncRedisManager
-from core.exceptions.forecast import (
+from core.exceptions.forecasts import (
     InvalidProviderError,
     InvalidModelError,
     NoForecastDataError,
@@ -118,7 +118,7 @@ class ForecastService:
                     },
                 )
 
-        # If no forecasts found for this provider, raise exception
+        # if no forecasts found for this provider, raise exception
         if not forecasts:
             raise NoForecastDataError(
                 spot_id=surf_spot_id,
@@ -175,7 +175,7 @@ class ForecastService:
                 spot_id=surf_spot_id,
                 provider=provider,
                 model=model,
-                reason=f"Model run may have been skipped, data expired (TTL), or not yet available.",
+                reason="Model run may have been skipped, data expired (TTL), or not yet available.",
             )
 
         return ProviderForecast.from_redis_json(data)

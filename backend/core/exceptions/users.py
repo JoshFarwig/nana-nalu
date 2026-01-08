@@ -1,9 +1,3 @@
-"""User domain exceptions.
-
-All exceptions related to user operations, regardless of which layer raises them.
-Can be used by repositories, services, or routes.
-"""
-
 from http import HTTPStatus
 from core.exceptions.base import NanaNaluException
 

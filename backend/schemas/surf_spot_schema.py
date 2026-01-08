@@ -1,10 +1,20 @@
 from pydantic import BaseModel, Field, field_validator
 
 
+# ============================================================================
+# Shared Base Models
+# ============================================================================
+
+
 class SurfSpotBase(BaseModel):
     name: str = Field(max_length=100)
     description: str | None = Field(default=None, max_length=500)
     is_active: bool = True
+
+
+# ============================================================================
+# API Request Schemas
+# ============================================================================
 
 
 class SurfSpotCreate(SurfSpotBase):
@@ -36,10 +46,6 @@ class SurfSpotCreate(SurfSpotBase):
             raise ValueError(f"latitude must be between -90 and 90, got {lat}")
 
         return v
-
-
-class DemoSurfSpotCreate(SurfSpotCreate):
-    is_demo: bool = True
 
 
 class SurfSpotUpdate(BaseModel):
@@ -78,6 +84,11 @@ class SurfSpotUpdate(BaseModel):
             raise ValueError(f"latitude must be between -90 and 90, got {lat}")
 
         return v
+
+
+# ============================================================================
+# API Response Schemas
+# ============================================================================
 
 
 class SurfSpotResponse(SurfSpotBase):

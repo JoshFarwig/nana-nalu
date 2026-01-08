@@ -4,6 +4,11 @@ from typing import Literal
 from pydantic import BaseModel, Field, ConfigDict
 
 
+# ============================================================================
+# Shared Models (Used by both Internal DTOs and API Responses)
+# ============================================================================
+
+
 class ForecastProvider(str, Enum):
     """Data distribution organization for forecast data."""
 
@@ -162,6 +167,11 @@ class ForecastPoint(BaseModel):
     tide: TideData | None = None
 
 
+# ============================================================================
+# Internal DTOs (Redis Storage)
+# ============================================================================
+
+
 class GridMetadata(BaseModel):
     """Grid selection metadata for file-based providers."""
 
@@ -220,6 +230,11 @@ class ProviderForecast(BaseModel):
     def from_redis_json(cls, data: str) -> "ProviderForecast":
         """Deserialize from Redis JSON string."""
         return cls.model_validate_json(data)
+
+
+# ============================================================================
+# API Response Schemas
+# ============================================================================
 
 
 class ProviderForecastResponse(BaseModel):

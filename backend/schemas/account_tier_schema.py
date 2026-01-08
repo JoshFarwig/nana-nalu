@@ -1,6 +1,11 @@
 from pydantic import BaseModel, Field, model_validator
 
 
+# ============================================================================
+# Shared Base Models
+# ============================================================================
+
+
 class AccountTierBase(BaseModel):
     """Base fields for account tier"""
 
@@ -24,6 +29,11 @@ class AccountTierBase(BaseModel):
                 f"spots_quota ({self.spots_quota})"
             )
         return self
+
+
+# ============================================================================
+# API Request Schemas
+# ============================================================================
 
 
 class AccountTierCreate(AccountTierBase):
@@ -51,6 +61,11 @@ class AccountTierUpdate(BaseModel):
                     f"spots_quota ({self.spots_quota})"
                 )
         return self
+
+
+# ============================================================================
+# API Response Schemas
+# ============================================================================
 
 
 class AccountTierResponse(AccountTierBase):

@@ -3,9 +3,11 @@ from collections.abc import AsyncGenerator
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core import security
+from core.http import AsyncHTTPManager
+from core.security import SecurityManager
 from core.database import AsyncDatabaseManager
 from core.redis import AsyncRedisManager
+from core.templates import TemplateRenderer
 from core.config import APISettings
 from core.exceptions.base import DependencyError
 
@@ -38,6 +40,30 @@ def get_settings(request: Request) -> APISettings:
             "Ensure application initialized properly."
         )
     return settings
+
+
+def get_async_http_manager(request: Request) -> AsyncHTTPManager:
+    """
+    Get HTTP manager from app state.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        HTTP manager instance
+
+    Raises:
+        DependencyError: If HTTP manager not configured in app.state
+    """
+    manager: AsyncHTTPManager | None = getattr(
+        request.app.state, "http_manager", None
+    )
+    if manager is None:
+        raise DependencyError(
+            "HTTP manager not available in app.state. "
+            "Ensure application initialized properly."
+        )
+    return manager
 
 
 def get_async_db_manager(request: Request) -> AsyncDatabaseManager:
@@ -88,11 +114,39 @@ def get_async_redis_manager(request: Request) -> AsyncRedisManager:
     return manager
 
 
+def get_template_renderer(request: Request) -> TemplateRenderer:
+    """
+    Get template renderer from app state.
+
+    The template renderer is initialized once at application startup
+    and shared across all requests for rendering email templates.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        Template renderer instance
+
+    Raises:
+        DependencyError: If template renderer not configured in app.state
+    """
+
+    renderer: TemplateRenderer | None = getattr(
+        request.app.state, "template_renderer", None
+    )
+    if renderer is None:
+        raise DependencyError(
+            "Template renderer not available in app.state. "
+            "Ensure application initialized properly."
+        )
+    return renderer
+
+
 def get_security_manager(settings: APISettings = Depends(get_settings)):
     """
     Get lightweight security manager for token management
     """
-    return security.SecurityManager(settings)
+    return SecurityManager(settings)
 
 
 # ======================================================

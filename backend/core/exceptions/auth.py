@@ -1,8 +1,3 @@
-"""Auth domain exceptions.
-
-All exceptions related to auth operations, regardless of which layer raises them.
-"""
-
 from http import HTTPStatus
 from typing import Literal
 from core.exceptions.base import NanaNaluException
@@ -64,6 +59,17 @@ class InvalidCredentialsError(AuthenticationError):
             error_code="invalid_credentials",
             status_code=HTTPStatus.UNAUTHORIZED,
             details=details,
+        )
+
+
+class EmailNotVerifiedError(AuthenticationError):
+    """Raised when user tries to login with unverified email"""
+
+    def __init__(self, message: str = "Email not verified"):
+        super().__init__(
+            message=message,
+            error_code="email_not_verified",
+            status_code=HTTPStatus.UNAUTHORIZED,
         )
 
 

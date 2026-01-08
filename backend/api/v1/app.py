@@ -134,12 +134,12 @@ def create_app(config: str | None = None) -> FastAPI:
     # ======================================================
 
     from fastapi import APIRouter
-    from api.v1.routes import auth, users, surf_spots
+    from api.v1.routes import auth, profile, surf_spots
 
     api_v1_router = APIRouter(prefix="/api/v1")
     api_v1_router.include_router(auth.router)
+    api_v1_router.include_router(profile.router)
     api_v1_router.include_router(surf_spots.router)
-    api_v1_router.include_router(users.router)
 
     # mount the entire v1 API under /api/v1
     app.include_router(api_v1_router)

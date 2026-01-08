@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING
-from sqlalchemy import Boolean, ForeignKey, String
+from datetime import datetime
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.base_model import Base
@@ -16,15 +17,21 @@ class User(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tier_id: Mapped[int] = mapped_column(ForeignKey("account_tiers.id"))
+    invited_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
-    username: Mapped[str] = mapped_column(String(50), unique=True)
+    username: Mapped[str] = mapped_column(String(20), unique=True)
     email: Mapped[str] = mapped_column(String(100), unique=True)
-    password: Mapped[str] = mapped_column(String(255))
-    name: Mapped[str] = mapped_column(String(50))
-
+    password: Mapped[str] = mapped_column(String(100))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
-    # if there is enough of a support backing behind the app, may expand limits and
-    # create kokua tier w/ subscription model
+
+    first_name: Mapped[str] = mapped_column(String(25))
+    last_name: Mapped[str] = mapped_column(String(50))
+    bio: Mapped[str | None] = mapped_column(String(100), default=None)
+    location: Mapped[str | None] = mapped_column(String(50), default=None)
+
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relationships
     # NOTE: Consider for future use how to handle SQLalchemy's lazy loading
@@ -32,5 +39,6 @@ class User(Base, TimestampMixin):
     # https://stackoverflow.com/questions/74252768/missinggreenlet-greenlet-spawn-has-not-been-called
 
     tier: Mapped["AccountTier"] = relationship()
+    # crews relationship
     spots: Mapped[list["SurfSpot"]] = relationship(back_populates="created_by")
     observations: Mapped[list["SpotObservation"]] = relationship(back_populates="user")

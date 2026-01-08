@@ -4,6 +4,11 @@ from pydantic import BaseModel
 T = TypeVar("T")  # generic type for data
 
 
+# ============================================================================
+# API Response Schemas (Generic Wrappers)
+# ============================================================================
+
+
 class SuccessResponse(BaseModel, Generic[T]):
     """Standard success response envelope."""
 

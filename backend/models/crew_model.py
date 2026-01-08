@@ -6,6 +6,7 @@ from models.base_model import Base
 
 if TYPE_CHECKING:
     from models.user_model import User
+    from models.surf_spot_model import SurfSpot
 
 
 class Crew(Base):
@@ -18,4 +19,5 @@ class Crew(Base):
     max_size: Mapped[int]
 
     members: Mapped[list["User"]] = relationship()
+    spots: Mapped[list["SurfSpot"]] = relationship()
     creator: Mapped["User"] = relationship()

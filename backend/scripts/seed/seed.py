@@ -7,7 +7,7 @@ from repositories.account_tier_repository import SyncAccountTierRepository
 from repositories.user_repository import SyncUserRepository
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 
-from schemas.user_schema import AdminCreate
+# Removed schema imports - using dicts directly for seeding
 from scripts.seed.seed_factory import SeedFactory
 
 logger = logging.getLogger(__name__)
@@ -34,13 +34,15 @@ class SeedManager:
         with self.db_manager.auto_commit_session() as session:
             user_repo = SyncUserRepository(session, self.settings)
             admin_user = user_repo.create(
-                tier_id=free_tier_id,
-                user_data=AdminCreate(
-                    username=self.settings.api.admin_username.get_secret_value(),
-                    email=self.settings.api.admin_email.get_secret_value(),
-                    name=self.settings.api.admin_name,
-                    password=self.settings.api.admin_password.get_secret_value(),
-                ),
+                user_data={
+                    "tier_id": free_tier_id,
+                    "username": self.settings.api.admin_username.get_secret_value(),
+                    "email": self.settings.api.admin_email.get_secret_value(),
+                    "first_name": self.settings.api.admin_name,
+                    "last_name": self.settings.api.admin_name,
+                    "password": self.settings.api.admin_password.get_secret_value(),
+                    "is_admin": True,
+                }
             )
             session.flush()
 

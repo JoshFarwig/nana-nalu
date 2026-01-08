@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from core.exceptions.account_tier import AccountTierNotFoundError
+from core.exceptions.account_tiers import AccountTierNotFoundError
 
 from schemas.account_tier_schema import (
     AccountTierCreate,

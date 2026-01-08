@@ -1,7 +1,7 @@
 import logging
 import json
 from typing import Sequence
-from sqlalchemy import RowMapping, select, exists, func
+from sqlalchemy import RowMapping, select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2.functions import (
     ST_MakeEnvelope,
@@ -19,7 +19,7 @@ from core.exceptions.surf_spots import (
     SurfSpotNotInRegionError,
 )
 
-from schemas.surf_spot_schema import DemoSurfSpotCreate, SurfSpotCreate
+from schemas.surf_spot_schema import SurfSpotCreate, SurfSpotUpdate
 from models.surf_spot_model import SurfSpot
 
 from utils.geo_validation import valid_latitude_range, valid_longitude_range
@@ -136,34 +136,85 @@ class AsyncSurfSpotRepository:
         spot_dict["geometry"] = json.loads(spot_dict["geometry"])
         return spot_dict
 
-    async def create(
-        self, user_id: int, surf_spot_data: SurfSpotCreate | DemoSurfSpotCreate
-    ) -> SurfSpot:
-        """Create a new surf spot with PostGIS geometry and region validation."""
-        # extract coordinates from GeoJSON for region validation
-        lon, lat = surf_spot_data.geometry["coordinates"]
+    async def create(self, surf_spot_data: dict) -> SurfSpot:
+        """
+        Create a new surf spot - internal/admin method.
 
-        # make sure spot exists in a valid region
+        Handles GeoJSON to PostGIS geometry conversion and region validation.
+        Accepts any valid SurfSpot model fields including admin-only is_demo.
+
+        Args:
+            surf_spot_data: Dictionary of fields to set on the new surf spot
+                           Must include: user_id, name, geometry (GeoJSON dict)
+                           Optional: description, is_active, is_demo
+
+        Returns:
+            Created SurfSpot model instance
+
+        Raises:
+            SurfSpotNotInRegionError: If geometry is outside supported regions
+        """
+        # extract and validate geometry
+        geometry = surf_spot_data.pop("geometry")
+        lon, lat = geometry["coordinates"]
+
+        # validate region
         region = resolve_region(lat, lon)
         if region is None:
-            raise SurfSpotNotInRegionError(surf_spot_data.name, lat, lon)
+            spot_name = surf_spot_data.get("name", "Unknown")
+            raise SurfSpotNotInRegionError(spot_name, lat, lon)
 
-        # create surf spot with all schema fields (except geometry)
-        # geometry needs special handling for PostGIS conversion
-        spot_data = surf_spot_data.model_dump(exclude={"geometry"})
-
+        # create surf spot with PostGIS geometry
         surf_spot = SurfSpot(
-            **spot_data,
-            user_id=user_id,
-            location=ST_GeomFromGeoJSON(json.dumps(surf_spot_data.geometry)),
+            **surf_spot_data,
+            location=ST_GeomFromGeoJSON(json.dumps(geometry)),
             region=region,
         )
 
         self.session.add(surf_spot)
         return surf_spot
 
+    async def create_from_user(
+        self, user_id: int, surf_spot_data: SurfSpotCreate
+    ) -> SurfSpot:
+        """
+        Create a new surf spot from user input - public-facing method.
+
+        Automatically sets: is_demo=False (enforced by not allowing it in dict).
+        User provides: name, description, geometry, is_active.
+
+        Args:
+            user_id: The ID of the user creating the spot
+            surf_spot_data: Validated SurfSpotCreate schema with spot data
+
+        Returns:
+            Created SurfSpot model instance
+
+        Raises:
+            SurfSpotNotInRegionError: If geometry is outside supported regions
+        """
+        spot_dict = surf_spot_data.model_dump()
+        spot_dict["user_id"] = user_id
+        return await self.create(surf_spot_data=spot_dict)
+
     async def update(self, surf_spot_id: int, surf_spot_data: dict) -> SurfSpot:
-        """Update surf spot by ID, handling geometry and region validation."""
+        """
+        Update surf spot by ID - internal/admin method.
+
+        Handles geometry conversion and region validation. Can update any field
+        including admin-only fields like is_demo.
+
+        Args:
+            surf_spot_id: The ID of the surf spot to update
+            surf_spot_data: Dictionary of fields to update
+
+        Returns:
+            Updated SurfSpot model instance
+
+        Raises:
+            SurfSpotNotFoundError: If spot doesn't exist
+            SurfSpotNotInRegionError: If new geometry is outside supported regions
+        """
         surf_spot = await self.get_by_id(surf_spot_id)
 
         for key, value in surf_spot_data.items():
@@ -181,6 +232,30 @@ class AsyncSurfSpotRepository:
                 setattr(surf_spot, key, value)
 
         return surf_spot
+
+    async def update_profile(
+        self, surf_spot_id: int, surf_spot_data: SurfSpotUpdate
+    ) -> SurfSpot:
+        """
+        Update surf spot profile - user-facing method.
+
+        Allows updating: name, description, geometry (location), is_active.
+        This is the method to use when a spot creator updates their own spot.
+
+        Args:
+            surf_spot_id: The ID of the surf spot to update
+            profile_data: Validated SurfSpotUpdate schema with user-editable fields
+
+        Returns:
+            Updated SurfSpot model instance
+
+        Raises:
+            SurfSpotNotFoundError: If spot doesn't exist
+            SurfSpotNotInRegionError: If new geometry is outside supported regions
+        """
+
+        data = surf_spot_data.model_dump(exclude_unset=True)
+        return await self.update(surf_spot_id, surf_spot_data=data)
 
     async def delete(self, surf_spot_id: int) -> bool:
         """Delete surf spot by ID."""

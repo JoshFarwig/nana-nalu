@@ -1,4 +1,9 @@
 from typing import Any
+
+# NOTE: make sure to use http lib and not fastapi for
+# status_code since celery workers acesses services which
+# throw NanaNaluExceptions and the workers do not exist
+# in a fastapi context nor do they have the package installed
 from http import HTTPStatus
 
 

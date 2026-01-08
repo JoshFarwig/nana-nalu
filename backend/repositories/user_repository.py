@@ -1,12 +1,13 @@
 import logging
 from typing import Sequence
+from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 
 from core.config import APISettings
 from core.exceptions.users import UserNotFoundError
-from schemas.user_schema import AdminCreate, UserCreate, UserUpdate
+from schemas.user_schema import UserCreate, UserUpdate
 from utils.password import hash_password
 from models.user_model import User
 
@@ -120,23 +121,60 @@ class AsyncUserRepository:
         result = await self.session.execute(select(User).offset(skip).limit(limit))
         return result.scalars().all()
 
-    async def create(self, tier_id: int, user_data: UserCreate | AdminCreate) -> User:
-        """Create a new user with hashed password."""
-        # handle password hashing
-        user_data.password = hash_password(
-            password=user_data.password, rounds=self.settings.api.bcrypt_rounds
+    async def create(self, user_data: dict) -> User:
+        """
+        Create a new user - internal/admin method.
+
+        Accepts any valid User model fields. Use this for admin operations
+        or seeding where you need full control.
+
+        Args:
+            user_data: Dictionary of fields to set on the new user
+                      Must include: username, email, first_name, last_name, password (hashed), tier_id
+                      Optional: bio, location, is_admin, verified, etc.
+
+        Returns:
+            Created User model instance
+        """
+        # hash password on every user create
+        user_data["password"] = hash_password(
+            user_data["password"], self.settings.api.bcrypt_rounds
         )
 
-        user = User(tier_id=tier_id, **user_data.model_dump())
+        user = User(**user_data)
         self.session.add(user)
         return user
 
-    async def update(self, user_id: int, user_data: UserUpdate) -> User:
+    async def create_from_registration(
+        self,
+        tier_id: int,
+        user_data: UserCreate,
+    ) -> User:
         """
-        Update user by ID.
+        Create a new user from registration - public-facing method.
+
+        Automatically sets: is_admin=False (enforced by not allowing it in dict).
+        User provides: username, email, first_name, last_name, bio, location, password.
+
+        Args:
+            tier_id: The account tier ID (typically free tier for new registrations)
+            user_data: Validated UserCreate schema with user registration data
+
+        Returns:
+            Created User model instance
+
+        Raises:
+            UserAlreadyExistsError: If username or email already exists (handled by caller)
+        """
+        data = user_data.model_dump(exclude_unset=True)
+        data["tier_id"] = tier_id
+        return await self.create(user_data=data)
+
+    async def update(self, user_id: int, user_data: dict) -> User:
+        """
+        Update user by ID - for admin / internal use
 
         Note: For updating passwords, use update_password() method instead.
-        This method will NOT automatically hash password fields.
 
         Args:
             user_id: The ID of the user
@@ -150,10 +188,46 @@ class AsyncUserRepository:
         """
         user = await self.get_by_id(user_id)
 
-        for key, value in user_data.model_dump().items():
+        for key, value in user_data.items():
             if hasattr(user, key):
                 setattr(user, key, value)
 
+        return user
+
+    async def update_profile(self, user_id: int, user_data: UserUpdate) -> User:
+        """
+        Update user by ID - for public facing user use
+
+        Args:
+            user_id: The ID of the user
+            user_data: Dictionary of fields to update
+
+        Returns:
+            Updated User model instance
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
+        """
+
+        data = user_data.model_dump(exclude_unset=True)
+        return await self.update(user_id, user_data=data)
+
+    async def update_verified(self, user_id: int, verified: bool) -> User:
+        """
+        Update the user's verified status for email verification.
+
+        Args:
+            user_id: The ID of the user
+            verified: The new state of verified
+        Returns:
+            Updated User model instance
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
+        """
+        user = await self.get_by_id(user_id)
+        user.verified = verified
+        user.verified_at = datetime.now(timezone.utc) if verified else None
         return user
 
     async def update_password(self, user_id: int, new_password: str) -> User:
@@ -173,7 +247,6 @@ class AsyncUserRepository:
             UserNotFoundError: If user doesn't exist
         """
         user = await self.get_by_id(user_id)
-
         user.password = hash_password(
             new_password, rounds=self.settings.api.bcrypt_rounds
         )
@@ -223,16 +296,26 @@ class SyncUserRepository:
 
         return user
 
-    def create(self, tier_id: int, user_data: UserCreate | AdminCreate) -> User:
+    def create(self, user_data: dict) -> User:
         """
-        Add a new user to the session and automatically hash their password.
-        """
+        Create a new user - internal/admin method (sync version).
 
-        # handle password hashing
-        user_data.password = hash_password(
-            password=user_data.password, rounds=self.settings.api.bcrypt_rounds
+        Accepts any valid User model fields. Password will be automatically hashed.
+        Use this for admin operations or seeding where you need full control.
+
+        Args:
+            user_data: Dictionary of fields to set on the new user
+                      Must include: username, email, first_name, last_name, password (plaintext), tier_id
+                      Optional: bio, location, is_admin, verified, etc.
+
+        Returns:
+            Created User model instance
+        """
+        # hash password on every user create (defensive programming)
+        user_data["password"] = hash_password(
+            user_data["password"], self.settings.api.bcrypt_rounds
         )
 
-        user = User(tier_id=tier_id, **user_data.model_dump())
+        user = User(**user_data)
         self.session.add(user)
         return user
