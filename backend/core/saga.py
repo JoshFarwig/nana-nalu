@@ -1,5 +1,6 @@
 import logging
-from typing import Callable, Awaitable, Any
+from typing import Callable, Awaitable, Any, Literal
+from types import TracebackType
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,12 @@ class SagaContext:
         logger.debug("Saga started")
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> Literal[False]:
         """
         Exit the saga context, executing rollbacks if an exception occurred.
 

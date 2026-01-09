@@ -3,15 +3,11 @@ import logging
 from fastapi import APIRouter, Cookie, Depends, Response
 from pydantic import EmailStr, SecretStr
 
-from core.config import APISettings
-from core.dependencies.core import get_settings
 from core.dependencies.services import (
     get_auth_service,
-    get_email_service,
     get_magic_link_service,
 )
-from core.dependencies.auth import get_current_user, require_admin
-from core.exceptions import auth
+from core.dependencies.auth import require_admin
 from core.exceptions.auth import InvalidRefreshTokenError
 
 from schemas.auth_schema import (
@@ -19,12 +15,10 @@ from schemas.auth_schema import (
     UserUsernameLogin,
     AuthTokenReponse,
 )
-from schemas.magic_link_schema import PasswordResetPayload
 from schemas.response_schema import SuccessResponse
-from schemas.user_schema import CurrentUser, UserCreate
+from schemas.user_schema import UserCreate
 
 from services.auth_service import AuthService
-from services.email_service import EmailService
 from services.magic_link_service import MagicLinkService, MagicLinkType
 from utils.env import is_prod
 
@@ -74,6 +68,17 @@ async def register(
             access_token=tokens.access_token, access_token_type=tokens.access_token_type
         ),
     )
+
+
+@router.post("/verify-email")
+async def verify_email(
+    token: str, auth_service: AuthService = Depends(get_auth_service)
+):
+    """Verify a user's account with magic link token"""
+
+    await auth_service.verify_email(token)
+
+    return SuccessResponse(message="User account verified via email")
 
 
 @router.post("/login")
@@ -144,7 +149,7 @@ async def logout(
     return SuccessResponse(message="Successfully logged out")
 
 
-@router.post("/validate_link")
+@router.post("/validate-link")
 async def validate_magic_link(
     link_type: MagicLinkType,
     token: str,
@@ -155,7 +160,7 @@ async def validate_magic_link(
     return SuccessResponse(message=f"Magic link ({link_type}) valid")
 
 
-@router.post("/request_reset_password")
+@router.post("/request-password-reset")
 async def request_reset_password(
     email: EmailStr,
     auth_service: AuthService = Depends(get_auth_service),
@@ -164,10 +169,10 @@ async def request_reset_password(
 
     await auth_service.request_password_reset_email(email)
 
-    return SuccessResponse(message="Successfully sent reset password email")
+    return SuccessResponse(message="Successfully sent password reset email")
 
 
-@router.post("/reset_password")
+@router.post("/reset-password")
 async def reset_password(
     token: str,
     new_password: SecretStr,
@@ -178,7 +183,7 @@ async def reset_password(
     return SuccessResponse(message="Successfully reset user password")
 
 
-@router.post("/enable_account/{user_id}", dependencies=[Depends(require_admin)])
+@router.post("/enable-account/{user_id}", dependencies=[Depends(require_admin)])
 async def enabled_account(
     user_id: int, auth_service: AuthService = Depends(get_auth_service)
 ):
@@ -192,7 +197,7 @@ async def enabled_account(
     )
 
 
-@router.post("/disable_account/{user_id}", dependencies=[Depends(require_admin)])
+@router.post("/disable-account/{user_id}", dependencies=[Depends(require_admin)])
 async def disable_account(
     user_id: int, auth_service: AuthService = Depends(get_auth_service)
 ):
@@ -209,7 +214,7 @@ async def disable_account(
     )
 
 
-@router.post("/revoke_sessions/{user_id}", dependencies=[Depends(require_admin)])
+@router.post("/revoke-sessions/{user_id}", dependencies=[Depends(require_admin)])
 async def revoke_sessions(
     user_id: int,
     auth_service: AuthService = Depends(get_auth_service),

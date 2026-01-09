@@ -183,12 +183,12 @@ class AuthService:
             # commit user to db once all operations succeed
             await self.user_repo.session.commit()
 
-            logger.info(
-                "User registered successfully and verification email sent",
-                extra={"user_id": user.id, "username": user.username},
-            )
+        logger.info(
+            "User registered successfully and verification email sent",
+            extra={"user_id": user.id, "username": user.username},
+        )
 
-            return tokens
+        return tokens
 
     async def verify_email(self, token: str):
         """Verify a user's email account"""
@@ -420,21 +420,29 @@ class AuthService:
             )
 
     async def reset_password(self, token: str, new_password: SecretStr):
-        """Reset user password and send"""
+        """
+        Complete password reset using magic link token.
 
+        Validates token, updates password, commits, then revokes all sessions for security.
+        Order matters: commit password change before revoking sessions.
+        """
+        # validate and consume token
         payload = await self.magic_link_service.validate_link("password_reset", token)
         password_reset_payload = PasswordResetPayload(**payload)
 
+        # update password in DB
         user = await self.user_repo.update_password(
             password_reset_payload.user_id, new_password.get_secret_value()
         )
 
-        await self.revoke_all_sessions(user.id)
-
+        # commit password change
         await self.user_repo.session.commit()
 
+        # revoke all sessions AFTER commit succeeds (force re-login with new password)
+        await self.revoke_all_sessions(user.id)
+
         logger.info(
-            f"User {user.id}-{user.username} reset password",
+            "Password reset completed, all sessions revoked",
             extra={
                 "user_id": user.id,
                 "email": user.email,
