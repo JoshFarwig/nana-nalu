@@ -1,23 +1,31 @@
 from datetime import timedelta
 import logging
 from fastapi import APIRouter, Cookie, Depends, Response
+from pydantic import EmailStr, SecretStr
 
-from core.dependencies.repositories import get_user_repository
-from core.dependencies.services import get_auth_service
-from core.dependencies.auth import require_admin
+from core.config import APISettings
+from core.dependencies.core import get_settings
+from core.dependencies.services import (
+    get_auth_service,
+    get_email_service,
+    get_magic_link_service,
+)
+from core.dependencies.auth import get_current_user, require_admin
+from core.exceptions import auth
 from core.exceptions.auth import InvalidRefreshTokenError
 
-from repositories.user_repository import AsyncUserRepository
 from schemas.auth_schema import (
     UserEmailLogin,
     UserUsernameLogin,
     AuthTokenReponse,
 )
+from schemas.magic_link_schema import PasswordResetPayload
 from schemas.response_schema import SuccessResponse
-from schemas.user_schema import UserCreate
+from schemas.user_schema import CurrentUser, UserCreate
 
 from services.auth_service import AuthService
-
+from services.email_service import EmailService
+from services.magic_link_service import MagicLinkService, MagicLinkType
 from utils.env import is_prod
 
 logger = logging.getLogger(__name__)
@@ -136,22 +144,69 @@ async def logout(
     return SuccessResponse(message="Successfully logged out")
 
 
-@router.post("/disable_account/{user_id}", dependencies=[Depends(require_admin)])
-async def disable_account(
-    user_id: int, user_repo: AsyncUserRepository = Depends(get_user_repository)
+@router.post("/validate_link")
+async def validate_magic_link(
+    link_type: MagicLinkType,
+    token: str,
+    magic_link_service: MagicLinkService = Depends(get_magic_link_service),
 ):
-    """Disable an account"""
-    user = await user_repo.update(user_id, user_data={"is_active": False})
-    await user_repo.session.commit()
+    await magic_link_service.validate_link(link_type, token, consume=False)
 
-    logger.warning(
-        f"Disabled account: {user_id}",
-        extra={
-            "user_id": user.id,
-        },
+    return SuccessResponse(message=f"Magic link ({link_type}) valid")
+
+
+@router.post("/request_reset_password")
+async def request_reset_password(
+    email: EmailStr,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Issue out a reset password email"""
+
+    await auth_service.request_password_reset_email(email)
+
+    return SuccessResponse(message="Successfully sent reset password email")
+
+
+@router.post("/reset_password")
+async def reset_password(
+    token: str,
+    new_password: SecretStr,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    await auth_service.reset_password(token, new_password)
+
+    return SuccessResponse(message="Successfully reset user password")
+
+
+@router.post("/enable_account/{user_id}", dependencies=[Depends(require_admin)])
+async def enabled_account(
+    user_id: int, auth_service: AuthService = Depends(get_auth_service)
+):
+    """Enable an account"""
+
+    enabled_account = await auth_service.enable_account(user_id)
+
+    return SuccessResponse(
+        message=f"Enabled account for user: {user_id}-{enabled_account.username}",
+        data=enabled_account,
     )
 
-    return SuccessResponse()
+
+@router.post("/disable_account/{user_id}", dependencies=[Depends(require_admin)])
+async def disable_account(
+    user_id: int, auth_service: AuthService = Depends(get_auth_service)
+):
+    """Disable an account (switches is_active to False and revokes all sessions)"""
+
+    disabled_account = await auth_service.disable_account(user_id)
+
+    return SuccessResponse(
+        message=(
+            f"Disabled account for user: {user_id}-{disabled_account.username}, "
+            f"revoked ({disabled_account.sessions_revoked}) session(s)"
+        ),
+        data=enabled_account,
+    )
 
 
 @router.post("/revoke_sessions/{user_id}", dependencies=[Depends(require_admin)])

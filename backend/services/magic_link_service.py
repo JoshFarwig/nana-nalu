@@ -11,7 +11,7 @@ from core.exceptions.magic_links import (
 )
 
 
-MagicLink = Literal["email_verification", "password_reset", "crew_invite"]
+MagicLinkType = Literal["email_verification", "password_reset", "crew_invite"]
 
 
 class MagicLinkService:
@@ -31,13 +31,13 @@ class MagicLinkService:
         """Hash token before redis storage"""
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-    def _get_redis_key(self, link_type: MagicLink, hashed_token: str) -> str:
+    def _get_redis_key(self, link_type: MagicLinkType, hashed_token: str) -> str:
         """Generate redis key for storing magic link tokens"""
         return f"magic_link:{link_type}:{hashed_token}"
 
     async def create_link(
         self,
-        link_type: MagicLink,
+        link_type: MagicLinkType,
         payload: dict,
         ttl: timedelta,
     ) -> str:
@@ -66,7 +66,7 @@ class MagicLinkService:
         return token
 
     async def validate_link(
-        self, link_type: MagicLink, token: str, consume: bool = True
+        self, link_type: MagicLinkType, token: str, consume: bool = True
     ) -> dict:
         """
         Validate token with consumption or not.
@@ -100,3 +100,23 @@ class MagicLinkService:
             raise MagicLinkInvalidError()
 
         return json.loads(data)
+
+    async def invalidate_link(self, link_type: MagicLinkType, token: str) -> bool:
+        """
+        Invalidate a magic link token (for cleanup/revocation).
+
+        Used for compensating transactions when registration or other flows fail
+        after creating a magic link but before committing the operation.
+
+        Args:
+            link_type: Token category (must match what was used in create_link)
+            token: Raw token to invalidate
+
+        Returns:
+            True if token was deleted, False if it didn't exist
+        """
+        hashed_token = self._hash_token(token)
+        redis_key = self._get_redis_key(link_type, hashed_token)
+
+        deleted_count = await self.redis_manager.client.delete(redis_key)
+        return deleted_count > 0

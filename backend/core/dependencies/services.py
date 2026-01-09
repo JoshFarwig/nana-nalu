@@ -27,7 +27,7 @@ from services.auth_service import AuthService
 from services.forecast.forecast_service import ForecastService
 
 
-def get_email_serivce(
+def get_email_service(
     http_manager: AsyncHTTPManager = Depends(get_async_http_manager),
     template_renderer: TemplateRenderer = Depends(get_template_renderer),
     settings: APISettings = Depends(get_settings),
@@ -45,7 +45,7 @@ def get_magic_link_service(
 def get_auth_service(
     redis_manager: AsyncRedisManager = Depends(get_async_redis_manager),
     security_manager: SecurityManager = Depends(get_security_manager),
-    email_service: EmailService = Depends(get_email_serivce),
+    email_service: EmailService = Depends(get_email_service),
     magic_link_service: MagicLinkService = Depends(get_magic_link_service),
     user_repo: AsyncUserRepository = Depends(get_user_repository),
     tier_repo: AsyncAccountTierRepository = Depends(get_account_tier_repository),

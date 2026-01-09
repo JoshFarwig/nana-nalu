@@ -29,6 +29,7 @@ api = [
   "bcrypt~=5.0.0",
   "pyJWT~=2.10.1",
   "jinja2>=3.1.6",
+  "email-validator>=2.2.0",
 ]
 # worker service - task execution with scientific computing + database access
 worker = [

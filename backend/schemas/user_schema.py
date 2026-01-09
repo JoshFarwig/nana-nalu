@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 # ============================================================================
@@ -31,8 +31,8 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """Schema for updating a user profile (excludes password - use UserPasswordUpdate for that)."""
 
-    username: str | None = Field(default=None, min_length=8, max_length=25)
     email: EmailStr | None = Field(default=None)
+    username: str | None = Field(default=None, min_length=8, max_length=25)
     first_name: str | None = Field(default=None, max_length=25)
     last_name: str | None = Field(default=None, max_length=25)
     bio: str | None = Field(default=None, max_length=150)
@@ -42,7 +42,6 @@ class UserUpdate(BaseModel):
 class UserPasswordUpdate(BaseModel):
     """Schema for updating a user's password."""
 
-    current_password: str = Field(min_length=8)
     new_password: str = Field(min_length=8, max_length=256)
 
 
@@ -54,9 +53,8 @@ class UserPasswordUpdate(BaseModel):
 class UserResponse(UserBase):
     """Schema for user responses (excludes password)."""
 
-    id: int
-    bio: str = Field(max_length=150)
-    location: str = Field(max_length=50)
+    bio: str | None = Field(default=None, max_length=150)
+    location: str | None = Field(default=None, max_length=50)
     model_config = {"from_attributes": True}
 
 

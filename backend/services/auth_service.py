@@ -1,6 +1,8 @@
 from datetime import timedelta
 import logging
 
+from pydantic import SecretStr, EmailStr
+
 from core.config import APISettings
 from core.exceptions.users import UserAlreadyExistsError, UserNotFoundError
 from core.exceptions.auth import (
@@ -11,8 +13,10 @@ from core.exceptions.auth import (
 )
 
 from core.redis import AsyncRedisManager
+from core.saga import SagaContext
 from core.security import SecurityManager
 
+from models.user_model import User
 from services.email_service import EmailService
 from services.magic_link_service import MagicLinkService
 
@@ -26,7 +30,7 @@ from schemas.auth_schema import (
     UserUsernameLogin,
     AuthTokens,
 )
-from schemas.magic_link_schema import EmailVerificationPayload
+from schemas.magic_link_schema import EmailVerificationPayload, PasswordResetPayload
 from schemas.user_schema import UserCreate
 
 from utils.password import verify_password
@@ -61,14 +65,48 @@ class AuthService:
         """Build Redis key for tracking user's active sessions."""
         return f"auth:sessions:{user_id}"
 
-    async def _issue_auth_token_pair(self, user) -> AuthTokens:
+    async def _revoke_refresh_token(self, refresh_token: str, user_id: int):
+        """
+        Revoke a single refresh token (for cleanup/compensating transactions).
+
+        Used to clean up tokens when operations fail after token issuance.
+        Silently handles errors to avoid masking the original failure.
+
+        Args:
+            refresh_token: The refresh token to revoke
+            user_id: The user ID associated with the token
+        """
+        try:
+            refresh_token_hash = self.security_manager.hash_refresh_token(refresh_token)
+            refresh_key = self._get_refresh_token_key(refresh_token_hash)
+
+            # remove from active sessions set
+            sessions_key = self._get_user_sessions_key(user_id)
+            await self.redis_manager.client.srem(sessions_key, refresh_token_hash)  # type: ignore
+
+            # delete the refresh token
+            await self.redis_manager.client.delete(refresh_key)
+
+            logger.info(
+                "Refresh token revoked during cleanup",
+                extra={"user_id": user_id},
+            )
+        except Exception as cleanup_error:
+            # don't raise - we're already in error handling, just log it
+            logger.error(
+                "Failed to revoke refresh token during cleanup",
+                extra={"user_id": user_id, "error": str(cleanup_error)},
+            )
+
+    async def _issue_auth_token_pair(self, user: User) -> AuthTokens:
         """Generate and store access + refresh tokens for a user."""
         # generate tokens
         access_token = self.security_manager.create_access_token(
             user_id=user.id,
             email=user.email,
             username=user.username,
-            name=user.name,
+            first_name=user.first_name,
+            last_name=user.last_name,
             tier=user.tier.display_name,
             tier_id=user.tier.id,
             is_admin=user.is_admin,
@@ -115,34 +153,42 @@ class AuthService:
         )
         await self.user_repo.session.flush()
 
-        # generate and store tokens
-        tokens = await self._issue_auth_token_pair(user)
+        # orchestrate multi-step registration with automatic rollback on failure
+        async with SagaContext() as saga:
+            # step 1: generate and store tokens
+            tokens = await self._issue_auth_token_pair(user)
+            saga.add_rollback(self._revoke_refresh_token, tokens.refresh_token, user.id)
 
-        # create magic token for verification
-        magic_token = await self.magic_link_service.create_link(
-            "email_verification",
-            payload=EmailVerificationPayload(user_id=user.id).model_dump(),
-            ttl=timedelta(minutes=self.settings.email_verification_expire_minutes),
-        )
+            # step 2: create magic token for verification
+            magic_token = await self.magic_link_service.create_link(
+                "email_verification",
+                payload=EmailVerificationPayload(user_id=user.id).model_dump(),
+                ttl=timedelta(minutes=self.settings.email_verification_expire_minutes),
+            )
+            saga.add_rollback(
+                self.magic_link_service.invalidate_link,
+                "email_verification",
+                magic_token,
+            )
 
-        # send out verification email with magic token
-        await self.email_service.send_email_verification(
-            magic_token,
-            to_email=user.email,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name,
-        )
+            # step 3: send verification email (if this fails, steps 1-2 auto-rollback)
+            await self.email_service.send_email_verification(
+                magic_token,
+                to_email=user.email,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name,
+            )
 
-        # commit user to db once verification email and magic token are created
-        await self.user_repo.session.commit()
+            # commit user to db once all operations succeed
+            await self.user_repo.session.commit()
 
-        logger.info(
-            "User registered successfully and verification email sent",
-            extra={"user_id": user.id, "username": user.username},
-        )
+            logger.info(
+                "User registered successfully and verification email sent",
+                extra={"user_id": user.id, "username": user.username},
+            )
 
-        return tokens
+            return tokens
 
     async def verify_email(self, token: str):
         """Verify a user's email account"""
@@ -291,39 +337,133 @@ class AuthService:
 
         return 0
 
-    async def enable_account(self, user_id: int):
+    async def enable_account(self, user_id: int) -> EnabledAccount:
         """Enable a users account"""
 
-        user = await self.user_repo.update(user_id, user_data={"is_active": True})
+        user = await self.user_repo.get_by_id(user_id)
+
+        if user.is_active:
+            logger.info(
+                "User account is already enabled",
+                extra={
+                    "user_id": user_id,
+                    "email": user.email,
+                    "username": user.username,
+                },
+            )
+
+            return EnabledAccount(
+                user_id=user_id,
+                email=user.email,
+                username=user.username,
+            )
+        else:
+            await self.user_repo.update(user_id, user_data={"is_active": True})
+            await self.user_repo.session.commit()
+
+            logger.info(
+                "user account enabled",
+                extra={
+                    "user_id": user_id,
+                    "email": user.email,
+                    "username": user.username,
+                },
+            )
+
+            return EnabledAccount(
+                user_id=user_id,
+                email=user.email,
+                username=user.username,
+            )
+
+    async def disable_account(self, user_id: int) -> DisabledAccount:
+        """Disable account and revoke all user sessons"""
+
+        user = await self.user_repo.get_by_id(user_id)
+
+        if not user.is_active:
+            logger.warning(
+                "User account is already disabled",
+                extra={
+                    "user_id": user_id,
+                    "email": user.email,
+                    "username": user.username,
+                },
+            )
+
+            return DisabledAccount(
+                user_id=user_id,
+                email=user.email,
+                username=user.username,
+                sessions_revoked=0,
+            )
+        else:
+            await self.user_repo.update(user_id, user_data={"is_active": False})
+            await self.user_repo.session.commit()
+
+            logger.warning(
+                "User account disabled",
+                extra={
+                    "user_id": user_id,
+                    "email": user.email,
+                    "username": user.username,
+                },
+            )
+
+            sessions_revoked = await self.revoke_all_sessions(user_id)
+
+            return DisabledAccount(
+                user_id=user_id,
+                email=user.email,
+                username=user.username,
+                sessions_revoked=sessions_revoked,
+            )
+
+    async def reset_password(self, token: str, new_password: SecretStr):
+        """Reset user password and send"""
+
+        payload = await self.magic_link_service.validate_link("password_reset", token)
+        password_reset_payload = PasswordResetPayload(**payload)
+
+        user = await self.user_repo.update_password(
+            password_reset_payload.user_id, new_password.get_secret_value()
+        )
+
+        await self.revoke_all_sessions(user.id)
+
         await self.user_repo.session.commit()
 
         logger.info(
-            "User account enabled",
-            extra={"user_id": user_id, "email": user.email, "username": user.username},
+            f"User {user.id}-{user.username} reset password",
+            extra={
+                "user_id": user.id,
+                "email": user.email,
+                "username": user.username,
+            },
         )
 
-        return EnabledAccount(
-            user_id=user_id,
-            email=user.email,
-            username=user.username,
+    async def request_password_reset_email(self, email: EmailStr):
+        """Send a reset password email request"""
+
+        user = await self.user_repo.get_by_email(email)
+
+        payload = PasswordResetPayload(user_id=user.id, email=user.email)
+
+        magic_token = await self.magic_link_service.create_link(
+            "password_reset",
+            payload=payload.model_dump(),
+            ttl=timedelta(minutes=self.settings.password_reset_expire_minutes),
         )
 
-    async def disable_account(self, user_id: int):
-        """Disable account and revoke all user sessons"""
-
-        user = await self.user_repo.update(user_id, user_data={"is_active": False})
-        await self.user_repo.session.commit()
-
-        logger.warning(
-            "User account disabled",
-            extra={"user_id": user_id, "email": user.email, "username": user.username},
+        await self.email_service.send_passsword_reset(
+            magic_token, to_email=user.email, username=user.username
         )
 
-        sessions_revoked = await self.revoke_all_sessions(user_id)
-
-        return DisabledAccount(
-            user_id=user_id,
-            email=user.email,
-            username=user.username,
-            sessions_revoked=sessions_revoked,
+        logger.info(
+            f"Sent reset password email to user email: {user.email}",
+            extra={
+                "user_id": user.id,
+                "email": user.email,
+                "username": user.username,
+            },
         )
