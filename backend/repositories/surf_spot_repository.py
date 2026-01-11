@@ -1,7 +1,8 @@
 import logging
 import json
+from re import S
 from typing import Sequence
-from sqlalchemy import RowMapping, select, exists
+from sqlalchemy import RowMapping, or_, select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2.functions import (
     ST_MakeEnvelope,
@@ -19,8 +20,11 @@ from core.exceptions.surf_spots import (
     SurfSpotNotInRegionError,
 )
 
-from schemas.surf_spot_schema import SurfSpotCreate, SurfSpotUpdate
+from models.crew_member_model import CrewMember
+from models.crew_model import Crew
 from models.surf_spot_model import SurfSpot
+
+from schemas.surf_spot_schema import SurfSpotCreate, SurfSpotUpdate
 
 from utils.geo_validation import valid_latitude_range, valid_longitude_range
 from utils.region import resolve_region
@@ -45,20 +49,75 @@ class AsyncSurfSpotRepository:
 
         return spot
 
+    async def get_all_by_user_id(self, user_id: int) -> Sequence[SurfSpot]:
+        """Get all surf spots owned by a user"""
+
+        results = await self.session.execute(
+            select(SurfSpot).where(SurfSpot.user_id == user_id)
+        )
+
+        return results.scalars().all()
+
+    async def get_all_by_crew_id(self, crew_id: int) -> Sequence[SurfSpot]:
+        """Get all spots that exist in a crew"""
+        results = await self.session.execute(
+            select(SurfSpot).where(SurfSpot.crew_id == crew_id)
+        )
+
+        return results.scalars().all()
+
+    async def get_all_user_spots_in_crew(
+        self, crew_id: int, user_id: int
+    ) -> Sequence[SurfSpot]:
+        """Get all spots that belong to a user in a specific crew"""
+
+        stmt = (
+            select(SurfSpot)
+            .join(Crew, SurfSpot.crew_id == crew_id)
+            .where(SurfSpot.user_id == user_id)
+        )
+
+        results = await self.session.execute(stmt)
+
+        return results.scalars().all()
+
+    async def get_all_user_viewable_spots(self, user_id: int) -> Sequence[SurfSpot]:
+        """Get all spots that that are viewable for a user (user owned spots + spots in a crew a user exists in)"""
+
+        stmt = (
+            select(SurfSpot)
+            .outerjoin(CrewMember, SurfSpot.crew_id == CrewMember.crew_id)
+            .where(
+                or_(
+                    SurfSpot.user_id == user_id,
+                    CrewMember.user_id == user_id,
+                )
+            )
+            .distinct()
+        )
+
+        results = await self.session.execute(stmt)
+
+        return results.scalars().all()
+
     async def get_all(
         self,
         offset: int,
         limit: int,
         is_active: bool,
+        is_demo: bool,
     ) -> Sequence[SurfSpot]:
         """Get all surf spots with pagination and active status filter."""
         results = await self.session.execute(
             select(SurfSpot)
-            .where(SurfSpot.is_active == is_active)
+            .where(SurfSpot.is_active == is_active, SurfSpot.is_demo == is_demo)
             .offset(offset)
             .limit(limit)
         )
         return results.scalars().all()
+
+    async def get_demo(self, is_active: bool):
+        pass
 
     async def get_all_with_coordinates(
         self, offset: int, limit: int, is_active: bool

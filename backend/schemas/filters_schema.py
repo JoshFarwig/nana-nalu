@@ -6,6 +6,13 @@ class FiltersBase(BaseModel):
     offset: int = Field(0, ge=0)
 
 
+class UserFilters(FiltersBase):
+    pass
+
+
 class SurfSpotFilters(FiltersBase):
     is_active: bool = True
-    is_demo: bool = False
+
+
+class AdminSurfSpotFilters(SurfSpotFilters):
+    is_demo: bool

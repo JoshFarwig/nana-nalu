@@ -10,6 +10,7 @@ from core.dependencies.core import (
 )
 from core.dependencies.repositories import (
     get_account_tier_repository,
+    get_crew_repository,
     get_surf_spot_repository,
     get_user_repository,
 )
@@ -18,13 +19,15 @@ from core.redis import AsyncRedisManager
 from core.security import SecurityManager
 from core.templates import TemplateRenderer
 from repositories.account_tier_repository import AsyncAccountTierRepository
+from repositories.crew_repository import AsyncCrewRepository
 from repositories.surf_spot_repository import AsyncSurfSpotRepository
 from repositories.user_repository import AsyncUserRepository
 
-from services.email_service import EmailService
-from services.magic_link_service import MagicLinkService
 from services.auth_service import AuthService
+from services.crew_service import CrewService
+from services.email_service import EmailService
 from services.forecast.forecast_service import ForecastService
+from services.magic_link_service import MagicLinkService
 
 
 def get_email_service(
@@ -67,3 +70,12 @@ def get_forecast_service(
     surf_spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
 ) -> ForecastService:
     return ForecastService(redis_manager, surf_spot_repo)
+
+
+def get_crew_service(
+    crew_repo: AsyncCrewRepository = Depends(get_crew_repository),
+    user_repo: AsyncUserRepository = Depends(get_user_repository),
+    magic_link_service: MagicLinkService = Depends(get_magic_link_service),
+    settings: APISettings = Depends(get_settings),
+) -> CrewService:
+    return CrewService(crew_repo, user_repo, magic_link_service, settings)

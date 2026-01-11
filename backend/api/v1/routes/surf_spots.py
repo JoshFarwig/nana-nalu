@@ -11,7 +11,7 @@ from repositories.surf_spot_repository import AsyncSurfSpotRepository
 
 from schemas.response_schema import SuccessResponse
 from schemas.surf_spot_schema import SurfSpotResponse
-from schemas.filters_schema import SurfSpotFilters
+from schemas.filters_schema import AdminSurfSpotFilters, SurfSpotFilters
 
 from services.forecast.forecast_schema import ProviderForecastResponse
 from services.forecast.forecast_service import ForecastService
@@ -28,18 +28,26 @@ router = APIRouter(prefix="/surf_spots", tags=["surf_spots"])
 
 @router.get("/", summary="List all surf spots", dependencies=[Depends(require_admin)])
 async def get_all_surf_spots(
-    filters: Annotated[SurfSpotFilters, Query()],
+    filters: Annotated[AdminSurfSpotFilters, Query()],
     session: AsyncSession = Depends(get_async_db_session),
 ):
     repo = AsyncSurfSpotRepository(session)
     spots = await repo.get_all_with_coordinates(
-        filters.offset, filters.limit, filters.is_active
+        filters.offset,
+        filters.limit,
+        filters.is_active,
     )
     spot_responses = [SurfSpotResponse.model_validate(spot) for spot in spots]
 
     return SuccessResponse(
         message=f"Retrieved {len(spot_responses)} surf spot(s)", data=spot_responses
     )
+
+
+# TODO: figure out how to refactor surf spot endpoints / repo methods for is_demo
+@router.get("/demo", summary="List all active demo spots")
+async def get_all_demo_surf_spots():
+    pass
 
 
 # @router.post("/", summary="Create a new surf spot")

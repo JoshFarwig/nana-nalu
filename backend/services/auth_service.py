@@ -2,6 +2,7 @@ from datetime import timedelta
 import logging
 
 from pydantic import SecretStr, EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import APISettings
 from core.exceptions.users import UserAlreadyExistsError, UserNotFoundError
@@ -47,6 +48,7 @@ class AuthService:
         magic_link_service: MagicLinkService,
         user_repo: AsyncUserRepository,
         tier_repo: AsyncAccountTierRepository,
+        session: AsyncSession,
         settings: APISettings,
     ):
         self.redis_manager = redis_manager
@@ -55,6 +57,7 @@ class AuthService:
         self.magic_link_service = magic_link_service
         self.user_repo = user_repo
         self.tier_repo = tier_repo
+        self.session = session
         self.settings = settings.api
 
     def _get_refresh_token_key(self, refresh_token_hash: str) -> str:
@@ -151,7 +154,7 @@ class AuthService:
         user = await self.user_repo.create_from_registration(
             tier_id=tier.id, user_data=user_data
         )
-        await self.user_repo.session.flush()
+        await self.session.flush()
 
         # orchestrate multi-step registration with automatic rollback on failure
         async with SagaContext() as saga:
@@ -181,7 +184,7 @@ class AuthService:
             )
 
             # commit user to db once all operations succeed
-            await self.user_repo.session.commit()
+            await self.session.commit()
 
         logger.info(
             "User registered successfully and verification email sent",
@@ -204,7 +207,7 @@ class AuthService:
         )
 
         # commit verification
-        await self.user_repo.session.commit()
+        await self.session.commit()
 
         logger.info(
             "User account verified via email",
@@ -359,7 +362,7 @@ class AuthService:
             )
         else:
             await self.user_repo.update(user_id, user_data={"is_active": True})
-            await self.user_repo.session.commit()
+            await self.session.commit()
 
             logger.info(
                 "user account enabled",
@@ -399,7 +402,7 @@ class AuthService:
             )
         else:
             await self.user_repo.update(user_id, user_data={"is_active": False})
-            await self.user_repo.session.commit()
+            await self.session.commit()
 
             logger.warning(
                 "User account disabled",
@@ -436,7 +439,7 @@ class AuthService:
         )
 
         # commit password change
-        await self.user_repo.session.commit()
+        await self.session.commit()
 
         # revoke all sessions AFTER commit succeeds (force re-login with new password)
         await self.revoke_all_sessions(user.id)

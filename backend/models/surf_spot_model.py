@@ -9,6 +9,7 @@ from models.mixins import TimestampMixin
 if TYPE_CHECKING:
     from models.user_model import User
     from models.spot_observation_model import SpotObservation
+    from models.crew_model import Crew
 
 
 class SurfSpot(Base, TimestampMixin):
@@ -16,6 +17,9 @@ class SurfSpot(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    crew_id: Mapped[int | None] = mapped_column(
+        ForeignKey("crews.id", ondelete="SET NULL"), default=None
+    )
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500))
@@ -28,6 +32,7 @@ class SurfSpot(Base, TimestampMixin):
 
     # relationships
     created_by: Mapped["User"] = relationship(back_populates="spots")
+    crew: Mapped["Crew | None"] = relationship(back_populates="spots")
     observations: Mapped[list["SpotObservation"]] = relationship(
         back_populates="spot", cascade="all, delete-orphan"
     )

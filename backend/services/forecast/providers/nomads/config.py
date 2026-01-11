@@ -22,7 +22,8 @@ class NOMADSModel(str, Enum):
     """
 
     NWPS = "nwps"
-    # Future: SWAN, WRF, etc. if NOMADS provides them
+    # TODO: add GFS Global model?
+    # may not be needed with pacioos provided models
 
 
 class WFO(str, Enum):

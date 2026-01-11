@@ -10,6 +10,8 @@ if TYPE_CHECKING:
     from models.account_tier_model import AccountTier
     from models.surf_spot_model import SurfSpot
     from models.spot_observation_model import SpotObservation
+    from models.crew_model import Crew
+    from models.crew_member_model import CrewMember
 
 
 class User(Base, TimestampMixin):
@@ -17,7 +19,6 @@ class User(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tier_id: Mapped[int] = mapped_column(ForeignKey("account_tiers.id"))
-    invited_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
     username: Mapped[str] = mapped_column(String(20), unique=True)
     email: Mapped[str] = mapped_column(String(100), unique=True)
@@ -39,6 +40,7 @@ class User(Base, TimestampMixin):
     # https://stackoverflow.com/questions/74252768/missinggreenlet-greenlet-spawn-has-not-been-called
 
     tier: Mapped["AccountTier"] = relationship()
-    # crews relationship
+    owned_crews: Mapped[list["Crew"]] = relationship(back_populates="owner")
+    crew_memberships: Mapped[list["CrewMember"]] = relationship(back_populates="user")
     spots: Mapped[list["SurfSpot"]] = relationship(back_populates="created_by")
     observations: Mapped[list["SpotObservation"]] = relationship(back_populates="user")
