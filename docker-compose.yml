@@ -4,6 +4,7 @@
 #   prod: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
 
 services:
+  # TODO: add timescale db for historical data
   db:
     build:
       context: ./db
@@ -81,7 +82,17 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
-  
+
+  # TODO: phase out celery to prefet setup 
+  prefect-server:
+    environment: 
+      PREFECT_RESULTS_PERSIST_BY_DEFAULT: true
+    depends_on: 
+      db: 
+        condition: service_healthy 
+    restart: always 
+    network: [nn_network] 
+
   worker:
     build:
       context: ./backend

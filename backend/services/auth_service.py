@@ -95,7 +95,6 @@ class AuthService:
                 extra={"user_id": user_id},
             )
         except Exception as cleanup_error:
-            # don't raise - we're already in error handling, just log it
             logger.error(
                 "Failed to revoke refresh token during cleanup",
                 extra={"user_id": user_id, "error": str(cleanup_error)},
@@ -239,19 +238,15 @@ class AuthService:
         except UserNotFoundError:
             raise InvalidCredentialsError(credential_type=credential_type)
 
-        # verify password
         if not verify_password(user_password, user.password):
             raise InvalidCredentialsError(credential_type=credential_type)
 
-        # ensure verified email
         if not user.verified:
             raise EmailNotVerifiedError()
 
-        # ensure account is active:
         if not user.is_active:
             raise AccountDisabledError()
 
-        # generate and store tokens
         tokens = await self._issue_auth_token_pair(user)
 
         logger.info(
@@ -267,7 +262,6 @@ class AuthService:
         refresh_token_hash = self.security_manager.hash_refresh_token(refresh_token)
         refresh_key = self._get_refresh_token_key(refresh_token_hash)
 
-        # get user_id before deleting token
         user_id_str = await self.redis_manager.client.get(refresh_key)
         if user_id_str:
             user_id = int(user_id_str)
@@ -298,7 +292,6 @@ class AuthService:
         user_id = int(user_id_str)
         user = await self.user_repo.get_by_id_with_tier(user_id)
 
-        # issue new token pair (creates new refresh token)
         tokens = await self._issue_auth_token_pair(user)
 
         # invalidate old refresh token
@@ -318,17 +311,14 @@ class AuthService:
 
         sessions_key = self._get_user_sessions_key(user_id)
 
-        # get all refresh token hashes for this user
         token_hashes = await self.redis_manager.client.smembers(sessions_key)  # type: ignore https://github.com/redis/redis-py/issues/3169
 
         if token_hashes:
-            # delete all refresh tokens
             keys_to_delete = [
                 self._get_refresh_token_key(token_hash) for token_hash in token_hashes
             ]
             await self.redis_manager.client.delete(*keys_to_delete)
 
-            # delete the sessions set
             await self.redis_manager.client.delete(sessions_key)
 
             logger.warning(
@@ -433,7 +423,6 @@ class AuthService:
         payload = await self.magic_link_service.validate_link("password_reset", token)
         password_reset_payload = PasswordResetPayload(**payload)
 
-        # update password in DB
         user = await self.user_repo.update_password(
             password_reset_payload.user_id, new_password.get_secret_value()
         )

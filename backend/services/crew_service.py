@@ -140,6 +140,7 @@ class CrewService:
 
     async def remove_user_from_crew(self, user_id: int, crew_id: int):
         """Remove a user from a crew and handle their allocated spots"""
+
         membership = await self.crew_repo.get_membership(crew_id, user_id)
 
         if not membership:
@@ -159,17 +160,18 @@ class CrewService:
                 await self.session.commit()
 
                 logger.info(
-                    "Member removed from crew",
+                    "Member and their associated spots removed from crew",
                     extra={
                         "user_id": user_id,
                         "crew_id": crew_id,
+                        "spots_removed": len(spots),
                     },
                 )
 
             case "owner":
                 # TODO: decide on crew owner migration or removing crew and reallocating surf spots
                 logger.info(
-                    "Owner left crew, crew deleted",
+                    "Owner left crew",
                     extra={
                         "user_id": user_id,
                         "crew_id": crew_id,
