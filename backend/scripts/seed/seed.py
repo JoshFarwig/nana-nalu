@@ -18,39 +18,58 @@ class SeedManager:
         self.settings = settings
         self.db_manager = SyncDatabaseManager(settings.db)
 
-    def seed_tiers(self):
-        """Seed tiers and return the default tier"""
+    def seed_tiers(self) -> int:
+        """Seed tiers and return the default tier ID"""
         with self.db_manager.auto_commit_session() as session:
             account_tier_repo = SyncAccountTierRepository(session)
-            account_tier_repo.create_defaults()
 
-            free_tier = account_tier_repo.get_by_name("free")
-
-            return free_tier
+            # Try to get existing free tier first
+            try:
+                free_tier = account_tier_repo.get_by_name("free")
+                logger.info("Account tiers already exist, skipping creation")
+                return free_tier.id
+            except Exception:
+                # Tiers don't exist, create them
+                account_tier_repo.create_defaults()
+                free_tier = account_tier_repo.get_by_name("free")
+                return free_tier.id
 
     def seed_admin(self, free_tier_id: int) -> int:
         """Seed admin user and return ID."""
 
         with self.db_manager.auto_commit_session() as session:
             user_repo = SyncUserRepository(session, self.settings)
-            admin_user = user_repo.create(
-                user_data={
-                    "tier_id": free_tier_id,
-                    "username": self.settings.api.admin_username.get_secret_value(),
-                    "email": self.settings.api.admin_email.get_secret_value(),
-                    "first_name": self.settings.api.admin_name,
-                    "last_name": self.settings.api.admin_name,
-                    "password": self.settings.api.admin_password.get_secret_value(),
-                    "is_admin": True,
-                }
-            )
-            session.flush()
 
-            logger.info(
-                "Seeded admin user",
-                extra={"id": admin_user.id},
-            )
-            return admin_user.id
+            # Try to get existing admin user first
+            try:
+                admin_user = user_repo.get_by_username(
+                    self.settings.api.admin_username.get_secret_value()
+                )
+                logger.info(
+                    "Admin user already exists, skipping creation",
+                    extra={"id": admin_user.id},
+                )
+                return admin_user.id
+            except Exception:
+                # Admin doesn't exist, create it
+                admin_user = user_repo.create(
+                    user_data={
+                        "tier_id": free_tier_id,
+                        "username": self.settings.api.admin_username.get_secret_value(),
+                        "email": self.settings.api.admin_email.get_secret_value(),
+                        "first_name": self.settings.api.admin_name,
+                        "last_name": self.settings.api.admin_name,
+                        "password": self.settings.api.admin_password.get_secret_value(),
+                        "is_admin": True,
+                    }
+                )
+                session.flush()
+
+                logger.info(
+                    "Seeded admin user",
+                    extra={"id": admin_user.id},
+                )
+                return admin_user.id
 
     def seed_demo_surf_spots(self, admin_user_id: int) -> None:
         """Seed initial demo surf spots based on enabled locations."""
@@ -83,8 +102,8 @@ class SeedManager:
         """Main seeding method, applies all seed methods defined"""
 
         try:
-            free_tier = self.seed_tiers()
-            admin_user_id = self.seed_admin(free_tier.id)
+            free_tier_id = self.seed_tiers()
+            admin_user_id = self.seed_admin(free_tier_id)
             self.seed_demo_surf_spots(admin_user_id)
         except Exception as e:
             logger.exception("Error seeding database", extra={"error": str(e)})

@@ -31,6 +31,7 @@ class APIConfig(BaseModel):
 
     resend_api_key: SecretStr
     app_url: str  # front-end url for token redirect
+
     # TODO: register valid from_email w/ domain?
     # for now using my email
     from_email: str = "noreply@nananalu.com"

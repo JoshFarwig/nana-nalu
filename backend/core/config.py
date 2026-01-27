@@ -1,7 +1,7 @@
 """
 Application configuration for different services.
 
-Each service (API, Worker, Scheduler) has its own settings class that defines
+Each service (API, Worker, Scheduler, Prefect) has its own settings class that defines
 only the configuration it needs. Environment-specific settings (local, dev, prod)
 are handled via docker-compose env_file or exported environment variables.
 
@@ -10,11 +10,14 @@ Usage:
     from core.config import load_settings
     settings = load_settings("api")
 
-    # In Worker service (workers/worker_app.py)
+    # In Celery Worker service (workers/worker_app.py)
     settings = load_settings("worker")
 
-    # In Scheduler services (workers/beat_app.py, workers/flower_app.py)
+    # In Celery Scheduler services (workers/beat_app.py, workers/flower_app.py)
     settings = load_settings("scheduler")
+
+    # In Prefect flows (prefect/nomads/orchestration.py)
+    settings = load_settings("prefect")
 """
 
 from functools import lru_cache
@@ -89,6 +92,30 @@ class SchedulerSettings(BaseSettings):
     celery: CeleryConfig = CeleryConfig()
 
 
+class PrefectSettings(BaseSettings):
+    """
+    Configuration for Prefect worker service.
+
+    Requires: Database (async), Redis (async), HTTP client (async)
+    Does NOT require: Celery config, API config
+
+    Similar to WorkerSettings but without Celery dependency.
+    Used for the Celery → Prefect migration.
+    """
+
+    model_config = SettingsConfigDict(
+        frozen=True,
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        env_nested_max_split=1,
+        extra="ignore",
+    )
+
+    db: DatabaseConfig
+    redis: RedisConfig
+    http: HTTPConfig = HTTPConfig()
+
+
 # ============================================================================
 # Settings Factory with Type-Safe Overloads
 # ============================================================================
@@ -108,10 +135,14 @@ def load_settings(service_type: Literal["worker"]) -> WorkerSettings: ...
 def load_settings(service_type: Literal["scheduler"]) -> SchedulerSettings: ...
 
 
+@overload
+def load_settings(service_type: Literal["prefect"]) -> PrefectSettings: ...
+
+
 @lru_cache
 def load_settings(
-    service_type: Literal["api", "worker", "scheduler"] = "api",
-) -> Union[APISettings, WorkerSettings, SchedulerSettings]:
+    service_type: Literal["api", "worker", "scheduler", "prefect"] = "api",
+) -> Union[APISettings, WorkerSettings, SchedulerSettings, PrefectSettings]:
     """
     Load application settings based on service type.
 
@@ -120,7 +151,7 @@ def load_settings(
     - Local: Exported environment variables or .env.local file
 
     Args:
-        service_type: Type of service ("api", "worker", or "scheduler").
+        service_type: Type of service ("api", "worker", "scheduler", or "prefect").
                      Determines which configuration fields are required.
 
     Returns:
@@ -138,6 +169,7 @@ def load_settings(
         "api": APISettings,
         "worker": WorkerSettings,
         "scheduler": SchedulerSettings,
+        "prefect": PrefectSettings,
     }
 
     ConfigClass = service_map[service_type]

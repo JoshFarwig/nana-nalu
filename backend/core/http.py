@@ -121,7 +121,6 @@ class AsyncHTTPManager:
     async def delete(self, url: str, **kwargs) -> httpx.Response:
         return await self._request("DELETE", url, **kwargs)
 
-    @async_retry_on_failure
     async def download_stream(
         self,
         url: str,
@@ -319,7 +318,6 @@ class SyncHTTPManager:
     def delete(self, url: str, **kwargs) -> httpx.Response:
         return self._request("DELETE", url, **kwargs)
 
-    @sync_retry_on_failure
     def download_stream(
         self,
         url: str,

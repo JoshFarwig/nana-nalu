@@ -1,3 +1,7 @@
+-- NOTE: defensive connect incase scripts are reordered, database name is hard
+-- coded though, change to DB__NAME if issues arise with PostGIS on init
+\c nn_db
+
 CREATE EXTENSION IF NOT EXISTS postgis; 
 
 -- -- Potentially useful extensions for advanced spatial queries and data types

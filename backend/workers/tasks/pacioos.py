@@ -11,7 +11,7 @@ from workers.signals import (
 
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 from services.forecast.providers.pacioos.provider import PacIOOSProvider
-from services.forecast.providers.pacioos.config import (
+from services.forecast.pacioos_config import (
     PacIOOSModel,
     get_pacioos_config,
     get_enabled_regions_for_model,

@@ -11,7 +11,7 @@ class AccountTier(Base, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "max_active_spots IS NULL AND spot_quota IS NULL OR max_active_spots <= spot_quota",
+            "max_active_spots IS NULL AND spots_quota IS NULL OR max_active_spots <= spots_quota",
             name="max_active_spots_within_quota",
         ),
     )
@@ -38,7 +38,7 @@ DEFAULT_TIERS = {
     "free": {
         "name": "free",
         "display_name": "Free",
-        "spot_quota": 5,
+        "spots_quota": 5,
         "max_active_spots": 3,
         "max_crews": 1,
         "max_crew_members": 3,

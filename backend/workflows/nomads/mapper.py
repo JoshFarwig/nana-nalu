@@ -1,5 +1,3 @@
-import logging
-
 from services.forecast.forecast_schema import (
     GridMetadata,
     TideData,
@@ -10,8 +8,6 @@ from services.forecast.forecast_schema import (
     ForecastModel,
     ProviderForecast,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def map_nwps_forecast(

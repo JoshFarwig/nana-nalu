@@ -42,6 +42,9 @@ services:
         - action: sync+restart
           path: ./backend/migrations
           target: /backend/migrations
+        - action: sync
+          path: ./backend/alembic
+          target: /backend/alembic
         - action: sync+restart
           path: ./backend/core
           target: /backend/core
@@ -54,62 +57,41 @@ services:
           path: ./backend/uv.lock
     networks: [nn_network]
 
-  worker:
-    container_name: nn_worker_dev
-    image: nn_worker:dev
+  prefect-server:
+    container_name: nn_prefect_server_dev
+    ports:
+      - "127.0.0.1:${PREFECT__H_PORT:-4200}:${PREFECT__PORT:-4200}"
+    networks: [nn_network]
+
+  prefect-worker:
+    container_name: nn_prefect_worker_dev
+    image: nn_prefect_worker:dev
+    environment:
+      # Override to use dev container name for clarity, but service name also works
+      PREFECT_API_URL: http://prefect-server:${PREFECT__PORT:-4200}/api
     develop:
       watch:
         - action: sync+restart
-          path: ./backend/workers
-          target: /backend/workers
+          path: ./backend/workflows
+          target: /backend/workflows
         - action: sync+restart
           path: ./backend/services
           target: /backend/services
         - action: sync+restart
-          path: ./backend/core
-          target: /backend/core
-        - action: sync+restart
-          path: ./backend/utils
-          target: /backend/utils
-        - action: rebuild
-          path: ./backend/pyproject.toml
-        - action: rebuild
-          path: ./backend/uv.lock
-    networks: [nn_network]
-
-  beat:
-    container_name: nn_beat_dev
-    image: nn_beat:dev
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./backend/workers
-          target: /backend/workers
+          path: ./backend/models
+          target: /backend/models
+        - action: sync
+          path: ./backend/alembic
+          target: /backend/alembic
         - action: sync+restart
           path: ./backend/core
           target: /backend/core
         - action: sync+restart
           path: ./backend/utils
           target: /backend/utils
-        - action: rebuild
-          path: ./backend/pyproject.toml
-        - action: rebuild
-          path: ./backend/uv.lock
-    networks: [nn_network]
-
-  flower:
-    container_name: nn_flower_dev
-    image: nn_flower:dev
-    ports:
-      - "${FLOWER__H_PORT:-5555}:5555"
-    develop:
-      watch:
         - action: sync+restart
-          path: ./backend/workers
-          target: /backend/workers
-        - action: sync+restart
-          path: ./backend/core
-          target: /backend/core
+          path: ./backend/repositories
+          target: /backend/repositories
         - action: rebuild
           path: ./backend/pyproject.toml
         - action: rebuild

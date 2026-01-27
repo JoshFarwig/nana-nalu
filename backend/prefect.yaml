@@ -1,0 +1,81 @@
+# Prefect deployment configuration
+# Mirrors the Celery beat schedule from workers/celery_app.py
+#
+# Usage:
+#   1. Create work pool: prefect work-pool create forecasts --type process
+#   2. Deploy flows:     prefect deploy --all
+#   3. Start worker:     prefect worker start --pool forecasts
+#
+# Or deploy specific flows:
+#   prefect deploy -n nwps-orchestration
+#   prefect deploy -n tide-mhi-orchestration
+
+name: nana-nalu-workflows
+
+# Build configuration - how to prepare the flow code
+build: null  # No build step needed for local execution
+
+# Push configuration - where to store the code
+push: null  # No push step needed for local execution
+
+# Pull configuration - how to retrieve the code for execution
+pull:
+  - prefect.deployments.steps.set_working_directory:
+      directory: /backend  # Container working directory
+
+# Deployment definitions
+deployments:
+  # =========================
+  # NOMADS NWPS - 3x daily polling for unpredictable model run times
+  # =========================
+  - name: nwps-orchestration
+    description: |
+      NOMADS NWPS forecast ETL pipeline.
+      Polls 3x daily to catch model runs with unpredictable completion times.
+      HFO timing: early run ~7-9:30 UTC, late run ~17-20 UTC.
+    entrypoint: workflows/nomads/nwps/flow.py:orchestrate_nwps_forecasts
+    work_pool:
+      name: forecasts
+    schedules:
+      # Morning poll - catches early HFO run (completes ~7-9:30 UTC)
+      - slug: nwps-poll-morning
+        cron: "0 10 * * *"
+        timezone: UTC
+        active: true
+      # Midday poll - catches any straggling forecasts
+      - slug: nwps-poll-midday
+        cron: "0 14 * * *"
+        timezone: UTC
+        active: true
+      # Evening poll - catches late HFO run (completes ~17-20 UTC)
+      - slug: nwps-poll-evening
+        cron: "0 21 * * *"
+        timezone: UTC
+        active: true
+    tags:
+      - forecasts
+      - nomads
+      - nwps
+
+  # =========================
+  # PacIOOS Tide MHI - weekly refresh
+  # Pre-computed harmonic predictions extend to Dec 2026
+  # =========================
+  - name: tide-mhi-orchestration
+    description: |
+      PacIOOS Tide MHI forecast ETL pipeline.
+      Weekly refresh for pre-computed tidal predictions.
+      Data extends through December 2026.
+    entrypoint: workflows/pacioos/tide_mhi/flow.py:orchestrate_tide_forecasts
+    work_pool:
+      name: forecasts
+    schedules:
+      # Weekly on Sundays at 6:00 UTC
+      - slug: tide-weekly
+        cron: "0 6 * * 0"
+        timezone: UTC
+        active: true
+    tags:
+      - forecasts
+      - pacioos
+      - tide

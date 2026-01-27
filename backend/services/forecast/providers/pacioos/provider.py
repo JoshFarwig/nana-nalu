@@ -8,12 +8,12 @@ import xarray as xr
 from core.http import SyncHTTPManager
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 from services.forecast.forecast_schema import ProviderForecast
-from services.forecast.providers.pacioos.config import (
+from services.forecast.pacioos_config import (
     PacIOOSModel,
     PacIOOSModelConfig,
     PACIOOS_CONFIG_REGISTRY,
 )
-from services.forecast.providers.pacioos.mapper import (
+from workflows.pacioos.mapper import (
     map_pacioos_tide_forecast,
     map_pacioos_swan_forecast,
     map_pacioos_wrf_forecast,

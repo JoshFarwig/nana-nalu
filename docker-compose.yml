@@ -3,8 +3,24 @@
 #   dev: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #   prod: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
 
+x-db-env: &db-env
+  DB__HOST: ${DB__HOST}
+  DB__PORT: ${DB__PORT}
+  DB__USERNAME: ${DB__USERNAME}
+  DB__PASSWORD: ${DB__PASSWORD}
+  DB__NAME: ${DB__NAME}
+
+x-redis-env: &redis-env
+  REDIS__HOST: ${REDIS__HOST}
+  REDIS__PORT: ${REDIS__PORT}
+  REDIS__PASSWORD: ${REDIS__PASSWORD}
+
+x-common-env: &common-env
+  ENV: ${ENV}
+  REGIONS: ${REGIONS}
+
 services:
-  # TODO: add timescale db for historical data
+  # TODO: convert to timescale db for historical data?
   db:
     build:
       context: ./db
@@ -53,22 +69,15 @@ services:
       dockerfile: Dockerfile.dev
       target: api
     environment:
-      ENV: ${ENV}
-      REGIONS: ${REGIONS}
+      <<: [*common-env, *db-env, *redis-env]
       # use __ nested env delimiter syntax for nested pydantic-settings objects
       # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12
       API__ADMIN_USERNAME: ${API__ADMIN_USERNAME}
       API__ADMIN_PASSWORD: ${API__ADMIN_PASSWORD}
       API__ADMIN_EMAIL: ${API__ADMIN_EMAIL}
       API__JWT_SECRET_KEY: ${API__JWT_SECRET_KEY}
-      DB__HOST:  ${DB__HOST}
-      DB__PORT: ${DB__PORT}
-      DB__USERNAME:  ${DB__USERNAME}
-      DB__PASSWORD:  ${DB__PASSWORD}
-      DB__NAME: ${DB__NAME}
-      REDIS__HOST: ${REDIS__HOST}
-      REDIS__PORT:  ${REDIS__PORT}
-      REDIS__PASSWORD: ${REDIS__PASSWORD}
+      API__RESEND_API_KEY: ${API__RESEND_API_KEY}
+      API__APP_URL: ${API__APP_URL}
     depends_on:
       db:
         condition: service_healthy
@@ -83,83 +92,43 @@ services:
       retries: 3
       start_period: 15s
 
-  # TODO: phase out celery to prefet setup 
   prefect-server:
-    environment: 
-      PREFECT_RESULTS_PERSIST_BY_DEFAULT: true
-    depends_on: 
-      db: 
-        condition: service_healthy 
-    restart: always 
-    network: [nn_network] 
+    image: prefecthq/prefect:3-python3.12
+    environment:
+      PREFECT_API_URL: http://prefect-server:${PREFECT__PORT:-4200}/api
+      PREFECT_UI_API_URL: http://127.0.0.1:${PREFECT__H_PORT:-4200}/api
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: postgresql+asyncpg://${DB__USERNAME}:${DB__PASSWORD}@${DB__HOST}:${DB__PORT}/prefect
+      PREFECT_RESULTS_PERSIST_BY_DEFAULT: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    networks: [nn_network]
+    command: prefect server start --host 0.0.0.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
-  worker:
+  prefect-worker:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
       target: worker
     environment:
-      ENV: ${ENV}
-      REGIONS: ${REGIONS}
-      DB__HOST: ${DB__HOST}
-      DB__PORT: ${DB__PORT}
-      DB__USERNAME: ${DB__USERNAME}
-      DB__PASSWORD: ${DB__PASSWORD}
-      DB__NAME: ${DB__NAME}
-      REDIS__HOST: ${REDIS__HOST}
-      REDIS__PORT: ${REDIS__PORT}
-      REDIS__PASSWORD: ${REDIS__PASSWORD}
+      <<: [*common-env, *db-env, *redis-env]
+      PREFECT_API_URL: http://prefect-server:${PREFECT__PORT:-4200}/api
+      POOL_NAME: forecasts
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      prefect-server:
+        condition: service_healthy
     restart: always
-    networks: [nn_network]
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A workers.worker_app inspect ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.dev
-      target: beat
-    environment:
-      ENV: ${ENV}
-      REGIONS: ${REGIONS}
-      REDIS__HOST: ${REDIS__HOST}
-      REDIS__PORT: ${REDIS__PORT}
-      REDIS__PASSWORD: ${REDIS__PASSWORD}
-    depends_on:
-      redis:
-        condition: service_healthy
-      worker:
-        condition: service_healthy
-    # NOTE: not really sure what the best protocol is for a healthcheck to make sure
-    # a celery beat is running properly. could create task the container issues via
-    # the beat, but seems overly complicated as of now. look into it later.
-    restart: always
-    networks: [nn_network]
-
-  flower:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.dev
-      target: flower
-    environment:
-      ENV: ${ENV}
-      REDIS__HOST: ${REDIS__HOST}
-      REDIS__PORT: ${REDIS__PORT}
-      REDIS__PASSWORD: ${REDIS__PASSWORD}
-    depends_on:
-      redis:
-        condition: service_healthy
-      worker:
-        condition: service_healthy
     networks: [nn_network]
 
 volumes:

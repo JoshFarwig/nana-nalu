@@ -29,9 +29,8 @@ if config.config_file_name is not None:
 from models.base_model import Base
 
 # IMPORTANT: import all your models so they register with Base.metadata
-from models.user_model import User
-from models.surf_spot_model import SurfSpot
-from models.spot_observation_model import SpotObservation
+# Import from models package to get all models in correct dependency order
+import models  # noqa: F401
 
 target_metadata = Base.metadata
 

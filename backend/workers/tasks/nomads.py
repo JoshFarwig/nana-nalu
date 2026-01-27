@@ -13,7 +13,7 @@ from workers.signals import (
 from repositories.surf_spot_repository import SyncSurfSpotRepository
 
 from services.forecast.providers.nomads.provider import NOMADSProvider
-from services.forecast.providers.nomads.config import (
+from services.forecast.nomads_config import (
     get_enabled_regions_for_model,
     get_nomads_config,
     NOMADSModel,

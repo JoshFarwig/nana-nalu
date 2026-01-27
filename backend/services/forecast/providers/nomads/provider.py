@@ -8,12 +8,12 @@ import numpy as np
 
 from core.http import SyncHTTPManager
 from repositories.surf_spot_repository import SyncSurfSpotRepository
-from services.forecast.providers.nomads.config import (
+from services.forecast.nomads_config import (
     NWPSConfig,
     NOMADSModel,
     NOMADS_CONFIG_REGISTRY,
 )
-from services.forecast.providers.nomads.mapper import map_nwps_forecast
+from workflows.nomads.mapper import map_nwps_forecast
 from services.forecast.forecast_schema import ProviderForecast
 from utils.geo_validation import longitude_to_360
 from utils.geo_spatial import build_forecast_kdtree, query_nearest_forecast_points

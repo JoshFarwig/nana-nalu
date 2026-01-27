@@ -1,12 +1,12 @@
 # production environment overrides
 # usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
-# NOTE: my personal preference is to keep a host port for production on the loopback 
-# address of the machine for vpn / ssh management running the docker application so that 
+# NOTE: my personal preference is to keep a host port for production on the loopback
+# address of the machine for vpn / ssh management running the docker application so that
 # direct access to containers is possible via ssh. if you have others accessing your machine
 # via ssh and prefer complete isolation of the docker environment for security purposes, swap
-# ports: 
-#   - "127.0.0.1:..." 
+# ports:
+#   - "127.0.0.1:..."
 # with
 # expose:
 # ${SERVICE__PORT:-default_port}
@@ -15,7 +15,7 @@ services:
   db:
     container_name: nn_db_prod
     image: nn_db:prod
-    ports: 
+    ports:
       - "127.0.0.1:${DB__H_PORT:-5432}:${DB__PORT:-5432}"
     networks: [nn_network]
 
@@ -34,26 +34,21 @@ services:
     image: nn_api:prod
     ports:
       - "127.0.0.1:${API__H_PORT:-8000}:${API__PORT:-8000}"
-    networks: [nn_network] 
+    networks: [nn_network]
 
-  worker: 
-    container_name: nn_worker_prod 
-    build: 
-      dockerfile: Dockerfile.prod
-      target: worker
-    image: nn_worker:prod
-    networks: [nn_network] 
+  prefect-server:
+    container_name: nn_prefect_server_prod
+    ports:
+      - "127.0.0.1:${PREFECT__H_PORT:-4200}:${PREFET__PORT:-4200}"
+    networks: [nn_network]
 
-  beat: 
-    container_name: nn_beat_prod 
-    build: 
-      dockerfile: Dockerfile.prod
-      target: beat
-    image: nn_beat:prod
-    networks: [nn_network] 
-    
-networks: 
-  nn_network: 
+  prefect-worker:
+    container_name: nn_prefect_worker_prod
+    image: nn_prefect_worker:prod
+    environment: 
+      PREFECT_API_URL: http://nn_prefect_server_prod:${PREFECT__PORT:-4200}/api
+    networks: [nn_network]
+
+networks:
+  nn_network:
     name: nn_prod_network
-  
-

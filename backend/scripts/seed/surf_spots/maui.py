@@ -12,7 +12,7 @@ def get_maui_spots(admin_user_id: int) -> list[SurfSpot]:
             region=Region.MAUI.value,
             is_active=True,
             is_demo=True,
-            created_by_id=admin_user_id,
+            user_id=admin_user_id,
         ),
         SurfSpot(
             name="Honolua Bay (Point)",
@@ -21,7 +21,7 @@ def get_maui_spots(admin_user_id: int) -> list[SurfSpot]:
             region=Region.MAUI.value,
             is_active=True,
             is_demo=True,
-            created_by_id=admin_user_id,
+            user_id=admin_user_id,
         ),
         SurfSpot(
             name="Dumps",
@@ -30,7 +30,7 @@ def get_maui_spots(admin_user_id: int) -> list[SurfSpot]:
             region=Region.MAUI.value,
             is_active=True,
             is_demo=True,
-            created_by_id=admin_user_id,
+            user_id=admin_user_id,
         ),
     ]
 

@@ -41,10 +41,10 @@ ENTRYPOINT []
 CMD ["uvicorn", "api.v1.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # ==============================================================================
-# Worker service (with eccodes support)
-# Built directly in worker stage rather than separate build stage to avoid
+# Prefect Worker service (with eccodes support)
+# Replaces: Celery worker + beat + flower (3 containers → 1)
+# Built directly in this stage rather than separate build stage to avoid
 # cross-stage contamination of Python environment during COPY operations.
-# The single RUN command keeps layers efficient while cleanup removes build tools.
 # ==============================================================================
 FROM base as worker
 
@@ -56,8 +56,8 @@ RUN chmod +x /tmp/build_eccodes_arm64.sh && \
   TARGETOS=$TARGETOS TARGETARCH=$TARGETARCH /tmp/build_eccodes_arm64.sh && \
   rm /tmp/build_eccodes_arm64.sh
 
-# set eccodes environment for findlibs to locate system library 
-# must be in /usr/local or cMake install will corrupt uv's python 
+# set eccodes environment for findlibs to locate system library
+# must be in /usr/local or cMake install will corrupt uv's python
 # build
 # See: https://github.com/ecmwf/findlibs
 ENV ECCODES_DIR=/usr/local
@@ -75,52 +75,11 @@ RUN groupadd -r appuser && \
 ENV PATH="/backend/.venv/bin:$PATH" \
   PYTHONPATH=/backend
 
-USER appuser
-ENTRYPOINT []
-CMD ["celery", "-A", "workers.worker_app", "worker", \
-  "-Q", "forecasts,celery", \
-  "--loglevel=info", \
-  "--pool=prefork", \
-  "--concurrency=2"]
-
-# ==============================================================================
-# Beat service
-# ==============================================================================
-FROM base as beat
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-  uv sync --group beat
-
-# create non-root user and transfer ownership
-RUN groupadd -r appuser && \
-  useradd -r -g appuser appuser && \
-  chown -R appuser:appuser /backend
-
-ENV PATH="/backend/.venv/bin:$PATH" \
-  PYTHONPATH=/backend
+# Copy and prepare entrypoint script
+COPY scripts/prefect_worker_entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 USER appuser
 ENTRYPOINT []
-# TODO: consider if schedule file persistence is needed via a volume? probably not for 
-# current use case, would need to give write perms for the volume
-CMD ["celery", "-A", "workers.beat_app", "beat", "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"]
-
-# ==============================================================================
-# Flower service
-# ==============================================================================
-FROM base as flower
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-  uv sync --group flower
-
-# create non-root user and transfer ownership
-RUN groupadd -r appuser && \
-  useradd -r -g appuser appuser && \
-  chown -R appuser:appuser /backend
-
-ENV PATH="/backend/.venv/bin:$PATH" \
-  PYTHONPATH=/backend
-
-USER appuser
-ENTRYPOINT []
-CMD ["celery", "-A", "workers.flower_app", "flower", "--port=5555"]
+# Entrypoint: waits for server, creates work pool, deploys flows, starts worker
+CMD ["/entrypoint.sh"]

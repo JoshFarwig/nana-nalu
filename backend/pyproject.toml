@@ -6,12 +6,14 @@ readme = "README.md"
 requires-python="~=3.12.10"
 # minimal shared dependencies - only what ALL services need
 # config loading, logging, and HTTP client used across services
+
 dependencies = [
   "pydantic~=2.12.4",
   "pydantic-settings~=2.12.0",
   "pyYAML~=6.0.3",
   "python-json-logger~=4.0.0",
   "httpx~=0.28.1",
+  "aiofiles>=25.1.0",
 ]
 
 
@@ -37,13 +39,11 @@ api = [
 # TODO: remove celery packages and rename to prefect
 worker = [
   "prefect~=3.6.13",
-  "celery~=5.5.3",
   "redis~=7.0.1",
   "sqlalchemy[asyncio]~=2.0.44",
   "geoalchemy2~=0.18.0",
   "psycopg2-binary>=2.9.0",
   "numpy>=2.3.4",
-  "aiofiles>=25.1.0",
   "xarray>=2025.10.1",
   "cfgrib>=0.9.15.1",
   "scipy>=1.16.3",
@@ -53,19 +53,8 @@ worker = [
   "netcdf4>=1.7.3",
   "dask>=2025.12.0",
 ]
-# beat scheduler - minimal dependencies, only schedules tasks
-# uses lazy loading (task names only), no SQLAlchemy or scientific deps
-beat = [
-  "celery~=5.5.3",
-  "redis~=7.0.1",
-]
-# flower monitor - web UI for Celery monitoring
-# uses lazy loading (task names only), no SQLAlchemy or scientific deps
-flower = [
-  "celery~=5.5.3",
-  "flower>=2.0.0",
-  "redis~=7.0.1",
-]
+
+
 dev = [ 
   "scipy-stubs>=1.16.3.0", # for scipy import or type issues,
   "ruff>=0.1.0",
