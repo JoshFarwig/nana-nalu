@@ -59,8 +59,9 @@ class NWPSConfig(BaseModel):
     # https://www.nco.ncep.noaa.gov/pmb/spa/nwps/status_file.txt
     # can be used for additional run status verification if needed
 
-    # maximum age of forecast data to accept before considering it stale
-    # used by polling system to skip fetching old runs
+    # maximum age of forecast data to accept before considering it stale.
+    # applies uniformly to all scenarios (normal operation and cold starts).
+    # should be set based on model run frequency + missed run tolerance.
 
     max_forecast_age_hours: int = 6
     grib_filter_base_url: str
@@ -190,10 +191,11 @@ class MauiNWPSConfig(NWPSConfig):
     # observed patterns: early run finishes ~7-9:30 UTC, late run finishes ~17-20 UTC
     # polling system checks 3x daily to catch both runs regardless of timing
 
-    # maximum age of forecast data to accept
-    # HFO runs twice daily (~12h gaps), so 18h allows for one missed run + buffer
+    # maximum age of forecast data to accept (all scenarios including cold starts)
+    # HFO runs twice daily (~12h gaps). 24hrs allows for one missed run cycle.
+    # separate schedule handles missed run recovery if needed.
 
-    max_forecast_age_hours: int = 18
+    max_forecast_age_hours: int = 24
 
     max_nearest_neighbor_distance_km: float = 2.0
     grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl"

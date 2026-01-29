@@ -32,9 +32,47 @@ class ContextFilter(logging.Filter):
         return True
 
 
-# TODO: make a context filter for celery tasks?
-class CeleryTaskContextFilter(logging.Filter):
-    pass
+class PrefectContextFilter(logging.Filter):
+    """
+    Inject Prefect flow/task context into log records.
+
+    Uses Prefect's runtime context to automatically add:
+    - flow_name: Current flow name (if in a flow)
+    - flow_run_id: Short flow run ID (first 8 chars)
+    - task_name: Current task name (if in a task)
+    - task_run_id: Short task run ID (first 8 chars)
+
+    Also supports dynamic context via log_context() context manager.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Try to get Prefect context (lazy import to avoid circular deps)
+        try:
+            from prefect.context import get_run_context
+            from prefect.context import TaskRunContext, FlowRunContext
+
+            ctx = get_run_context()
+
+            if isinstance(ctx, FlowRunContext):
+                record.flow_name = ctx.flow.name
+                record.flow_run_id = str(ctx.flow_run.id)[:8]
+            elif isinstance(ctx, TaskRunContext):
+                record.task_name = ctx.task.name
+                record.task_run_id = str(ctx.task_run.id)[:8]
+                # Task runs also have parent flow context
+                if ctx.task_run.flow_run_id:
+                    record.flow_run_id = str(ctx.task_run.flow_run_id)[:8]
+        except Exception:
+            # Not in a Prefect context, that's fine
+            pass
+
+        # dynamic context via log_context() still works
+        context = _log_context.get()
+        if context is not None:
+            for key, value in context.items():
+                setattr(record, key, value)
+
+        return True
 
 
 @contextmanager

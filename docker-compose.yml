@@ -120,6 +120,8 @@ services:
     environment:
       <<: [*common-env, *db-env, *redis-env]
       PREFECT_API_URL: http://prefect-server:${PREFECT__PORT:-4200}/api
+      PREFECT_HOME: /backend/.prefect
+      PREFECT_LOGGING_SETTINGS_PATH: /backend/core/logging/logging.prefect.yaml
       POOL_NAME: forecasts
     depends_on:
       db:

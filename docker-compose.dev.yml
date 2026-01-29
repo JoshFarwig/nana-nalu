@@ -22,39 +22,17 @@ services:
     command: uvicorn api.v1.main:app --reload --host 0.0.0.0 --port ${API__PORT:-8000}
     ports:
       - "${API__H_PORT:-8000}:${API__PORT:-8000}"
-    develop:
-      watch:
-        - action: sync
-          path: ./backend/api
-          target: /backend/api
-        - action: sync
-          path: ./backend/schemas
-          target: /backend/schemas
-        - action: sync
-          path: ./backend/services
-          target: /backend/services
-        - action: sync+restart
-          path: ./backend/scripts
-          target: /backend/scripts
-        - action: sync+restart
-          path: ./backend/models
-          target: /backend/models
-        - action: sync+restart
-          path: ./backend/migrations
-          target: /backend/migrations
-        - action: sync
-          path: ./backend/alembic
-          target: /backend/alembic
-        - action: sync+restart
-          path: ./backend/core
-          target: /backend/core
-        - action: sync+restart
-          path: ./backend/utils
-          target: /backend/utils
-        - action: rebuild
-          path: ./backend/pyproject.toml
-        - action: rebuild
-          path: ./backend/uv.lock
+    volumes:
+      - ./backend/api:/backend/api:cached
+      - ./backend/schemas:/backend/schemas:cached
+      - ./backend/services:/backend/services:cached
+      - ./backend/scripts:/backend/scripts:cached
+      - ./backend/models:/backend/models:cached
+      - ./backend/migrations:/backend/migrations:cached
+      - ./backend/alembic:/backend/alembic:cached
+      - ./backend/core:/backend/core:cached
+      - ./backend/utils:/backend/utils:cached
+      - ./backend/repositories:/backend/repositories:cached
     networks: [nn_network]
 
   prefect-server:
@@ -67,35 +45,16 @@ services:
     container_name: nn_prefect_worker_dev
     image: nn_prefect_worker:dev
     environment:
-      # Override to use dev container name for clarity, but service name also works
       PREFECT_API_URL: http://prefect-server:${PREFECT__PORT:-4200}/api
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./backend/workflows
-          target: /backend/workflows
-        - action: sync+restart
-          path: ./backend/services
-          target: /backend/services
-        - action: sync+restart
-          path: ./backend/models
-          target: /backend/models
-        - action: sync
-          path: ./backend/alembic
-          target: /backend/alembic
-        - action: sync+restart
-          path: ./backend/core
-          target: /backend/core
-        - action: sync+restart
-          path: ./backend/utils
-          target: /backend/utils
-        - action: sync+restart
-          path: ./backend/repositories
-          target: /backend/repositories
-        - action: rebuild
-          path: ./backend/pyproject.toml
-        - action: rebuild
-          path: ./backend/uv.lock
+      PREFECT_LOGGING_SETTINGS_PATH: /backend/core/logging/logging.prefect.yaml
+    volumes:
+      - ./backend/workflows:/backend/workflows:cached
+      - ./backend/services:/backend/services:cached
+      - ./backend/models:/backend/models:cached
+      - ./backend/alembic:/backend/alembic:cached
+      - ./backend/core:/backend/core:cached
+      - ./backend/utils:/backend/utils:cached
+      - ./backend/repositories:/backend/repositories:cached
     networks: [nn_network]
 
 networks:

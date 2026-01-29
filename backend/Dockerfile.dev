@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ==============================================================================
 # API service
 # ==============================================================================
-FROM base as api
+FROM base AS api
 
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --group api
@@ -46,7 +46,7 @@ CMD ["uvicorn", "api.v1.main:app", "--host", "0.0.0.0", "--port", "8000"]
 # Built directly in this stage rather than separate build stage to avoid
 # cross-stage contamination of Python environment during COPY operations.
 # ==============================================================================
-FROM base as worker
+FROM base AS worker
 
 ARG TARGETARCH
 ARG TARGETOS

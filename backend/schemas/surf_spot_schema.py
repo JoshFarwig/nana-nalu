@@ -95,7 +95,6 @@ class SurfSpotResponse(SurfSpotBase):
     """Schema for surf spot responses with GeoJSON geometry."""
 
     id: int
-    created_by_id: int
     region: str
     geometry: dict  # GeoJSON point geometry
 

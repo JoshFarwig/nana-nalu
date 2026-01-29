@@ -12,7 +12,7 @@ class HTTPConfig(BaseModel):
     max_attempts: int = 3
 
     # async http manager settings
-    # used for fastapi
+    # used for fastapi and prefect workflows
     async_max_connections: int = 20
     async_max_keepalive_connections: int = 10
 

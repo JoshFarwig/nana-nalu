@@ -8,15 +8,14 @@ Also manages the last_run timestamp for idempotency checking.
 from datetime import timedelta
 
 from prefect import task, get_run_logger
-from redis.asyncio import Redis
 
+from workflows.resources import get_resources
 from services.forecast.forecast_schema import ProviderForecast
 
 
 @task(name="tide-mhi-load", retries=2, retry_delay_seconds=10)
 async def load(
     forecasts: dict[int, ProviderForecast],
-    redis_client: Redis,
     region: str,
     run_id: str,
     ttl_hours: int = 168,  # 7 days - matches weekly refresh cycle
@@ -29,7 +28,6 @@ async def load(
 
     Args:
         forecasts: Dictionary mapping spot_id -> ProviderForecast
-        redis_client: Async Redis client
         region: Region string (e.g., "maui")
         run_id: ISO format datetime string for this run
         ttl_hours: Time-to-live for forecast data (default 168h / 7 days)
@@ -38,6 +36,8 @@ async def load(
         Number of forecasts loaded
     """
     logger = get_run_logger()
+    resources = await get_resources()
+    redis_client = resources.redis.client
 
     if not forecasts:
         logger.warning("No forecasts to load")
@@ -71,16 +71,17 @@ async def load(
     return len(forecasts)
 
 
-async def get_last_run_time(redis_client: Redis, region: str) -> str | None:
+async def get_last_run_time(region: str) -> str | None:
     """
     Get the last successful run timestamp from Redis.
 
     Args:
-        redis_client: Async Redis client
         region: Region string (e.g., "maui")
 
     Returns:
         ISO format datetime string or None if no previous run
     """
+    resources = await get_resources()
+    redis_client = resources.redis.client
     key = f"forecast:pacioos:tide:{region}:last_run"
     return await redis_client.get(key)

@@ -6,54 +6,60 @@ Builds KDTree for nearest-neighbor matching of surf spots to grid points.
 """
 
 from pathlib import Path
+import time
 
 import numpy as np
-import xarray as xr
 from pandas import Timestamp
 from prefect import task, get_run_logger
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from repositories.surf_spot_repository import AsyncSurfSpotRepository
 from services.forecast.pacioos_config import PacIOOSModelConfig
-from utils.geo_spatial import build_forecast_kdtree, query_nearest_forecast_points
+from utils.geo_spatial import query_nearest_forecast_points
+from workflows.resources import get_resources
+from workflows.pacioos.tide_mhi.tasks.extract_sub_tasks import (
+    open_netcdf,
+    build_kdtree,
+    select_spot_data,
+)
 
 
 @task(name="tide-mhi-extract-forecasts", retries=1)
 async def extract_forecasts(
     config: PacIOOSModelConfig,
     file_path: Path,
-    session: AsyncSession,
 ) -> dict[int, dict]:
     """
     Extract raw forecasts for all surf spots within the PacIOOS grid.
 
     Process:
     1. Query surf spots within grid bounding box
-    2. Open NetCDF file with xarray
-    3. Build KDTree of valid ocean grid points
+    2. Open NetCDF file with xarray (CONCURRENT)
+    3. Build KDTree of valid ocean grid points (CONCURRENT)
     4. Nearest-neighbor search to match spots to grid cells
-    5. Extract time-series data for each matched spot
+    5. Extract time-series data for each matched spot (CONCURRENT)
 
     Args:
         config: PacIOOS model configuration
         file_path: Path to downloaded NetCDF file
-        session: Async database session for surf spot queries
 
     Returns:
         Dictionary mapping spot_id -> raw forecast data
     """
+    resources = await get_resources()
     logger = get_run_logger()
 
-    repo = AsyncSurfSpotRepository(session)
+    # Async DB query (already non-blocking)
+    async with resources.db.explicit_commit_session() as session:
+        repo = AsyncSurfSpotRepository(session)
 
-    # Get spots within grid bounds
-    spots = await repo.get_all_in_grid(
-        config.grid.lat_min,
-        config.grid.lat_max,
-        config.grid.long_min,
-        config.grid.long_max,
-        is_active=True,
-    )
+        # Get spots within grid bounds
+        spots = await repo.get_all_in_grid(
+            config.grid.lat_min,
+            config.grid.lat_max,
+            config.grid.long_min,
+            config.grid.long_max,
+            is_active=True,
+        )
 
     if not spots:
         logger.warning(f"No active spots found in grid for {config.region.value}")
@@ -61,29 +67,21 @@ async def extract_forecasts(
 
     logger.info(f"Found {len(spots)} spots in grid bounds")
 
-    # Open NetCDF dataset (native xarray, no special engine needed)
-    ds = xr.open_dataset(str(file_path))
+    # CONCURRENT: Submit to thread pool, doesn't block event loop
+    ds = open_netcdf.submit(file_path).result()  # type: ignore[misc]
 
-    logger.info(
-        "Opened NetCDF dataset",
-        extra={
-            "file": file_path.name,
-            "data_vars": list(ds.data_vars.keys()),
-            "dims": dict(ds.sizes),
-        },
-    )
-
-    # Prepare spot coordinates as numpy arrays
+    # Prepare spot coordinates as numpy arrays (fast, main thread)
     spot_ids = np.array([spot["id"] for spot in spots])
     spot_lats = np.array([spot["latitude"] for spot in spots])
     spot_lons = np.array([spot["longitude"] for spot in spots])
 
-    # Build KDTree filtering out land cells (NaN values)
-    tree, valid_lats, valid_lons = build_forecast_kdtree(
-        ds, valid_var=config.data_variables[0], time_slice={"time": 0}
-    )
+    # CONCURRENT: Submit to thread pool
+    tree, valid_lats, valid_lons = build_kdtree.submit(  # type: ignore[misc]
+        ds, config.data_variables[0]
+    ).result()
 
-    # Nearest neighbor search
+    # NN search (fast, vectorized, main thread)
+    start_time = time.perf_counter()
     selected_lats, selected_lons, distances = query_nearest_forecast_points(
         tree,
         valid_lats,
@@ -91,6 +89,15 @@ async def extract_forecasts(
         spot_lats,
         spot_lons,
         max_distance_km=config.max_nearest_neighbor_distance_km,
+    )
+    nn_search_time = time.perf_counter() - start_time
+
+    logger.info(
+        "Completed nearest neighbor search",
+        extra={
+            "num_spots": len(spot_ids),
+            "search_time_seconds": round(nn_search_time, 3),
+        },
     )
 
     # Filter spots outside max distance threshold
@@ -108,8 +115,8 @@ async def extract_forecasts(
     valid_selected_lons = selected_lons[valid_mask]
     valid_distances = distances[valid_mask]
 
-    # Build forecast dataset for valid spots
-    spot_forecast = _build_spot_forecast_dataset(
+    # CONCURRENT: Submit dataset selection to thread pool
+    spot_forecast = select_spot_data.submit(  # type: ignore[misc]
         ds,
         valid_selected_lats,
         valid_selected_lons,
@@ -117,15 +124,22 @@ async def extract_forecasts(
         spot_lats[valid_mask],
         spot_lons[valid_mask],
         valid_distances,
-    )
+    ).result()
 
-    # Build raw forecast dictionary
+    # Dictionary building (fast, main thread)
+    start_time = time.perf_counter()
     raw_forecasts = _build_forecast_dict(
         spot_forecast,
         valid_spot_ids,
         valid_selected_lats,
         valid_selected_lons,
         valid_distances,
+    )
+    dict_build_time = time.perf_counter() - start_time
+
+    logger.info(
+        "Built forecast dictionary",
+        extra={"dict_build_time_seconds": round(dict_build_time, 3)},
     )
 
     # Close datasets
@@ -140,38 +154,8 @@ async def extract_forecasts(
     return raw_forecasts
 
 
-def _build_spot_forecast_dataset(
-    ds: xr.Dataset,
-    selected_lats: np.ndarray,
-    selected_lons: np.ndarray,
-    spot_ids: np.ndarray,
-    spot_lats: np.ndarray,
-    spot_lons: np.ndarray,
-    distances: np.ndarray,
-) -> xr.Dataset:
-    """Build spot-specific forecast dataset from grid data."""
-    return (
-        ds.sel(
-            latitude=xr.DataArray(selected_lats, dims="spot"),
-            longitude=xr.DataArray(selected_lons, dims="spot"),
-        )
-        .assign_coords(
-            spot_id=("spot", spot_ids),
-            spot_lat=("spot", spot_lats),
-            spot_lon=("spot", spot_lons),
-            distance_km=("spot", distances),
-        )
-        .rename(
-            {
-                "latitude": "selected_lat",
-                "longitude": "selected_lon",
-            }
-        )
-    )
-
-
 def _build_forecast_dict(
-    spot_forecast: xr.Dataset,
+    spot_forecast,
     spot_ids: np.ndarray,
     selected_lats: np.ndarray,
     selected_lons: np.ndarray,

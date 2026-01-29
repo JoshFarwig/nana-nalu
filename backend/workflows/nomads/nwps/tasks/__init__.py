@@ -1,5 +1,3 @@
-"""NOMADS NWPS tasks for Prefect flows."""
-
 from .availability import check_availability
 from .download import download_grib2
 from .extract import extract_forecasts

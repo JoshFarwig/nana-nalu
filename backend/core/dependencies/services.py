@@ -1,7 +1,9 @@
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import APISettings
 from core.dependencies.core import (
+    get_async_db_session,
     get_async_http_manager,
     get_async_redis_manager,
     get_security_manager,
@@ -52,6 +54,7 @@ def get_auth_service(
     magic_link_service: MagicLinkService = Depends(get_magic_link_service),
     user_repo: AsyncUserRepository = Depends(get_user_repository),
     tier_repo: AsyncAccountTierRepository = Depends(get_account_tier_repository),
+    session: AsyncSession = Depends(get_async_db_session),
     settings: APISettings = Depends(get_settings),
 ) -> AuthService:
     return AuthService(
@@ -61,6 +64,7 @@ def get_auth_service(
         magic_link_service,
         user_repo,
         tier_repo,
+        session,
         settings,
     )
 
@@ -75,7 +79,16 @@ def get_forecast_service(
 def get_crew_service(
     crew_repo: AsyncCrewRepository = Depends(get_crew_repository),
     user_repo: AsyncUserRepository = Depends(get_user_repository),
+    spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
     magic_link_service: MagicLinkService = Depends(get_magic_link_service),
+    session: AsyncSession = Depends(get_async_db_session),
     settings: APISettings = Depends(get_settings),
 ) -> CrewService:
-    return CrewService(crew_repo, user_repo, magic_link_service, settings)
+    return CrewService(
+        crew_repo,
+        user_repo,
+        spot_repo,
+        magic_link_service,
+        session,
+        settings,
+    )

@@ -1,0 +1,55 @@
+# Prefect production logging configuration
+# JSON format for log aggregation (CloudWatch, Datadog, ELK, etc.)
+#
+# Usage: Set env var PREFECT_LOGGING_SETTINGS_PATH=/backend/core/logging/logging.prefect.prod.yaml
+
+version: 1
+disable_existing_loggers: False
+
+formatters:
+  json:
+    (): pythonjsonlogger.jsonlogger.JsonFormatter
+    format: "%(asctime)s %(name)s %(levelname)s %(message)s"
+    rename_fields:
+      levelname: level
+      asctime: timestamp
+
+filters:
+  prefect_context:
+    (): core.logging.filters.PrefectContextFilter
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: json
+    filters: [prefect_context]
+    stream: ext://sys.stdout
+
+loggers:
+  # Prefect's internal loggers
+  prefect:
+    level: INFO
+    handlers: [console]
+    propagate: false
+
+  prefect.flow_runs:
+    level: INFO
+    handlers: [console]
+    propagate: false
+
+  prefect.task_runs:
+    level: INFO
+    handlers: [console]
+    propagate: false
+
+  # Quieter dependencies
+  httpx:
+    level: WARNING
+
+  httpcore:
+    level: WARNING
+
+root:
+  level: INFO
+  handlers: [console]

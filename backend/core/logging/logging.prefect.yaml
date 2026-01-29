@@ -1,0 +1,56 @@
+# Prefect logging configuration
+# Uses ColoredConsoleFormatter for colored output + extra fields display
+#
+# Usage: Set env var PREFECT_LOGGING_SETTINGS_PATH=/backend/core/logging/logging.prefect.yaml
+#
+# The PrefectContextFilter injects flow/task context into logs which
+# ColoredConsoleFormatter will display in the "extra:" section.
+
+version: 1
+disable_existing_loggers: False
+
+formatters:
+  colored:
+    (): core.logging.formatters.ColoredConsoleFormatter
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    datefmt: "%H:%M:%S"
+
+filters:
+  prefect_context:
+    (): core.logging.filters.PrefectContextFilter
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: colored
+    filters: [prefect_context]
+    stream: ext://sys.stdout
+
+loggers:
+  # Prefect's internal loggers
+  prefect:
+    level: INFO
+    handlers: [console]
+    propagate: false
+
+  prefect.flow_runs:
+    level: INFO
+    handlers: [console]
+    propagate: false
+
+  prefect.task_runs:
+    level: INFO
+    handlers: [console]
+    propagate: false
+
+  # Quieter dependencies
+  httpx:
+    level: WARNING
+
+  httpcore:
+    level: WARNING
+
+root:
+  level: INFO
+  handlers: [console]

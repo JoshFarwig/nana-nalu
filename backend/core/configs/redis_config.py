@@ -20,7 +20,7 @@ class RedisConfig(BaseModel):
     conn_scheme: str = "redis"
 
     # async redis manager settings
-    # used for fastapi
+    # used for fastapi and prefect workflows
     async_max_connections: int = 8
     async_connect_timeout: int = 5
     async_socket_timeout: int = 2

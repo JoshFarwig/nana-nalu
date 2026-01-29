@@ -35,7 +35,9 @@ def transform_forecasts(
 
     region = config.region.value
     provider_forecasts = {
-        spot_id: map_pacioos_tide_forecast(spot_id, region, raw_data, config.data_summary)
+        spot_id: map_pacioos_tide_forecast(
+            spot_id, region, raw_data, config.data_summary
+        )
         for spot_id, raw_data in raw_forecasts.items()
     }
 

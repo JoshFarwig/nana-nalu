@@ -18,6 +18,8 @@ up-dev:  ## Start development environment
 	@docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev up -d 
 	@echo "$(GREEN)✓ Development environment started!$(RESET)"
 
+
+
 down-dev:  ## Stop development environment
 	@echo "$(YELLOW)Stopping development environment...$(RESET)"
 	@docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev down

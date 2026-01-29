@@ -1,24 +1,17 @@
-"""
-NOMADS availability checking task.
-
-Checks NOMADS server for latest available model run by walking backward
-from current time until finding an available run or reaching cutoff.
-"""
-
 from datetime import date, datetime, time, timedelta, timezone
-
 from prefect import task, get_run_logger
 
-from core.http import AsyncHTTPManager
 from services.forecast.nomads_config import NWPSConfig
+from core.http import AsyncHTTPManager
+
+from workflows.resources import get_resources
 
 
-@task(name="nwps-check-availability", retries=2, retry_delay_seconds=30, cache_policy=None)
+@task(name="nwps-check-availability", retries=2, retry_delay_seconds=30)
 async def check_availability(
     config: NWPSConfig,
-    http: AsyncHTTPManager,
+    max_lookback_hours: int,
     last_run_time: datetime | None = None,
-    max_lookback_hours: int = 24,
 ) -> tuple[date, time] | None:
     """
     Find the most recent available model run by checking NOMADS server.
@@ -26,11 +19,10 @@ async def check_availability(
     Searches backward from now until either:
     - Finding an available run, OR
     - Reaching the last successfully fetched run time, OR
-    - Reaching max_lookback_hours (24h default)
+    - Reaching max_lookback_hours
 
     Args:
         config: NWPS configuration for the region
-        http: Async HTTP manager for making requests
         last_run_time: Timestamp of last successful fetch (stops search here)
         max_lookback_hours: Fallback max search window if no last_run_time
 
@@ -38,6 +30,7 @@ async def check_availability(
         (forecast_date, analysis_time) tuple or None if no run available
     """
     logger = get_run_logger()
+    resources = await get_resources()
 
     now = datetime.now(timezone.utc)
 
@@ -57,7 +50,7 @@ async def check_availability(
         check_date = current.date()
         analysis_time = current.time()
 
-        if await _run_exists(config, http, check_date, analysis_time):
+        if await _run_exists(config, resources.http, check_date, analysis_time):
             logger.info(
                 f"Found available NOMADS run: {check_date} {analysis_time.strftime('%H:%M')} UTC",
                 extra={"date": str(check_date), "hour": analysis_time.hour},

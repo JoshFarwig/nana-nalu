@@ -9,17 +9,16 @@ from pathlib import Path
 
 from prefect import task, get_run_logger
 
-from core.http import AsyncHTTPManager
+from workflows.resources import get_resources
 from services.forecast.pacioos_config import PacIOOSModelConfig
 
 
-DOWNLOAD_DIR = Path("/tmp/pacioos/")
+DOWNLOAD_DIR = Path("/backend/.tmp/pacioos/")
 
 
-@task(name="tide-mhi-download-netcdf", retries=3, retry_delay_seconds=60, cache_policy=None)
+@task(name="tide-mhi-download-netcdf", retries=3, retry_delay_seconds=60)
 async def download_netcdf(
     config: PacIOOSModelConfig,
-    http: AsyncHTTPManager,
 ) -> Path:
     """
     Download NetCDF file from PacIOOS ERDDAP GridDAP service.
@@ -30,12 +29,12 @@ async def download_netcdf(
 
     Args:
         config: PacIOOS model configuration
-        http: Async HTTP manager for streaming download
 
     Returns:
         Path to downloaded NetCDF file
     """
     logger = get_run_logger()
+    resources = await get_resources()
 
     url = config.construct_griddap_url()
     filename = config.construct_filename()
@@ -48,14 +47,14 @@ async def download_netcdf(
         extra={
             "model": config.model_name.value,
             "region": config.region.value,
-            "filename": filename,
+            "netcdf_file": filename,
             "variables": config.data_variables,
             "url": url[:100] + "...",
         },
     )
 
     # 512KB chunks for 1-5MB files
-    total_bytes = await http.download_stream(
+    total_bytes = await resources.http.download_stream(
         url,
         file_path=str(file_path),
         chunk_size=512 * 1024,
@@ -64,7 +63,7 @@ async def download_netcdf(
     logger.info(
         "Download complete",
         extra={
-            "filename": filename,
+            "netcdf_file": filename,
             "size_mb": round(total_bytes / (1024 * 1024), 2),
         },
     )

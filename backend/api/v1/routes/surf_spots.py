@@ -18,7 +18,7 @@ from services.forecast.forecast_service import ForecastService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/surf_spots", tags=["surf_spots"])
+router = APIRouter(prefix="/surf-spots", tags=["surf_spots"])
 
 
 # =============================
