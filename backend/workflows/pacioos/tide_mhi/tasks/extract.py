@@ -12,7 +12,7 @@ import numpy as np
 from pandas import Timestamp
 from prefect import task, get_run_logger
 
-from repositories.surf_spot_repository import AsyncSurfSpotRepository
+from repositories.surf_spot_repository import SyncSurfSpotRepository
 from services.forecast.pacioos_config import PacIOOSModelConfig
 from utils.geo_spatial import query_nearest_forecast_points
 from workflows.resources import get_resources
@@ -24,7 +24,7 @@ from workflows.pacioos.tide_mhi.tasks.extract_sub_tasks import (
 
 
 @task(name="tide-mhi-extract-forecasts", retries=1)
-async def extract_forecasts(
+def extract_forecasts(
     config: PacIOOSModelConfig,
     file_path: Path,
 ) -> dict[int, dict]:
@@ -33,10 +33,10 @@ async def extract_forecasts(
 
     Process:
     1. Query surf spots within grid bounding box
-    2. Open NetCDF file with xarray (CONCURRENT)
-    3. Build KDTree of valid ocean grid points (CONCURRENT)
+    2. Open NetCDF file with xarray
+    3. Build KDTree of valid ocean grid points
     4. Nearest-neighbor search to match spots to grid cells
-    5. Extract time-series data for each matched spot (CONCURRENT)
+    5. Extract time-series data for each matched spot
 
     Args:
         config: PacIOOS model configuration
@@ -45,15 +45,14 @@ async def extract_forecasts(
     Returns:
         Dictionary mapping spot_id -> raw forecast data
     """
-    resources = await get_resources()
+    resources = get_resources()
     logger = get_run_logger()
 
-    # Async DB query (already non-blocking)
-    async with resources.db.explicit_commit_session() as session:
-        repo = AsyncSurfSpotRepository(session)
+    with resources.db.explicit_commit_session() as session:
+        repo = SyncSurfSpotRepository(session)
 
         # Get spots within grid bounds
-        spots = await repo.get_all_in_grid(
+        spots = repo.get_all_in_grid(
             config.grid.lat_min,
             config.grid.lat_max,
             config.grid.long_min,
@@ -67,20 +66,16 @@ async def extract_forecasts(
 
     logger.info(f"Found {len(spots)} spots in grid bounds")
 
-    # CONCURRENT: Submit to thread pool, doesn't block event loop
-    ds = open_netcdf.submit(file_path).result()  # type: ignore[misc]
+    ds = open_netcdf(file_path)
 
-    # Prepare spot coordinates as numpy arrays (fast, main thread)
+    # Prepare spot coordinates as numpy arrays
     spot_ids = np.array([spot["id"] for spot in spots])
     spot_lats = np.array([spot["latitude"] for spot in spots])
     spot_lons = np.array([spot["longitude"] for spot in spots])
 
-    # CONCURRENT: Submit to thread pool
-    tree, valid_lats, valid_lons = build_kdtree.submit(  # type: ignore[misc]
-        ds, config.data_variables[0]
-    ).result()
+    tree, valid_lats, valid_lons = build_kdtree(ds, config.data_variables[0])
 
-    # NN search (fast, vectorized, main thread)
+    # NN search (fast, vectorized)
     start_time = time.perf_counter()
     selected_lats, selected_lons, distances = query_nearest_forecast_points(
         tree,
@@ -115,8 +110,7 @@ async def extract_forecasts(
     valid_selected_lons = selected_lons[valid_mask]
     valid_distances = distances[valid_mask]
 
-    # CONCURRENT: Submit dataset selection to thread pool
-    spot_forecast = select_spot_data.submit(  # type: ignore[misc]
+    spot_forecast = select_spot_data(
         ds,
         valid_selected_lats,
         valid_selected_lons,
@@ -124,9 +118,9 @@ async def extract_forecasts(
         spot_lats[valid_mask],
         spot_lons[valid_mask],
         valid_distances,
-    ).result()
+    )
 
-    # Dictionary building (fast, main thread)
+    # Dictionary building (fast)
     start_time = time.perf_counter()
     raw_forecasts = _build_forecast_dict(
         spot_forecast,

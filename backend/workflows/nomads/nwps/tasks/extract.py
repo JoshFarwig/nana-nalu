@@ -5,7 +5,7 @@ import numpy as np
 from pandas import Timestamp
 from prefect import task, get_run_logger
 
-from repositories.surf_spot_repository import AsyncSurfSpotRepository
+from repositories.surf_spot_repository import SyncSurfSpotRepository
 from services.forecast.nomads_config import NWPSConfig
 from utils.geo_validation import longitude_to_360
 from utils.geo_spatial import query_nearest_forecast_points
@@ -18,7 +18,7 @@ from workflows.nomads.nwps.tasks.extract_sub_tasks import (
 
 
 @task(name="nwps-extract-forecasts", retries=1)
-async def extract_forecasts(
+def extract_forecasts(
     config: NWPSConfig,
     file_path: Path,
 ) -> dict[int, dict]:
@@ -27,10 +27,10 @@ async def extract_forecasts(
 
     Process:
     1. Query surf spots within grid bounding box
-    2. Open GRIB2 file with xarray/cfgrib (CONCURRENT)
-    3. Build KDTree of valid ocean grid points (CONCURRENT)
+    2. Open GRIB2 file with xarray/cfgrib
+    3. Build KDTree of valid ocean grid points
     4. Nearest-neighbor search to match spots to grid cells
-    5. Extract time-series data for each matched spot (CONCURRENT)
+    5. Extract time-series data for each matched spot
 
     Args:
         config: NWPS configuration for the region
@@ -39,13 +39,12 @@ async def extract_forecasts(
     Returns:
         Dictionary mapping spot_id -> raw forecast data
     """
-    resources = await get_resources()
+    resources = get_resources()
     logger = get_run_logger()
 
-    # Async DB query (already non-blocking)
-    async with resources.db.explicit_commit_session() as session:
-        repo = AsyncSurfSpotRepository(session)
-        spots = await repo.get_all_in_grid(
+    with resources.db.explicit_commit_session() as session:
+        repo = SyncSurfSpotRepository(session)
+        spots = repo.get_all_in_grid(
             config.grid.lat_min,
             config.grid.lat_max,
             config.grid.long_min,
@@ -59,8 +58,7 @@ async def extract_forecasts(
 
     logger.info(f"Found {len(spots)} spots in grid bounds")
 
-    # CONCURRENT: Submit to thread pool, doesn't block event loop
-    ds = open_grib.submit(file_path).result()  # type: ignore[misc]
+    ds = open_grib(file_path)
 
     # Prepare spot coordinates (fast, main thread)
     spot_ids = np.array([spot["id"] for spot in spots])
@@ -69,10 +67,9 @@ async def extract_forecasts(
         [longitude_to_360(spot["longitude"], precision=4) for spot in spots]
     )
 
-    # CONCURRENT: Submit to thread pool
-    tree, valid_lats, valid_lons = build_kdtree.submit(ds).result()  # type: ignore[misc]
+    tree, valid_lats, valid_lons = build_kdtree(ds)
 
-    # NN search (fast, vectorized, main thread)
+    # NN search (fast, vectorized)
     start_time = time.perf_counter()
     selected_lats, selected_lons, distances = query_nearest_forecast_points(
         tree,
@@ -107,8 +104,7 @@ async def extract_forecasts(
     valid_selected_lons = selected_lons[valid_mask]
     valid_distances = distances[valid_mask]
 
-    # CONCURRENT: Submit dataset selection to thread pool
-    spot_forecast = select_spot_data.submit(  # type: ignore[misc]
+    spot_forecast = select_spot_data(
         ds,
         valid_selected_lats,
         valid_selected_lons,
@@ -116,9 +112,9 @@ async def extract_forecasts(
         spot_lats[valid_mask],
         spot_lons[valid_mask],
         valid_distances,
-    ).result()
+    )
 
-    # Dictionary building (fast, main thread)
+    # Dictionary building (fast)
     start_time = time.perf_counter()
     raw_forecasts = _build_forecast_dict(
         spot_forecast,

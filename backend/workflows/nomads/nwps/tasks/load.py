@@ -14,7 +14,7 @@ from services.forecast.forecast_schema import ProviderForecast
 
 
 @task(name="nwps-load", retries=2, retry_delay_seconds=10)
-async def load(
+def load(
     forecasts: dict[int, ProviderForecast],
     region: str,
     run_id: str,
@@ -36,7 +36,7 @@ async def load(
         Number of forecasts loaded
     """
     logger = get_run_logger()
-    resources = await get_resources()
+    resources = get_resources()
     redis_client = resources.redis.client
 
     if not forecasts:
@@ -45,18 +45,18 @@ async def load(
 
     last_run_key = f"forecast:nomads:nwps:{region}:last_run"
 
-    async with redis_client.pipeline() as pipe:
+    with redis_client.pipeline() as pipe:
         for spot_id, provider_forecast in forecasts.items():
             key = f"forecast:nomads:nwps:{region}:{spot_id}"
-            await pipe.setex(
+            pipe.setex(
                 key,
                 timedelta(hours=ttl_hours),
                 provider_forecast.to_redis_json(),
             )
 
         # mark run as processed
-        await pipe.set(last_run_key, run_id)
-        await pipe.execute()
+        pipe.set(last_run_key, run_id)
+        pipe.execute()
 
     logger.info(
         f"Loaded {len(forecasts)} forecasts to Redis",
@@ -71,7 +71,7 @@ async def load(
     return len(forecasts)
 
 
-async def get_last_run_time(region: str) -> str | None:
+def get_last_run_time(region: str) -> str | None:
     """
     Get the last successful run timestamp from Redis.
 
@@ -81,7 +81,7 @@ async def get_last_run_time(region: str) -> str | None:
     Returns:
         ISO format datetime string or None if no previous run
     """
-    resources = await get_resources()
+    resources = get_resources()
     redis_client = resources.redis.client
     key = f"forecast:nomads:nwps:{region}:last_run"
-    return await redis_client.get(key)
+    return redis_client.get(key)

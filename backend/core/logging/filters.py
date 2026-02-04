@@ -34,13 +34,16 @@ class ContextFilter(logging.Filter):
 
 class PrefectContextFilter(logging.Filter):
     """
-    Inject Prefect flow/task context into log records.
+    Inject Prefect flow/task context into log records for console/JSON output.
 
-    Uses Prefect's runtime context to automatically add:
+    Uses Prefect's runtime context to automatically add display-friendly fields:
     - flow_name: Current flow name (if in a flow)
-    - flow_run_id: Short flow run ID (first 8 chars)
+    - flow_run_short_id: Short flow run ID (first 8 chars)
     - task_name: Current task name (if in a task)
-    - task_run_id: Short task run ID (first 8 chars)
+    - task_run_short_id: Short task run ID (first 8 chars)
+
+    NOTE: Uses *_short_id to avoid colliding with Prefect's internal
+    flow_run_id / task_run_id fields that the APILogHandler needs as full UUIDs.
 
     Also supports dynamic context via log_context() context manager.
     """
@@ -55,13 +58,9 @@ class PrefectContextFilter(logging.Filter):
 
             if isinstance(ctx, FlowRunContext):
                 record.flow_name = ctx.flow.name
-                record.flow_run_id = str(ctx.flow_run.id)[:8]
             elif isinstance(ctx, TaskRunContext):
                 record.task_name = ctx.task.name
-                record.task_run_id = str(ctx.task_run.id)[:8]
                 # Task runs also have parent flow context
-                if ctx.task_run.flow_run_id:
-                    record.flow_run_id = str(ctx.task_run.flow_run_id)[:8]
         except Exception:
             # Not in a Prefect context, that's fine
             pass

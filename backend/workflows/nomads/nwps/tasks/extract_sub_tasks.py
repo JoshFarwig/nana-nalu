@@ -1,9 +1,8 @@
 """
 Sub-tasks for NWPS forecast extraction.
 
-These tasks are designed to run in a ThreadPoolTaskRunner to enable true
-concurrent execution across multiple regions. Each task wraps a blocking
-operation (I/O or CPU-bound) that would otherwise block the async event loop.
+Each task wraps a blocking operation (I/O or CPU-bound) that is called
+directly from the parent extract task.
 """
 
 from pathlib import Path
@@ -22,8 +21,7 @@ def open_grib(file_path: Path) -> xr.Dataset:
     Open GRIB2 dataset - blocking I/O operation.
 
     This is the most time-consuming operation in the extraction pipeline,
-    typically taking 2-3 seconds. Running in a thread pool allows multiple
-    regions to load their GRIB files concurrently.
+    typically taking 2-3 seconds.
 
     Args:
         file_path: Path to GRIB2 file
@@ -58,7 +56,7 @@ def build_kdtree(ds: xr.Dataset) -> tuple:
     Build spatial index - CPU-bound operation.
 
     Creates a KDTree from valid ocean grid points for efficient nearest
-    neighbor search. Takes ~0.2 seconds but blocks the event loop.
+    neighbor search.
 
     Args:
         ds: xarray Dataset containing forecast grid
@@ -98,7 +96,7 @@ def select_spot_data(
     Select forecast data for spots - CPU/memory bound operation.
 
     Uses xarray .sel() to extract time-series data for each spot from the
-    full grid. Can take 1-2 seconds for large grids or many spots.
+    full grid.
 
     Args:
         ds: Full forecast dataset

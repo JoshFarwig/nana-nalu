@@ -21,6 +21,7 @@ Worker Process (--limit 10)
 ```
 
 **Implications**:
+
 - Each flow run gets a fresh Python interpreter
 - No shared state between flow runs by default
 - Resource pools must be initialized per flow run
@@ -33,6 +34,7 @@ Worker Process (--limit 10)
 ### 2. **Resource Pool Management Strategy**
 
 **❌ What Doesn't Work**:
+
 - Prefect Blocks (config storage, not resource lifecycle management)
 - Global singletons (reset per subprocess)
 - Worker-level resource pools (no mechanism for this in Prefect)
@@ -65,6 +67,7 @@ async def forecast_resources():
 ```
 
 **Usage**:
+
 ```python
 @flow
 async def orchestration_flow():
@@ -74,6 +77,7 @@ async def orchestration_flow():
 ```
 
 **Why This Works**:
+
 - Resources scoped to flow run lifecycle
 - Proper cleanup guaranteed
 - Shared across all tasks in the flow run
@@ -112,7 +116,8 @@ Prefect has **multiple levels** of concurrency control:
 └─────────────────────────────────────────────────┘
 ```
 
-**For Your Use Case**: 
+**For Your Use Case**:
+
 - **Worker limit**: `--limit 10` (10 concurrent flow runs)
 - **Task runner**: `ThreadPoolTaskRunner(max_workers=5)` (5 regions processed concurrently)
 - **Global limits**: Optional, if you want to enforce hard resource caps
@@ -133,6 +138,7 @@ Prefect has **multiple levels** of concurrency control:
 | Code Complexity | Sync/async splits | Clean, consistent async |
 
 **Migration**:
+
 - Use `AsyncHTTPManager`, `AsyncRedisManager`, `AsyncDatabaseManager`
 - Repository becomes `AsyncSurfSpotRepository` with `AsyncSession`
 - Provider methods are `async def`
@@ -149,6 +155,7 @@ Prefect has **multiple levels** of concurrency control:
 **Answer**: Use **Prefect's logger** for all code that runs in Prefect context.
 
 **Why**:
+
 - Automatic flow/task context (run IDs, task names)
 - Integrated with Prefect UI (searchable, filterable)
 - Structured logging support
@@ -178,6 +185,7 @@ async def download_forecast_file(...):
 ```
 
 **Migration Path**:
+
 1. Replace `logging.getLogger(__name__)` with `get_run_logger()` inside tasks/flows
 2. Keep standard logging for non-Prefect code (if any)
 3. Prefect automatically captures standard logging too, but native logger is better
@@ -230,7 +238,8 @@ async def extract_forecasts(region, file_path, managers):
         return await provider.extract_forecasts(file_path)
 ```
 
-**Key Principle**: 
+**Key Principle**:
+
 - **Flows/Tasks** = Orchestration layer (Prefect concepts)
 - **Providers/Repositories** = Domain layer (business logic)
 - Keep them separate for testability and clarity
@@ -268,23 +277,27 @@ async def extract_forecasts(region, file_path, managers):
 ## Implementation Checklist
 
 ### Phase 1: Core Migration
+
 - [ ] Create `ForecastResourceManagers` with async managers
 - [ ] Convert repository to `AsyncSurfSpotRepository`
 - [ ] Update `NOMADSProvider` to accept async managers
 - [ ] Update `NOMADSAvailabilityChecker` for async
 
 ### Phase 2: Prefect Integration
+
 - [ ] Create orchestration flow (`orchestrate_nwps_forecasts`)
 - [ ] Create regional processor flow (`process_region_forecast`)
 - [ ] Extract tasks: `check_latest_run`, `download_forecast_file`, etc.
 - [ ] Add retry strategies per task
 
 ### Phase 3: Logging & Observability
+
 - [ ] Replace `logging.getLogger()` with `get_run_logger()` in tasks
 - [ ] Add structured logging with `extra={}` dicts
 - [ ] Test log visibility in Prefect UI
 
 ### Phase 4: Deployment
+
 - [ ] Create deployment with schedule (3x daily for HFO)
 - [ ] Configure work pool and worker
 - [ ] Set worker concurrency limit (e.g., `--limit 10`)

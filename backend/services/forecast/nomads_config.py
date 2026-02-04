@@ -141,7 +141,11 @@ class NWPSConfig(BaseModel):
 
         return date_str, analysis_time_str, analysis_time_hour, filename
 
-    def construct_filename(self, analysis_time: time, forecast_date: date) -> str:
+    def construct_filename(
+        self,
+        analysis_time: time,
+        forecast_date: date,
+    ) -> str:
         _, _, _, filename = self._prepare_filename_components(
             analysis_time, forecast_date
         )

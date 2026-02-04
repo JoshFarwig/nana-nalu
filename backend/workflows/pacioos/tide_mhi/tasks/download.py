@@ -17,7 +17,7 @@ DOWNLOAD_DIR = Path("/backend/.tmp/pacioos/")
 
 
 @task(name="tide-mhi-download-netcdf", retries=3, retry_delay_seconds=60)
-async def download_netcdf(
+def download_netcdf(
     config: PacIOOSModelConfig,
 ) -> Path:
     """
@@ -34,7 +34,7 @@ async def download_netcdf(
         Path to downloaded NetCDF file
     """
     logger = get_run_logger()
-    resources = await get_resources()
+    resources = get_resources()
 
     url = config.construct_griddap_url()
     filename = config.construct_filename()
@@ -54,7 +54,7 @@ async def download_netcdf(
     )
 
     # 512KB chunks for 1-5MB files
-    total_bytes = await resources.http.download_stream(
+    total_bytes = resources.http.download_stream(
         url,
         file_path=str(file_path),
         chunk_size=512 * 1024,

@@ -8,7 +8,7 @@ to handle large file sizes (20-30MB typical).
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 
-from prefect import task, get_run_logger
+from prefect import task, get_run_logger, get_run_context
 
 from workflows.resources import get_resources
 from services.forecast.nomads_config import NWPSConfig
@@ -18,7 +18,7 @@ DOWNLOAD_DIR = Path("/backend/.tmp/nomads/")
 
 
 @task(name="nwps-download-grib2", retries=3, retry_delay_seconds=60)
-async def download_grib2(
+def download_grib2(
     config: NWPSConfig,
     analysis_time: time,
     forecast_date: date | None = None,
@@ -38,7 +38,7 @@ async def download_grib2(
         Path to downloaded GRIB2 file
     """
     logger = get_run_logger()
-    resources = await get_resources()
+    resources = get_resources()
 
     if forecast_date is None:
         forecast_date = datetime.now(timezone.utc).date()
@@ -47,7 +47,11 @@ async def download_grib2(
     filename = config.construct_filename(analysis_time, forecast_date)
 
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    file_path = DOWNLOAD_DIR / filename
+
+    # append task_name to file_path to ensure no back-scheduled tasks run concurrently on the same grib2 file
+    ctx = get_run_context()
+    task_name = ctx.task.name
+    file_path = DOWNLOAD_DIR / filename.replace(".grib2", f"_{task_name}.grib2")
 
     logger.info(
         "Downloading GRIB2 file",
@@ -59,7 +63,7 @@ async def download_grib2(
     )
 
     # 512KB chunks for 20-30MB files
-    total_bytes = await resources.http.download_stream(
+    total_bytes = resources.http.download_stream(
         url,
         file_path=str(file_path),
         chunk_size=512 * 1024,

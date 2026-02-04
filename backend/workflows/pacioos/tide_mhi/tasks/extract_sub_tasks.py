@@ -1,11 +1,3 @@
-"""
-Sub-tasks for PacIOOS tide forecast extraction.
-
-These tasks are designed to run in a ThreadPoolTaskRunner to enable true
-concurrent execution across multiple regions. Each task wraps a blocking
-operation (I/O or CPU-bound) that would otherwise block the async event loop.
-"""
-
 from pathlib import Path
 import time
 
@@ -21,8 +13,7 @@ def open_netcdf(file_path: Path) -> xr.Dataset:
     """
     Open NetCDF dataset - blocking I/O operation.
 
-    This operation typically takes 1-2 seconds. Running in a thread pool
-    allows multiple regions to load their NetCDF files concurrently.
+    This operation typically takes 1-2 seconds.
 
     Args:
         file_path: Path to NetCDF file
@@ -54,7 +45,7 @@ def build_kdtree(ds: xr.Dataset, valid_var: str) -> tuple:
     Build spatial index - CPU-bound operation.
 
     Creates a KDTree from valid ocean grid points for efficient nearest
-    neighbor search. Takes ~0.1-0.2 seconds but blocks the event loop.
+    neighbor search.
 
     Args:
         ds: xarray Dataset containing forecast grid
@@ -95,7 +86,7 @@ def select_spot_data(
     Select forecast data for spots - CPU/memory bound operation.
 
     Uses xarray .sel() to extract time-series data for each spot from the
-    full grid. Can take 0.5-1 second for larger grids or many spots.
+    full grid.
 
     Args:
         ds: Full forecast dataset

@@ -14,10 +14,6 @@ formatters:
       levelname: level
       asctime: timestamp
 
-filters:
-  prefect_context:
-    (): core.logging.filters.PrefectContextFilter
-
 handlers:
   console:
     class: logging.StreamHandler
@@ -25,6 +21,11 @@ handlers:
     formatter: json
     filters: [prefect_context]
     stream: ext://sys.stdout
+
+  # Prefect's API handler - sends logs to Prefect server UI
+  api:
+    class: prefect.logging.handlers.APILogHandler
+    level: INFO
 
 loggers:
   # Prefect's internal loggers
@@ -35,12 +36,12 @@ loggers:
 
   prefect.flow_runs:
     level: INFO
-    handlers: [console]
+    handlers: [console, api]
     propagate: false
 
   prefect.task_runs:
     level: INFO
-    handlers: [console]
+    handlers: [console, api]
     propagate: false
 
   # Quieter dependencies

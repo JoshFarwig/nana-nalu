@@ -1,20 +1,10 @@
-"""
-PacIOOS Tide MHI orchestration flows.
-
-Top-level flow initializes resources and dispatches to regional processors.
-Regional flow coordinates the ETL pipeline: download → extract → transform → load.
-
-Note: Unlike NOMADS operational forecasts, PacIOOS tide data is pre-computed
-harmonic analysis extending through December 2026. No availability check needed.
-"""
-
-import asyncio
 from datetime import datetime, timezone, timedelta
 
-from prefect import flow, get_run_logger
-from prefect.task_runners import ThreadPoolTaskRunner
+from prefect import State, flow, get_run_logger
+from prefect.states import Cancelled, Completed, Failed
 
 from workflows.resources import get_resources
+from workflows.utils import stale_flow
 from services.forecast.pacioos_config import (
     PacIOOSModel,
     get_enabled_regions_for_model,
@@ -27,21 +17,22 @@ from .tasks.download import cleanup_netcdf_file
 from .tasks.load import get_last_run_time
 
 
-@flow(
-    name="tide-mhi-orchestration",
-    task_runner=ThreadPoolTaskRunner(max_workers=8),  # type: ignore[arg-type]
-)
-async def orchestrate_tide_forecasts() -> dict:
+@flow(name="tide-mhi-orchestration")
+def orchestrate_tide_forecasts() -> State[dict]:
     """
     Top-level orchestration flow for PacIOOS Tide MHI forecasts.
 
-    All regions process in parallel using asyncio.gather. Each region
-    and task fetches worker-scoped singleton resources as needed.
+    Regions process sequentially. Each region and task fetches
+    worker-scoped singleton resources as needed.
 
     Returns:
-        Summary of processed regions and their results
+        State containing summary of processed regions and their results
     """
     logger = get_run_logger()
+
+    if stale_flow(timedelta(hours=2)):
+        logger.warning("Stale run, skipping execution")
+        return Cancelled(message="Stale run, cancelling execution")
 
     logger.info("Starting PacIOOS Tide MHI orchestration")
 
@@ -49,38 +40,55 @@ async def orchestrate_tide_forecasts() -> dict:
 
     if not regions:
         logger.warning("No enabled regions with Tide configuration")
-        return {"status": "no_regions", "regions_processed": 0}
+        return Completed(
+            message="No enabled regions with Tide configuration",
+            data={"status": "no_regions", "regions_processed": 0},
+        )
 
     logger.info(f"Processing {len(regions)} regions: {[r.value for r in regions]}")
 
-    # Process all regions concurrently
-    region_tasks = [process_region_forecast(region) for region in regions]
-    results_list = await asyncio.gather(*region_tasks, return_exceptions=True)
-
-    # Build results dict and handle exceptions
     results = {}
-    for region, result in zip(regions, results_list):
-        if isinstance(result, Exception):
-            logger.error(f"Region {region.value} failed with exception: {result}")
-            results[region.value] = {"status": "error", "error": str(result)}
-        else:
-            results[region.value] = result
+    for region in regions:
+        try:
+            results[region.value] = process_region_forecast(region)
+        except Exception as exc:
+            logger.error(f"Region {region.value} failed with exception: {exc}")
+            results[region.value] = {"status": "error", "error": str(exc)}
 
     successful = sum(1 for r in results.values() if r.get("status") == "success")
     logger.info(
         f"Tide forecast orchestration complete: {successful}/{len(regions)} regions successful"
     )
 
-    return {
+    result_data = {
         "status": "complete",
         "regions_processed": len(regions),
         "successful": successful,
         "results": results,
     }
 
+    if successful == 0:
+        logger.error(f"All regions failed: {list(results.keys())}")
+        return Failed(
+            message=f"All {len(regions)} regions failed",
+            data=result_data,
+        )
+    elif successful < len(regions):
+        failed_regions = [k for k, v in results.items() if v.get("status") != "success"]
+        logger.warning(f"Partial failure - failed regions: {failed_regions}")
+        return Completed(
+            message=f"Partial success: {successful}/{len(regions)} regions completed",
+            data=result_data,
+        )
+    else:
+        return Completed(
+            message=f"Successfully processed all {len(regions)} regions",
+            data=result_data,
+        )
+
 
 @flow(name="tide-mhi-regional-processor")
-async def process_region_forecast(
+def process_region_forecast(
     region: Region,
 ) -> dict:
     """
@@ -105,7 +113,7 @@ async def process_region_forecast(
         Processing result with status and metadata
     """
     logger = get_run_logger()
-    resources = await get_resources()
+    resources = get_resources()
     config = get_pacioos_config(region, PacIOOSModel.TIDE)
 
     logger.info(
@@ -114,7 +122,7 @@ async def process_region_forecast(
     )
 
     # Get last run time for refresh interval check
-    last_run_id = await get_last_run_time(region.value)
+    last_run_id = get_last_run_time(region.value)
     last_run_time = datetime.fromisoformat(last_run_id) if last_run_id else None
 
     # Check if refresh is due (weekly cycle for tide predictions)
@@ -138,12 +146,12 @@ async def process_region_forecast(
     run_id = now.isoformat()
 
     # Download
-    file_path = await download_netcdf(
+    file_path = download_netcdf(
         config=config,
     )
 
     # Extract raw forecasts
-    raw_forecasts = await extract_forecasts(
+    raw_forecasts = extract_forecasts(
         config=config,
         file_path=file_path,
     )
@@ -155,7 +163,7 @@ async def process_region_forecast(
     )
 
     # Load to Redis
-    spots_loaded = await load(
+    spots_loaded = load(
         forecasts=transformed_forecasts,
         region=region.value,
         run_id=run_id,

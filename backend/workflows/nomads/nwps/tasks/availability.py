@@ -2,13 +2,13 @@ from datetime import date, datetime, time, timedelta, timezone
 from prefect import task, get_run_logger
 
 from services.forecast.nomads_config import NWPSConfig
-from core.http import AsyncHTTPManager
+from core.http import SyncHTTPManager
 
 from workflows.resources import get_resources
 
 
 @task(name="nwps-check-availability", retries=2, retry_delay_seconds=30)
-async def check_availability(
+def check_availability(
     config: NWPSConfig,
     max_lookback_hours: int,
     last_run_time: datetime | None = None,
@@ -30,7 +30,7 @@ async def check_availability(
         (forecast_date, analysis_time) tuple or None if no run available
     """
     logger = get_run_logger()
-    resources = await get_resources()
+    resources = get_resources()
 
     now = datetime.now(timezone.utc)
 
@@ -50,7 +50,7 @@ async def check_availability(
         check_date = current.date()
         analysis_time = current.time()
 
-        if await _run_exists(config, resources.http, check_date, analysis_time):
+        if _run_exists(config, resources.http, check_date, analysis_time):
             logger.info(
                 f"Found available NOMADS run: {check_date} {analysis_time.strftime('%H:%M')} UTC",
                 extra={"date": str(check_date), "hour": analysis_time.hour},
@@ -69,9 +69,9 @@ async def check_availability(
     return None
 
 
-async def _run_exists(
+def _run_exists(
     config: NWPSConfig,
-    http: AsyncHTTPManager,
+    http: SyncHTTPManager,
     forecast_date: date,
     analysis_time: time,
 ) -> bool:
@@ -84,7 +84,7 @@ async def _run_exists(
     url = _build_check_url(config, forecast_date, analysis_time)
 
     try:
-        response = await http._client.head(url, timeout=5)
+        response = http._client.head(url, timeout=5)
         return response.status_code == 200
     except Exception:
         return False
