@@ -1,5 +1,6 @@
 from services.forecast.forecast_schema import (
     GridMetadata,
+    SwellPartition,
     TideData,
     WaveData,
     WindData,
@@ -8,6 +9,7 @@ from services.forecast.forecast_schema import (
     ForecastModel,
     ProviderForecast,
 )
+from utils.geo_validation import wave_direction_to_toward
 
 
 def map_nwps_forecast(
@@ -15,6 +17,13 @@ def map_nwps_forecast(
 ) -> ProviderForecast:
     """
     Map NWPS data fields to unified schema.
+
+    NWPS provides only swell height (shts) — no separate swell direction or period.
+    Maps shts to primary_swell.height; period and direction remain None.
+
+    Direction convention: NWPS reports wave direction as "from" (Degree true).
+    Converted to "toward" at ingestion: (direction + 180) % 360.
+    Wind direction remains "from" (meteorological convention).
 
     Args:
         spot_id: The surf spot ID
@@ -26,19 +35,23 @@ def map_nwps_forecast(
     forecast = []
 
     for i, valid_time in enumerate(nwps_forecast_data["valid_times"]):
+        data = nwps_forecast_data["data"]
+
         wave = WaveData(
-            height=nwps_forecast_data["data"]["swh"][i],
-            swell_height=nwps_forecast_data["data"]["shts"][i],
-            peak_direction=nwps_forecast_data["data"]["dirpw"][i],
-            peak_period=nwps_forecast_data["data"]["perpw"][i],
+            significant_height=data["swh"][i],
+            peak_period=data["perpw"][i],
+            peak_direction=wave_direction_to_toward(data["dirpw"][i]),
+            primary_swell=SwellPartition(
+                height=data["shts"][i],
+            ),
         )
 
         wind = WindData(
-            speed=nwps_forecast_data["data"]["ws"][i],
-            direction=nwps_forecast_data["data"]["wdir"][i],
+            speed=data["ws"][i],
+            direction=data["wdir"][i],
         )
 
-        tide = TideData(height=nwps_forecast_data["data"]["zos"][i])
+        tide = TideData(height=data["zos"][i])
 
         forecast.append(
             ForecastPoint(valid_time=valid_time, wave=wave, wind=wind, tide=tide)

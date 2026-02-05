@@ -55,7 +55,7 @@ def map_pacioos_swan_forecast(
     """
     Map PacIOOS SWAN wave model forecast to unified schema.
 
-    Maps to: wave.height, wave.peak_direction, wave.peak_period
+    Maps to: wave.significant_height, wave.peak_direction, wave.peak_period
     """
     # TODO:
     pass
@@ -70,4 +70,4 @@ def map_pacioos_wrf_forecast(
     Maps to: wind.speed, wind.direction (degrees FROM)
     """
     # TODO:
-    # pass
+    pass
