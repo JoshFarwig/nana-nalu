@@ -4,12 +4,12 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.base_model import Base
+from models.condition_profile_model import ConditionProfile
 from models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from models.account_tier_model import AccountTier
     from models.surf_spot_model import SurfSpot
-    from models.spot_observation_model import SpotObservation
     from models.crew_model import Crew
     from models.crew_member_model import CrewMember
 
@@ -43,4 +43,6 @@ class User(Base, TimestampMixin):
     owned_crews: Mapped[list["Crew"]] = relationship(back_populates="owner")
     crew_memberships: Mapped[list["CrewMember"]] = relationship(back_populates="user")
     spots: Mapped[list["SurfSpot"]] = relationship(back_populates="created_by")
-    observations: Mapped[list["SpotObservation"]] = relationship(back_populates="user")
+    condition_profiles: Mapped[list["ConditionProfile"]] = relationship(
+        back_populates="created_by"
+    )

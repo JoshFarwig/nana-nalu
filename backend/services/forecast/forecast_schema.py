@@ -21,11 +21,13 @@ class ForecastModel(str, Enum):
 
     # NOMADS models
     NWPS = "nwps"  # Nearshore Wave Prediction System
+    GFS_WAVE = "gfs_wave"  # Global Forecast System Wave Model
 
     # PacIOOS models
     TIDE = "tide"  # Tidal predictions (astronomical harmonics)
     SWAN = "swan"  # Simulating WAves Nearshore
     WRF = "wrf"  # Weather Research and Forecasting (wind)
+    WAVEWATCH3 = "wavewatch3"  # WaveWatch III Wave Model
 
 
 class WaveUnits(BaseModel):
@@ -33,12 +35,20 @@ class WaveUnits(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    height: Literal["m"] = "m"
-    swell_height: Literal["m"] = "m"
-    peak_direction: Literal["degrees_true_from"] = "degrees_true_from"
-    mean_direction: Literal["degrees_true_from"] = "degrees_true_from"
+    # Total sea state
+    significant_height: Literal["m"] = "m"
     peak_period: Literal["s"] = "s"
-    mean_period: Literal["s"] = "s"
+    peak_direction: Literal["degrees_true_toward"] = "degrees_true_toward"
+
+    # Wind waves
+    wind_wave_height: Literal["m"] = "m"
+    wind_wave_period: Literal["s"] = "s"
+    wind_wave_direction: Literal["degrees_true_toward"] = "degrees_true_toward"
+
+    # Swell components (applies to all partitions)
+    swell_height: Literal["m"] = "m"
+    swell_period: Literal["s"] = "s"
+    swell_direction: Literal["degrees_true_toward"] = "degrees_true_toward"
 
 
 class WindUnits(BaseModel):
@@ -68,41 +78,78 @@ class TideUnits(BaseModel):
     surge: Literal["m"] = "m"
 
 
+class SwellPartition(BaseModel):
+    """
+    Individual swell component with direction, period, and height.
+
+    Represents a single swell system (e.g., west swell, south swell).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    height: float | None = Field(default=None, description="Swell height (m)")
+    period: float | None = Field(default=None, description="Swell period (s)")
+    direction: float | None = Field(
+        default=None,
+        ge=0,
+        le=360,
+        description="Swell direction, degrees true (toward)",
+    )
+
+
 class WaveData(BaseModel):
     """
-    Unified wave measurements.
+    Unified wave measurements representing complete sea state.
 
-    All heights in meters, directions in degrees true (0-360, from),
+    Includes total combined conditions, wind-generated waves,
+    and individual swell partitions ordered by energy/significance.
+
+    All heights in meters, directions in degrees true (0-360, toward),
     periods in seconds.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    # significant wave height (combined wind waves + swell)
-    height: float | None = Field(
-        default=None, description="Significant wave height (m)"
+    # ===== Total Sea State (All Components Combined) =====
+    significant_height: float | None = Field(
+        default=None,
+        description="Significant wave height - combined wind waves and all swells (m)",
     )
-
-    # swell component (deep water swell)
-    swell_height: float | None = Field(default=None, description="Swell height (m)")
-
-    # peak wave direction and period (most common from models)
+    peak_period: float | None = Field(
+        default=None, description="Peak period of dominant wave component (s)"
+    )
     peak_direction: float | None = Field(
         default=None,
         ge=0,
         le=360,
-        description="Peak wave direction, degrees true (from)",
+        description="Direction of dominant wave component, degrees true (toward)",
     )
-    peak_period: float | None = Field(default=None, description="Peak wave period (s)")
 
-    # mean wave direction and period (when available)
-    mean_direction: float | None = Field(
+    # ===== Wind Waves (Locally Generated) =====
+    wind_wave_height: float | None = Field(
+        default=None, description="Significant height of wind waves (m)"
+    )
+    wind_wave_period: float | None = Field(
+        default=None, description="Period of wind waves (s)"
+    )
+    wind_wave_direction: float | None = Field(
         default=None,
         ge=0,
         le=360,
-        description="Mean wave direction, degrees true (from)",
+        description="Direction of wind waves, degrees true (toward)",
     )
-    mean_period: float | None = Field(default=None, description="Mean wave period (s)")
+
+    # ===== Swell Partitions (Remotely Generated) =====
+    # Ordered by significance: primary > secondary > tertiary
+    primary_swell: SwellPartition | None = Field(
+        default=None, description="Dominant swell system"
+    )
+    secondary_swell: SwellPartition | None = Field(
+        default=None, description="Second most significant swell system"
+    )
+    tertiary_swell: SwellPartition | None = Field(
+        default=None, description="Third swell system (rare, only from some models)"
+    )
 
 
 class WindData(BaseModel):
@@ -282,6 +329,16 @@ class ProviderForecastResponse(BaseModel):
         for point in self.forecast:
             if point.wave:
                 wave_data = point.wave.model_dump(exclude_none=True)
+                # Flatten swell partition keys to unit field names
+                for swell_key in ("primary_swell", "secondary_swell", "tertiary_swell"):
+                    if swell_key in wave_data:
+                        swell_data = wave_data.pop(swell_key)
+                        if "height" in swell_data:
+                            wave_data["swell_height"] = True
+                        if "period" in swell_data:
+                            wave_data["swell_period"] = True
+                        if "direction" in swell_data:
+                            wave_data["swell_direction"] = True
                 wave_fields.update(wave_data.keys())
             if point.wind:
                 wind_data = point.wind.model_dump(exclude_none=True)

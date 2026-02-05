@@ -8,8 +8,8 @@ from models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from models.user_model import User
-    from models.spot_observation_model import SpotObservation
     from models.crew_model import Crew
+    from models.condition_profile_model import ConditionProfile
 
 
 class SurfSpot(Base, TimestampMixin):
@@ -33,6 +33,6 @@ class SurfSpot(Base, TimestampMixin):
     # relationships
     created_by: Mapped["User"] = relationship(back_populates="spots")
     crew: Mapped["Crew | None"] = relationship(back_populates="spots")
-    observations: Mapped[list["SpotObservation"]] = relationship(
+    condition_profiles: Mapped[list["ConditionProfile"]] = relationship(
         back_populates="spot", cascade="all, delete-orphan"
     )

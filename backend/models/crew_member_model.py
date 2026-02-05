@@ -31,7 +31,7 @@ class CrewMember(Base, TimestampMixin):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    role: Mapped[CrewRole] = mapped_column(String(20), default="member")
+    role: Mapped[CrewRole] = mapped_column(String, default="member")
 
     # relationships
     crew: Mapped["Crew"] = relationship(back_populates="members")

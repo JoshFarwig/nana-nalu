@@ -46,3 +46,25 @@ def longitude_to_180(longitude: float, precision: int) -> float:
     if not valid_longitude(longitude, range_type="unsigned"):
         raise ValueError(f"Longitude must be in range [0, 360], got {longitude}")
     return round(((longitude + 180) % 360) - 180, precision)
+
+
+def wave_direction_to_toward(direction_from: float | None) -> float | None:
+    """
+    Convert wave direction from 'from' convention to 'toward' convention.
+
+    Meteorological convention uses "from" (where waves originate).
+    Oceanographic convention uses "toward" (where waves travel).
+
+    Args:
+        direction_from: Wave direction in degrees true (from), or None
+
+    Returns:
+        Wave direction in degrees true (toward), or None if input is None
+
+    Example:
+        >>> wave_direction_to_toward(90)  # Waves from east
+        270  # Waves traveling west
+    """
+    if direction_from is None:
+        return None
+    return (direction_from + 180) % 360

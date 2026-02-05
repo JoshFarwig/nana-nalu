@@ -22,8 +22,7 @@ class NOMADSModel(str, Enum):
     """
 
     NWPS = "nwps"
-    # TODO: add GFS Global model?
-    # may not be needed with pacioos provided models
+    GFS_WAVE = "gfs_wave"
 
 
 class WFO(str, Enum):
