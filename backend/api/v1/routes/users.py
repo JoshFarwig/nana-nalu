@@ -12,7 +12,7 @@ from schemas.user_schema import CurrentUser, UserUpdate, UserResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/profile", tags=["users"])
+router = APIRouter(prefix="/users", tags=["users"])
 
 # NOTE: Cloudflare R2 for profile pic / surf spot photos?
 

@@ -21,7 +21,7 @@ class PacIOOSModel(str, Enum):
     Generic model types - location determines regional variant.
     """
 
-    TIDE = "tide"
+    TIDE_MHI = "tide_mhi"
     SWAN = "swan"
     WRF = "wrf"
     ROMS = "roms"
@@ -132,7 +132,7 @@ class MauiTideConfig(PacIOOSModelConfig):
     model_config = ConfigDict(frozen=True)
 
     region: Region = Region.MAUI
-    model_name: PacIOOSModel = PacIOOSModel.TIDE
+    model_name: PacIOOSModel = PacIOOSModel.TIDE_MHI
 
     # tide model provides hourly predictions extending ~1 year into future
     # data is pre-computed, we only fetch for Redis TTL maintenance (weekly)
@@ -166,7 +166,7 @@ class MauiTideConfig(PacIOOSModelConfig):
 # region determines geographic variant, Model determines data type
 PACIOOS_CONFIG_REGISTRY: dict[tuple[Region, PacIOOSModel], PacIOOSModelConfig] = {
     # maui region
-    (Region.MAUI, PacIOOSModel.TIDE): MauiTideConfig(),
+    (Region.MAUI, PacIOOSModel.TIDE_MHI): MauiTideConfig(),
 }
 
 

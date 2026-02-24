@@ -15,7 +15,6 @@ from models.user_model import User  # noqa: F401
 from models.crew_model import Crew  # noqa: F401
 from models.crew_member_model import CrewMember  # noqa: F401
 from models.surf_spot_model import SurfSpot  # noqa: F401
-from models.spot_observation_model import SpotObservation  # noqa: F401
 
 __all__ = [
     "Base",
@@ -25,5 +24,4 @@ __all__ = [
     "Crew",
     "CrewMember",
     "SurfSpot",
-    "SpotObservation",
 ]

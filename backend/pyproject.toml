@@ -36,9 +36,9 @@ api = [
   "prefect-client>=3.6.13",
 ]
 # worker service - task execution with scientific computing + database access
-# TODO: remove celery packages and rename to prefect
 worker = [
   "prefect~=3.6.13",
+  "anyio~=4.12",
   "redis~=7.0.1",
   "sqlalchemy[asyncio]~=2.0.44",
   "geoalchemy2~=0.18.0",

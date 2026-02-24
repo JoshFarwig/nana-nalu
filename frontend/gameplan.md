@@ -11,17 +11,15 @@ consider SSR native to react with newer versions. use with TS.
 
 MUST consider how to setup proper PWA / mobile friendly setup.
 
-MapLibre + OpenFreeMap. use something like cartoDB dark-matter / positron or
+MapLibre + OpenFreeMap. use something like cartoDB dark-matter (using this first) / positron or
 Stamen maps. use Mapunik to edit styles specific to nana-nalu. think dark, light,
 and maybe terrain would be more than enough.
 
+Dark maps for MVP, build out light mode option though and toggling with state, but stick with dark for MVP
+
 shadcn ui + tailwind css for styles etc.
 
-since I only really need marker creation and don't plan to show forecasting in areas,
-leaftlet makes the most sense for the MVP. shadcn ui has a community plugin for leaflet
-as well. can use openfreemap for vector tiling w/ leaflet for best of both worlds. if
-I change gears and want to render map tiles, may need to go maplibre gl js instead.
-
-leaflet makes most sense though to just get something up and running.
+can use openfreemap for vector tiling w/ leaflet for best of both worlds.
+use mapcn -> maplibre interface with shadcn ui esque components
 
 tanstack query for handling the forecast data

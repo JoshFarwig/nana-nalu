@@ -148,34 +148,72 @@ Then: `alembic upgrade head`
 
 ### JSONB Condition Schemas (mirrors forecast_schema.py structure)
 
+**Note:** Schema updated to align with wave forecast refactor (swell partitioning, direction conventions).
+
 ```python
 class RangeCondition(BaseModel):
-    """A min/max range for a single measurement."""
+    """
+    A min/max range for a single measurement.
+
+    Supports both ranges (min < max) and single values (min == max).
+    Direction ranges can wrap around north (min > max).
+    """
     min: float
     max: float
 
-    # Non-direction ranges: min must be <= max
-    # Direction ranges: min > max valid (wrapping around north)
-    # Validated at the parent level based on field context
+
+class SwellConditions(BaseModel):
+    """
+    Condition ranges for a swell partition.
+
+    Maps to SwellPartition fields in ForecastPoint.wave.primary_swell,
+    ForecastPoint.wave.secondary_swell, etc.
+    """
+    height: RangeCondition | None = None       # → swell.height (m)
+    period: RangeCondition | None = None       # → swell.period (s)
+    direction: RangeCondition | None = None    # → swell.direction (degrees, wraps)
 
 
 class WaveConditions(BaseModel):
-    """Condition ranges for wave data. Maps to ForecastPoint.wave (WaveData)."""
-    height: RangeCondition | None = None        # → wave.height (m)
-    swell_height: RangeCondition | None = None   # → wave.swell_height (m)
-    peak_period: RangeCondition | None = None    # → wave.peak_period (s)
-    peak_direction: RangeCondition | None = None # → wave.peak_direction (degrees, wraps)
+    """
+    Condition ranges for wave data.
+
+    Maps to ForecastPoint.wave (WaveData) fields.
+    All directions are in "toward" convention (0-360°).
+    """
+    # Total sea state (combined)
+    significant_height: RangeCondition | None = None    # → wave.significant_height (m)
+    peak_period: RangeCondition | None = None           # → wave.peak_period (s)
+    peak_direction: RangeCondition | None = None        # → wave.peak_direction (degrees, wraps)
+
+    # Wind waves (locally generated)
+    wind_wave_height: RangeCondition | None = None      # → wave.wind_wave_height (m)
+    wind_wave_period: RangeCondition | None = None      # → wave.wind_wave_period (s)
+    wind_wave_direction: RangeCondition | None = None   # → wave.wind_wave_direction (degrees, wraps)
+
+    # Swell partitions (remotely generated)
+    primary_swell: SwellConditions | None = None        # → wave.primary_swell.*
+    secondary_swell: SwellConditions | None = None      # → wave.secondary_swell.*
 
 
 class WindConditions(BaseModel):
-    """Condition ranges for wind data. Maps to ForecastPoint.wind (WindData)."""
-    speed: RangeCondition | None = None          # → wind.speed (m/s)
-    direction: RangeCondition | None = None      # → wind.direction (degrees, wraps)
+    """
+    Condition ranges for wind data.
+
+    Maps to ForecastPoint.wind (WindData) fields.
+    Direction is in "from" convention (meteorological).
+    """
+    speed: RangeCondition | None = None       # → wind.speed (m/s)
+    direction: RangeCondition | None = None   # → wind.direction (degrees, wraps)
 
 
 class TideConditions(BaseModel):
-    """Condition ranges for tide data. Maps to ForecastPoint.tide (TideData)."""
-    height: RangeCondition | None = None         # → tide.height (m)
+    """
+    Condition ranges for tide data.
+
+    Maps to ForecastPoint.tide (TideData) fields.
+    """
+    height: RangeCondition | None = None      # → tide.height (m)
 
 
 class ProviderConditionEntry(BaseModel):
@@ -184,8 +222,12 @@ class ProviderConditionEntry(BaseModel):
 
     One entry = one provider. A profile can have multiple entries to AND
     conditions across providers (e.g. NWPS wave + PacIOOS tide).
+
+    Format: "{provider}:{model}" (e.g., "nomads:nwps", "pacioos:tide")
     """
-    provider: str  # Format: "{provider}:{model}" e.g. "nomads:nwps", "pacioos:tide"
+    provider: str = Field(
+        description='Provider key in format "provider:model" (e.g., "nomads:nwps", "pacioos:tide")'
+    )
 
     wave: WaveConditions | None = None
     wind: WindConditions | None = None
@@ -193,42 +235,80 @@ class ProviderConditionEntry(BaseModel):
 
     @model_validator(mode="after")
     def at_least_one_condition(self):
+        """Entry must specify at least one condition category."""
         if not any([self.wave, self.wind, self.tide]):
-            raise ValueError("Entry must specify at least one condition category")
+            raise ValueError("Entry must specify at least one condition category (wave, wind, or tide)")
         return self
 
     @model_validator(mode="after")
     def validate_ranges(self):
-        """Validate non-direction ranges have min <= max."""
+        """
+        Validate non-direction ranges have min <= max.
+        Direction ranges can have min > max (wrapping around north).
+        Single-value ranges (min == max) are allowed.
+        """
         non_direction_ranges = []
-        if self.wave:
-            non_direction_ranges += [
-                ("wave.height", self.wave.height),
-                ("wave.swell_height", self.wave.swell_height),
-                ("wave.peak_period", self.wave.peak_period),
-            ]
-        if self.wind:
-            non_direction_ranges += [("wind.speed", self.wind.speed)]
-        if self.tide:
-            non_direction_ranges += [("tide.height", self.tide.height)]
 
+        # Collect wave non-direction ranges
+        if self.wave:
+            non_direction_ranges.extend([
+                ("wave.significant_height", self.wave.significant_height),
+                ("wave.peak_period", self.wave.peak_period),
+                ("wave.wind_wave_height", self.wave.wind_wave_height),
+                ("wave.wind_wave_period", self.wave.wind_wave_period),
+            ])
+
+            # Swell partitions (non-direction only)
+            if self.wave.primary_swell:
+                non_direction_ranges.extend([
+                    ("wave.primary_swell.height", self.wave.primary_swell.height),
+                    ("wave.primary_swell.period", self.wave.primary_swell.period),
+                ])
+            if self.wave.secondary_swell:
+                non_direction_ranges.extend([
+                    ("wave.secondary_swell.height", self.wave.secondary_swell.height),
+                    ("wave.secondary_swell.period", self.wave.secondary_swell.period),
+                ])
+
+        # Collect wind non-direction ranges
+        if self.wind:
+            non_direction_ranges.append(("wind.speed", self.wind.speed))
+
+        # Collect tide ranges
+        if self.tide:
+            non_direction_ranges.append(("tide.height", self.tide.height))
+
+        # Validate: min must be <= max (min == max allowed for single values)
         for name, rng in non_direction_ranges:
             if rng is not None and rng.min > rng.max:
                 raise ValueError(f"{name}: min ({rng.min}) must be <= max ({rng.max})")
+
         return self
 ```
 
 ### Field-to-ForecastPoint Mapping
 
+**Updated for wave forecast refactor** (nested swell partitions, "toward" convention for waves)
+
 | Condition Field | Provider Source(s) | ForecastPoint Path | Unit |
 |---|---|---|---|
-| `wave.height` | NWPS, SWAN | `point.wave.height` | meters |
-| `wave.swell_height` | NWPS | `point.wave.swell_height` | meters |
-| `wave.peak_period` | NWPS, SWAN | `point.wave.peak_period` | seconds |
-| `wave.peak_direction` | NWPS, SWAN | `point.wave.peak_direction` | degrees (from, wraps) |
+| `wave.significant_height` | NWPS, SWAN, GFS Wave, WW3 | `point.wave.significant_height` | meters |
+| `wave.peak_period` | NWPS, SWAN, GFS Wave, WW3 | `point.wave.peak_period` | seconds |
+| `wave.peak_direction` | NWPS, SWAN, GFS Wave, WW3 | `point.wave.peak_direction` | degrees (toward, wraps) |
+| `wave.wind_wave_height` | GFS Wave, WW3 | `point.wave.wind_wave_height` | meters |
+| `wave.wind_wave_period` | GFS Wave, WW3 | `point.wave.wind_wave_period` | seconds |
+| `wave.wind_wave_direction` | GFS Wave, WW3 | `point.wave.wind_wave_direction` | degrees (toward, wraps) |
+| `wave.primary_swell.height` | NWPS, GFS Wave, WW3 | `point.wave.primary_swell.height` | meters |
+| `wave.primary_swell.period` | GFS Wave, WW3 | `point.wave.primary_swell.period` | seconds |
+| `wave.primary_swell.direction` | GFS Wave, WW3 | `point.wave.primary_swell.direction` | degrees (toward, wraps) |
+| `wave.secondary_swell.height` | GFS Wave | `point.wave.secondary_swell.height` | meters |
+| `wave.secondary_swell.period` | GFS Wave | `point.wave.secondary_swell.period` | seconds |
+| `wave.secondary_swell.direction` | GFS Wave | `point.wave.secondary_swell.direction` | degrees (toward, wraps) |
 | `wind.speed` | NWPS, WRF | `point.wind.speed` | m/s |
 | `wind.direction` | NWPS, WRF | `point.wind.direction` | degrees (from, wraps) |
 | `tide.height` | Tide (PacIOOS) | `point.tide.height` | meters |
+
+**Note:** NWPS provides only `primary_swell.height` (no period/direction). GFS Wave and WW3 will provide complete swell partitions.
 
 ### API Request Schemas
 
@@ -294,6 +374,8 @@ class BatchConditionStatusResponse(BaseModel):
 
 ### Example JSONB Data
 
+**Updated for wave forecast refactor** (new field names)
+
 **"Pipeline Winter" — NWPS wave + PacIOOS tide must both align:**
 
 ```json
@@ -301,7 +383,10 @@ class BatchConditionStatusResponse(BaseModel):
   {
     "provider": "nomads:nwps",
     "wave": {
-      "height": { "min": 2.5, "max": 5.0 },
+      "significant_height": { "min": 2.5, "max": 5.0 },
+      "primary_swell": {
+        "height": { "min": 2.0, "max": 4.5 }
+      },
       "peak_direction": { "min": 300, "max": 30 }
     },
     "wind": {
@@ -324,8 +409,21 @@ class BatchConditionStatusResponse(BaseModel):
   {
     "provider": "nomads:nwps",
     "wave": {
-      "height": { "min": 1.5, "max": 3.0 },
+      "significant_height": { "min": 1.5, "max": 3.0 },
       "peak_direction": { "min": 160, "max": 200 }
+    }
+  }
+]
+```
+
+**"Single-value condition" — min == max for exact match (e.g., tide must be exactly 0.0m):**
+
+```json
+[
+  {
+    "provider": "pacioos:tide",
+    "tide": {
+      "height": { "min": 0.0, "max": 0.0 }
     }
   }
 ]
@@ -380,6 +478,17 @@ Class: `SpotConditionService`
 - `crew_repo: AsyncCrewRepository`
 - `forecast_service: ForecastService`
 - `session: AsyncSession`
+
+**Required imports (updated for wave forecast refactor):**
+
+```python
+from services.forecast.forecast_schema import ForecastPoint, SwellPartition
+from schemas.condition_profile_schema import (
+    ProviderConditionEntry,
+    RangeCondition,
+    SwellConditions,
+)
+```
 
 ### CRUD Methods
 
@@ -474,6 +583,8 @@ def _evaluate_profile(
 
 #### `_entry_matches(entry, forecast_point)` — check conditions against one provider's data
 
+**Updated for wave forecast refactor** (nested swell partitions)
+
 ```python
 def _entry_matches(
     self,
@@ -489,14 +600,47 @@ def _entry_matches(
         if not point.wave:
             return False  # Entry requires wave data but provider doesn't have it
 
-        if entry.wave.height and not self._in_range(point.wave.height, entry.wave.height):
+        # Total sea state checks
+        if entry.wave.significant_height and not self._in_range(
+            point.wave.significant_height, entry.wave.significant_height
+        ):
             return False
-        if entry.wave.swell_height and not self._in_range(point.wave.swell_height, entry.wave.swell_height):
+        if entry.wave.peak_period and not self._in_range(
+            point.wave.peak_period, entry.wave.peak_period
+        ):
             return False
-        if entry.wave.peak_period and not self._in_range(point.wave.peak_period, entry.wave.peak_period):
+        if entry.wave.peak_direction and not self._direction_in_range(
+            point.wave.peak_direction, entry.wave.peak_direction
+        ):
             return False
-        if entry.wave.peak_direction and not self._direction_in_range(point.wave.peak_direction, entry.wave.peak_direction):
+
+        # Wind wave checks
+        if entry.wave.wind_wave_height and not self._in_range(
+            point.wave.wind_wave_height, entry.wave.wind_wave_height
+        ):
             return False
+        if entry.wave.wind_wave_period and not self._in_range(
+            point.wave.wind_wave_period, entry.wave.wind_wave_period
+        ):
+            return False
+        if entry.wave.wind_wave_direction and not self._direction_in_range(
+            point.wave.wind_wave_direction, entry.wave.wind_wave_direction
+        ):
+            return False
+
+        # Primary swell checks
+        if entry.wave.primary_swell:
+            if not point.wave.primary_swell:
+                return False  # Condition requires primary swell but forecast doesn't have it
+            if not self._swell_matches(point.wave.primary_swell, entry.wave.primary_swell):
+                return False
+
+        # Secondary swell checks
+        if entry.wave.secondary_swell:
+            if not point.wave.secondary_swell:
+                return False  # Condition requires secondary swell but forecast doesn't have it
+            if not self._swell_matches(point.wave.secondary_swell, entry.wave.secondary_swell):
+                return False
 
     # Wind checks
     if entry.wind:
@@ -514,6 +658,25 @@ def _entry_matches(
         if entry.tide.height and not self._in_range(point.tide.height, entry.tide.height):
             return False
 
+    return True
+
+
+def _swell_matches(
+    self,
+    swell: SwellPartition,
+    conditions: SwellConditions,
+) -> bool:
+    """
+    Check if a swell partition matches conditions.
+
+    All specified condition fields must match (AND logic).
+    """
+    if conditions.height and not self._in_range(swell.height, conditions.height):
+        return False
+    if conditions.period and not self._in_range(swell.period, conditions.period):
+        return False
+    if conditions.direction and not self._direction_in_range(swell.direction, conditions.direction):
+        return False
     return True
 ```
 

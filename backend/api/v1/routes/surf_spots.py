@@ -47,7 +47,7 @@ async def get_all_surf_spots(
 # TODO: figure out how to refactor surf spot endpoints / repo methods for is_demo
 @router.get("/demo", summary="List all active demo spots")
 async def get_all_demo_surf_spots():
-    pass
+    return {"message": "TODO"}
 
 
 # @router.post("/", summary="Create a new surf spot")

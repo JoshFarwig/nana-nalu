@@ -36,7 +36,7 @@ def orchestrate_tide_forecasts() -> State[dict]:
 
     logger.info("Starting PacIOOS Tide MHI orchestration")
 
-    regions = get_enabled_regions_for_model(PacIOOSModel.TIDE)
+    regions = get_enabled_regions_for_model(PacIOOSModel.TIDE_MHI)
 
     if not regions:
         logger.warning("No enabled regions with Tide configuration")
@@ -55,34 +55,52 @@ def orchestrate_tide_forecasts() -> State[dict]:
             logger.error(f"Region {region.value} failed with exception: {exc}")
             results[region.value] = {"status": "error", "error": str(exc)}
 
-    successful = sum(1 for r in results.values() if r.get("status") == "success")
+    counts = {"success": 0, "skip_not_due": 0, "error": 0}
+    for r in results.values():
+        status = r.get("status", "error")
+        if status in counts:
+            counts[status] += 1
+        else:
+            counts["error"] += 1
+
     logger.info(
-        f"Tide forecast orchestration complete: {successful}/{len(regions)} regions successful"
+        f"Tide MHI orchestration complete — "
+        f"success={counts['success']} skip_not_due={counts['skip_not_due']} error={counts['error']}",
+        extra={
+            "success": counts["success"],
+            "skip_not_due": counts["skip_not_due"],
+            "error": counts["error"],
+        },
     )
 
     result_data = {
-        "status": "complete",
         "regions_processed": len(regions),
-        "successful": successful,
+        "counts": counts,
         "results": results,
     }
 
-    if successful == 0:
-        logger.error(f"All regions failed: {list(results.keys())}")
-        return Failed(
-            message=f"All {len(regions)} regions failed",
+    errored = [k for k, v in results.items() if v.get("status") == "error"]
+
+    if counts["error"] == len(regions):
+        logger.error(f"All regions errored: {errored}")
+        return Failed(message=f"All {len(regions)} regions errored: {errored}")
+    elif counts["error"] > 0:
+        logger.warning(f"Partial failure — errored regions: {errored}")
+        return Completed(
+            message=f"Partial failure: {counts['success']} success, {counts['error']} errored",
             data=result_data,
         )
-    elif successful < len(regions):
-        failed_regions = [k for k, v in results.items() if v.get("status") != "success"]
-        logger.warning(f"Partial failure - failed regions: {failed_regions}")
+    elif counts["success"] == 0:
+        logger.info("All regions skipped — refresh not yet due")
         return Completed(
-            message=f"Partial success: {successful}/{len(regions)} regions completed",
-            data=result_data,
+            message="All regions skipped, refresh not yet due", data=result_data
         )
     else:
+        logger.info(
+            f"Successfully processed {counts['success']}/{len(regions)} regions"
+        )
         return Completed(
-            message=f"Successfully processed all {len(regions)} regions",
+            message=f"Processed {counts['success']}/{len(regions)} regions",
             data=result_data,
         )
 
@@ -114,7 +132,7 @@ def process_region_forecast(
     """
     logger = get_run_logger()
     resources = get_resources()
-    config = get_pacioos_config(region, PacIOOSModel.TIDE)
+    config = get_pacioos_config(region, PacIOOSModel.TIDE_MHI)
 
     logger.info(
         f"Processing {region.value}",
@@ -122,7 +140,7 @@ def process_region_forecast(
     )
 
     # Get last run time for refresh interval check
-    last_run_id = get_last_run_time(region.value)
+    last_run_id = get_last_run_time(config.provider_name, config.model_name.value, region.value)
     last_run_time = datetime.fromisoformat(last_run_id) if last_run_id else None
 
     # Check if refresh is due (weekly cycle for tide predictions)
@@ -165,6 +183,8 @@ def process_region_forecast(
     # Load to Redis
     spots_loaded = load(
         forecasts=transformed_forecasts,
+        provider=config.provider_name,
+        model=config.model_name.value,
         region=region.value,
         run_id=run_id,
     )

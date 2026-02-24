@@ -10,7 +10,7 @@ important to note, each field needs time, depth, lat/long constraints
 example for dumps: with at of lat 20.615 and long 203.45
 (pacioos does also include a erddap https api for -/+ 180 long)
 
-> using october 1-5th times since shutdown on the 17th? not sure why?
+> using october 1-5th times since shutdown on the 17th, from government shutdown
 
 - <https://pae-paha.pacioos.hawaii.edu/erddap/griddap/swan_maui.json?mdir[(2025-10-01T00:00:00Z):1:(2025-10-05T00:00:00Z)>][(0.0):1:(0.0)][(20.615):1:(20.615)][(203.45):1:(203.45)],mper[(2025-10-01T00:00:00Z):1:(2025-10-05T00:00:00Z)][(0.0):1:(0.0)][(20.615):1:(20.615)][(203.45):1:(203.45)],pdir[(2025-10-01T00:00:00Z):1:(2025-10-05T00:00:00Z)][(0.0):1:(0.0)][(20.615):1:(20.615)][(203.45):1:(203.45)],pper[(2025-10-01T00:00:00Z):1:(2025-10-05T00:00:00Z)][(0.0):1:(0.0)][(20.615):1:(20.615)][(203.45):1:(203.45)],shgt[(2025-10-01T00:00:00Z):1:(2025-10-05T00:00:00Z)][(0.0):1:(0.0)][(20.615):1:(20.615)][(203.45):1:(203.45)]
 
@@ -35,15 +35,3 @@ example spot hashes:
 
 www3 regional or non-regional could be a good shout for the larger knowledge scope for primary / secondary / tertiary swell data
 since NWPS does not provide this (SWAN model).
-
-## todos
-
-- [ ] add entrypoint for container to execute seed script and add spots
-
-- [ ] basic celery setup
-  - [ ] set up basic celery app configuration
-  - [ ] create WorkerState singleton with lifecycle signals
-  - [ ] implement AsyncTask base class
-  - [ ] create a simple test task to verify setup
-
-- [ ] forecast service + providers adapaters

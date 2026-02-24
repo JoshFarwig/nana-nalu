@@ -8,7 +8,8 @@ to handle large file sizes (20-30MB typical).
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 
-from prefect import task, get_run_logger, get_run_context
+from prefect import task, get_run_logger
+from prefect.context import get_run_context
 
 from workflows.resources import get_resources
 from services.forecast.nomads_config import NWPSConfig

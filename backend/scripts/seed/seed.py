@@ -2,6 +2,7 @@ import logging
 
 from core.config import APISettings, load_settings
 from core.database import SyncDatabaseManager
+from core.exceptions.users import UserNotFoundError
 
 from repositories.account_tier_repository import SyncAccountTierRepository
 from repositories.user_repository import SyncUserRepository
@@ -40,7 +41,6 @@ class SeedManager:
         with self.db_manager.auto_commit_session() as session:
             user_repo = SyncUserRepository(session, self.settings)
 
-            # Try to get existing admin user first
             try:
                 admin_user = user_repo.get_by_username(
                     self.settings.api.admin_username.get_secret_value()
@@ -50,8 +50,8 @@ class SeedManager:
                     extra={"id": admin_user.id},
                 )
                 return admin_user.id
-            except Exception:
-                # Admin doesn't exist, create it
+
+            except UserNotFoundError:
                 admin_user = user_repo.create(
                     user_data={
                         "tier_id": free_tier_id,
@@ -60,6 +60,7 @@ class SeedManager:
                         "first_name": self.settings.api.admin_name,
                         "last_name": self.settings.api.admin_name,
                         "password": self.settings.api.admin_password.get_secret_value(),
+                        "verified": True,
                         "is_admin": True,
                     }
                 )

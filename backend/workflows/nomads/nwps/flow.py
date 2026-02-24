@@ -60,30 +60,55 @@ def orchestrate_nwps_forecasts() -> State[dict]:
             logger.error(f"Region {region.value} failed with exception: {exc}")
             results[region.value] = {"status": "error", "error": str(exc)}
 
-    successful = sum(1 for r in results.values() if r.get("status") == "success")
+    counts = {"success": 0, "already_current": 0, "no_data": 0, "error": 0}
+    for r in results.values():
+        status = r.get("status", "error")
+        if status in counts:
+            counts[status] += 1
+        else:
+            counts["error"] += 1
+
     logger.info(
-        f"NWPS forecast orchestration complete: {successful}/{len(regions)} regions successful"
+        f"NWPS orchestration complete — "
+        f"success={counts['success']} already_current={counts['already_current']} "
+        f"no_data={counts['no_data']} error={counts['error']}",
+        extra={
+            "success": counts["success"],
+            "already_current": counts["already_current"],
+            "no_data": counts["no_data"],
+            "error": counts["error"],
+        },
     )
 
     result_data = {
         "regions_processed": len(regions),
-        "successful": successful,
+        "counts": counts,
         "results": results,
     }
 
-    if successful == 0:
-        logger.error(f"All regions failed: {list(results.keys())}")
-        return Failed(message=f"All {len(regions)} regions failed", data=result_data)
-    elif len(regions) > successful:
-        failed_regions = [k for k, v in results.items() if v.get("status") != "success"]
-        logger.warning(f"Partial failure, failed regions: {failed_regions}")
+    errored = [k for k, v in results.items() if v.get("status") == "error"]
+
+    if counts["error"] == len(regions):
+        logger.error(f"All regions errored: {errored}")
+        return Failed(message=f"All {len(regions)} regions errored: {errored}")
+    elif counts["error"] > 0:
+        logger.warning(f"Partial failure — errored regions: {errored}")
         return Completed(
-            message=f"Partial completion, {successful}/{len(regions)} successful processed",
+            message=f"Partial failure: {counts['success']} success, {counts['error']} errored",
             data=result_data,
         )
+    elif counts["no_data"] == len(regions):
+        logger.warning("No data available from NOMADS for any region")
+        return Completed(message="No data available from source", data=result_data)
+    elif counts["success"] == 0:
+        logger.info("All regions already current — nothing to process")
+        return Completed(message="All regions already current", data=result_data)
     else:
+        logger.info(
+            f"Successfully processed {counts['success']}/{len(regions)} regions"
+        )
         return Completed(
-            message=f"Successfully processed all {len(regions)} regions",
+            message=f"Processed {counts['success']}/{len(regions)} regions",
             data=result_data,
         )
 
@@ -119,7 +144,7 @@ def process_region_forecast(
         extra={"wfo": config.wfo.value, "cg": config.cg},
     )
 
-    last_run_id = get_last_run_time(region.value)
+    last_run_id = get_last_run_time(config.provider_name, config.model_name.value, region.value)
     last_run_time = datetime.fromisoformat(last_run_id) if last_run_id else None
 
     latest_run = check_availability(
@@ -159,6 +184,8 @@ def process_region_forecast(
 
     spots_loaded = load(
         forecasts=transformed_forecasts,
+        provider=config.provider_name,
+        model=config.model_name.value,
         region=region.value,
         run_id=run_id,
     )

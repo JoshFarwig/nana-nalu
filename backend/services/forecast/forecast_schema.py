@@ -287,9 +287,6 @@ class ProviderForecast(BaseModel):
 class ProviderForecastResponse(BaseModel):
     """
     API response schema for forecast data.
-
-    Excludes internal fields (spot_id) and renames location → region
-    for external consistency with surf spot schema.
     """
 
     model_config = ConfigDict(extra="forbid")

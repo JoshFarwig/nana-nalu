@@ -12,6 +12,7 @@ from core.dependencies.core import (
 )
 from core.dependencies.repositories import (
     get_account_tier_repository,
+    get_condition_profile_repository,
     get_crew_repository,
     get_surf_spot_repository,
     get_user_repository,
@@ -21,11 +22,13 @@ from core.redis import AsyncRedisManager
 from core.security import SecurityManager
 from core.templates import TemplateRenderer
 from repositories.account_tier_repository import AsyncAccountTierRepository
+from repositories.condition_profile_repository import AsyncConditionProfileRepository
 from repositories.crew_repository import AsyncCrewRepository
 from repositories.surf_spot_repository import AsyncSurfSpotRepository
 from repositories.user_repository import AsyncUserRepository
 
 from services.auth_service import AuthService
+from services.condition_profile_service import ConditionProfileService
 from services.crew_service import CrewService
 from services.email_service import EmailService
 from services.forecast.forecast_service import ForecastService
@@ -38,6 +41,13 @@ def get_email_service(
     settings: APISettings = Depends(get_settings),
 ) -> EmailService:
     return EmailService(http_manager, template_renderer, settings)
+
+
+def get_forecast_service(
+    redis_manager: AsyncRedisManager = Depends(get_async_redis_manager),
+    surf_spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
+) -> ForecastService:
+    return ForecastService(redis_manager, surf_spot_repo)
 
 
 def get_magic_link_service(
@@ -69,11 +79,15 @@ def get_auth_service(
     )
 
 
-def get_forecast_service(
-    redis_manager: AsyncRedisManager = Depends(get_async_redis_manager),
-    surf_spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
-) -> ForecastService:
-    return ForecastService(redis_manager, surf_spot_repo)
+def get_condition_profile_service(
+    forecast_service: ForecastService = Depends(get_forecast_service),
+    profile_repo: AsyncConditionProfileRepository = Depends(
+        get_condition_profile_repository
+    ),
+    spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
+    session: AsyncSession = Depends(get_async_db_session),
+) -> ConditionProfileService:
+    return ConditionProfileService(forecast_service, profile_repo, spot_repo, session)
 
 
 def get_crew_service(

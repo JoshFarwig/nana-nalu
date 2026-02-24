@@ -16,11 +16,12 @@ class ConditionProfileError(NanaNaluException):
 
 
 class ConditionProfileNotFoundError(ConditionProfileError):
-    def __init__(self, condition_profile_id: int):
+    def __init__(self, identifier: int | set | str, field: str):
         super().__init__(
-            message=f"Condition profile with id '{condition_profile_id}' could not be found.",
+            message=f"Condition profile with {field} '{identifier}' could not be found.",
             error_code="condition_profile_not_found",
             status_code=HTTPStatus.NOT_FOUND,
+            details={"field": field, "value": str(identifier)},
         )
 
 
