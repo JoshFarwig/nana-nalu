@@ -21,6 +21,37 @@ class RangeCondition(BaseModel):
         return self
 
 
+def in_range(value: float | None, condition: RangeCondition) -> bool:
+    """Check if value falls within a min/max range. Either bound may be None."""
+    if value is None:
+        return False
+    if condition.min is not None and value < condition.min:
+        return False
+    if condition.max is not None and value > condition.max:
+        return False
+    return True
+
+
+def direction_in_range(value: float | None, condition: RangeCondition) -> bool:
+    """
+    Check if a direction falls within a range, handling north-crossing wraps.
+
+    Wrapping only applies when both bounds are set and min > max (e.g., 330°→030°).
+    One-sided bounds fall back to standard comparison.
+    """
+    if value is None:
+        return False
+    if condition.min is not None and condition.max is not None:
+        if condition.min > condition.max:
+            return value >= condition.min or value <= condition.max
+        return condition.min <= value <= condition.max
+    if condition.min is not None and value < condition.min:
+        return False
+    if condition.max is not None and value > condition.max:
+        return False
+    return True
+
+
 class SwellConditions(BaseModel):
     """
     Condition ranges for a swell partition.
@@ -99,6 +130,7 @@ class ProviderConditionEntry(BaseModel):
     wave: WaveConditions | None = None
     wind: WindConditions | None = None
     tide: TideConditions | None = None
+    # TODO: consider adding currents conditions
 
     @model_validator(mode="after")
     def at_least_one_condition(self):
@@ -274,7 +306,6 @@ class ProfileMatchResult(BaseModel):
     profile_name: str
     user_id: int
     matched: bool
-    mathced_conditions: set  # Which provider + model portion matches
 
 
 class ConditionStatus(BaseModel):

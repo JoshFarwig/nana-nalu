@@ -3,6 +3,8 @@ from enum import Enum
 from typing import Literal
 from pydantic import BaseModel, Field, ConfigDict
 
+from utils.region import Region
+
 
 # ============================================================================
 # Shared Models (Used by both Internal DTOs and API Responses)
@@ -210,8 +212,8 @@ class ForecastPoint(BaseModel):
 
     wave: WaveData | None = None
     wind: WindData | None = None
-    current: CurrentData | None = None
     tide: TideData | None = None
+    current: CurrentData | None = None
 
 
 # ============================================================================
@@ -242,7 +244,7 @@ class ProviderForecast(BaseModel):
     spot_id: int
     provider: ForecastProvider
     model: ForecastModel
-    location: str = Field(description="Regional variant (e.g., maui, oahu, hawaii)")
+    region: Region = Field(description="Regional variant (e.g., maui, oahu, hawaii)")
     analysis_time: datetime | None = Field(
         default=None, description="Model run/analysis time (UTC)"
     )
@@ -293,7 +295,7 @@ class ProviderForecastResponse(BaseModel):
 
     provider: ForecastProvider
     model: ForecastModel
-    region: str = Field(description="Regional variant (e.g., maui, oahu, hawaii)")
+    region: Region = Field(description="Regional variant (e.g., maui, oahu, hawaii)")
     analysis_time: datetime | None = Field(
         default=None, description="Model run/analysis time (UTC)"
     )
@@ -398,7 +400,7 @@ class ProviderForecastResponse(BaseModel):
         return cls(
             provider=pf.provider,
             model=pf.model,
-            region=pf.location,
+            region=pf.region,
             analysis_time=pf.analysis_time,
             grid_metadata=pf.grid_metadata,
             data_summary=pf.data_summary,

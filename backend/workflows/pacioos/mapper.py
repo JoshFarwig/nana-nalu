@@ -8,12 +8,13 @@ from services.forecast.forecast_schema import (
     ForecastModel,
     ProviderForecast,
 )
+from utils.region import Region
 
 logger = logging.getLogger(__name__)
 
 
 def map_pacioos_tide_forecast(
-    spot_id: int, location: str, raw_data: dict, data_summary: dict[str, str]
+    spot_id: int, region: Region, raw_data: dict, data_summary: dict[str, str]
 ) -> ProviderForecast:
     """
     Map PacIOOS Tide model forecast to unified schema.
@@ -38,7 +39,7 @@ def map_pacioos_tide_forecast(
         spot_id=spot_id,
         provider=ForecastProvider.PACIOOS,
         model=ForecastModel.TIDE,
-        location=location,
+        region=region,
         grid_metadata=GridMetadata(
             selected_lat=raw_data["grid_metadata"]["selected_lat"],
             selected_lon=raw_data["grid_metadata"]["selected_lon"],
@@ -50,7 +51,7 @@ def map_pacioos_tide_forecast(
 
 
 def map_pacioos_swan_forecast(
-    spot_id: int, location: str, raw_data: dict, data_summary: dict[str, str]
+    spot_id: int, region: Region, raw_data: dict, data_summary: dict[str, str]
 ):
     """
     Map PacIOOS SWAN wave model forecast to unified schema.
@@ -62,7 +63,7 @@ def map_pacioos_swan_forecast(
 
 
 def map_pacioos_wrf_forecast(
-    spot_id: int, location: str, raw_data: dict, data_summary: dict[str, str]
+    spot_id: int, region: Region, raw_data: dict, data_summary: dict[str, str]
 ):
     """
     Map PacIOOS WRF atmospheric model forecast to unified schema.

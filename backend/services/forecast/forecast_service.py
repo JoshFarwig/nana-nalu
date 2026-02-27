@@ -7,8 +7,10 @@ from core.exceptions.forecasts import (
     NoForecastDataError,
 )
 
+from models.surf_spot_model import SurfSpot
 from repositories.surf_spot_repository import AsyncSurfSpotRepository
 from services.forecast.forecast_schema import ProviderForecast
+from services.policies.surf_spot_policy import SurfSpotPolicy
 from utils.region import Region
 
 from services.forecast.config_registries import provider_config_registries
@@ -25,21 +27,22 @@ class ForecastService:
     - Discover available forecasts for a spot based on its region
     - Retrieve forecast data from Redis
     - Return arrays of ProviderForecast objects
+    - Enforce view-access policy on all public methods
     """
 
     def __init__(
         self,
         redis_manager: AsyncRedisManager,
         surf_spot_repo: AsyncSurfSpotRepository,
+        policy: SurfSpotPolicy,
     ):
         self.redis = redis_manager
         self.surf_spot_repo = surf_spot_repo
+        self.policy = policy
 
-    # =======================
-    # PRIMARY FUNCTIONS
-    # =======================
-
-    async def get_forecasts(self, surf_spot_id: int) -> list[ProviderForecast]:
+    async def get_forecasts(
+        self, surf_spot_id: int, user_id: int
+    ) -> list[ProviderForecast]:
         """
         Get all available forecasts for a surf spot.
 
@@ -49,9 +52,11 @@ class ForecastService:
 
         Raises:
             SurfSpotNotFoundError: If surf spot doesn't exist
+            SurfSpotPermissionError: If user doesn't have view access
             LocationNotSupportedError: If region has no forecast coverage
         """
-        region = await self._get_spot_region(surf_spot_id)
+        spot = await self._get_spot(surf_spot_id, user_id)
+        region = Region(spot.region)
         available = self._get_available_providers_and_models(region)
 
         forecasts = []
@@ -76,7 +81,7 @@ class ForecastService:
         return forecasts
 
     async def get_forecast_by_provider(
-        self, surf_spot_id: int, provider: str
+        self, surf_spot_id: int, provider: str, user_id: int
     ) -> list[ProviderForecast]:
         """
         Get all forecasts from a specific provider for a surf spot.
@@ -87,10 +92,12 @@ class ForecastService:
 
         Raises:
             SurfSpotNotFoundError: If surf spot doesn't exist
+            SurfSpotPermissionError: If user doesn't have view access
             InvalidProviderError: If provider is not available for this region
             NoForecastDataError: If no forecast data exists for any model from this provider
         """
-        region = await self._get_spot_region(surf_spot_id)
+        spot = await self._get_spot(surf_spot_id, user_id)
+        region = Region(spot.region)
         available_grouped = self._get_available_forecasts_grouped(region)
 
         # validate provider exists for this region
@@ -129,7 +136,7 @@ class ForecastService:
         return forecasts
 
     async def get_forecast_by_model(
-        self, surf_spot_id: int, provider: str, model: str
+        self, surf_spot_id: int, provider: str, model: str, user_id: int
     ) -> ProviderForecast:
         """
         Get forecast from a specific provider's model for a surf spot.
@@ -139,11 +146,13 @@ class ForecastService:
 
         Raises:
             SurfSpotNotFoundError: If surf spot doesn't exist
+            SurfSpotPermissionError: If user doesn't have view access
             InvalidProviderError: If provider is not available for this region
             InvalidModelError: If model is not available for this provider
             NoForecastDataError: If no forecast data exists for this specific model
         """
-        region = await self._get_spot_region(surf_spot_id)
+        spot = await self._get_spot(surf_spot_id, user_id)
+        region = Region(spot.region)
         available_grouped = self._get_available_forecasts_grouped(region)
 
         # validate provider exists for this region
@@ -180,7 +189,60 @@ class ForecastService:
 
         return ProviderForecast.from_redis_json(data)
 
-    async def get_available_providers(self, surf_spot_id: int) -> dict[str, list[str]]:
+    async def get_forecasts_for_providers(
+        self,
+        spot_id: int,
+        pairs: set[tuple[str, str]],
+    ) -> dict[tuple[str, str], ProviderForecast | None]:
+        """
+        Fetch only the specific provider+model forecasts needed for condition evaluation.
+
+        Does a single region DB lookup, then fetches all needed Redis keys in one
+        pipeline round-trip rather than individual GETs.
+
+        Args:
+            spot_id: Surf spot ID
+            pairs: Set of (provider, model) tuples to fetch
+
+        Returns:
+            {("nomads", "nwps"): ProviderForecast, ("pacioos", "tide"): None, ...}
+            None value means data was not in Redis (missing/expired).
+        """
+        spot = await self.surf_spot_repo.get_by_id(spot_id)
+        region = Region(spot.region)
+
+        pairs_list = list(pairs)
+        redis_keys = [
+            self._build_redis_key(provider, model, region.value, spot_id)
+            for provider, model in pairs_list
+        ]
+
+        async with self.redis.client.pipeline() as pipe:
+            for key in redis_keys:
+                pipe.get(key)
+            results = await pipe.execute()
+
+        lookup: dict[tuple[str, str], ProviderForecast | None] = {}
+        for (provider, model), data in zip(pairs_list, results):
+            if data:
+                lookup[(provider, model)] = ProviderForecast.from_redis_json(data)
+            else:
+                logger.warning(
+                    f"No forecast data in Redis for {provider}:{model}:{region.value}:{spot_id}",
+                    extra={
+                        "spot_id": spot_id,
+                        "provider": provider,
+                        "model": model,
+                        "region": region.value,
+                    },
+                )
+                lookup[(provider, model)] = None
+
+        return lookup
+
+    async def get_available_providers(
+        self, surf_spot_id: int, user_id: int
+    ) -> dict[str, list[str]]:
         """
         Get available forecast providers and their models for a surf spot.
 
@@ -190,13 +252,11 @@ class ForecastService:
 
         Raises:
             SurfSpotNotFoundError: If surf spot doesn't exist
+            SurfSpotPermissionError: If user doesn't have view access
         """
-        region = await self._get_spot_region(surf_spot_id)
+        spot = await self._get_spot(surf_spot_id, user_id)
+        region = Region(spot.region)
         return self._get_available_forecasts_grouped(region)
-
-    # =======================
-    # HELPER FUNCTIONS
-    # =======================
 
     def _build_redis_key(
         self, provider: str, model: str, region: str, spot_id: int
@@ -228,16 +288,17 @@ class ForecastService:
 
         return grouped
 
-    async def _get_spot_region(self, surf_spot_id: int) -> Region:
+    async def _get_spot(self, surf_spot_id: int, user_id: int) -> SurfSpot:
         """
-        Get the region for a surf spot.
+        Get surf spot and verify view access.
 
-        Reads the pre-computed region directly from the spot record.
-        Region is set at spot creation time based on coordinates.
+        Fetches the full ORM object (one query instead of the dict-based
+        get_with_coordinates) and runs the policy check.
 
         Raises:
             SurfSpotNotFoundError: If spot doesn't exist
+            SurfSpotPermissionError: If user doesn't have view access
         """
-        spot = await self.surf_spot_repo.get_with_coordinates(surf_spot_id)
-
-        return Region(spot["region"])
+        spot = await self.surf_spot_repo.get_by_id(surf_spot_id)
+        await self.policy.require_view_access(user_id, spot)
+        return spot

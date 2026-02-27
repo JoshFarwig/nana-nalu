@@ -1,7 +1,7 @@
 import logging
 import json
 from re import S
-from typing import Sequence
+from collections.abc import Sequence
 from sqlalchemy import RowMapping, or_, select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2.functions import (

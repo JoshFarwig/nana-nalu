@@ -1,7 +1,7 @@
 import logging
-from typing import Sequence
+from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,9 @@ from core.exceptions.condition_profiles import (
 )
 
 from models.condition_profile_model import ConditionProfile
+from models.surf_spot_model import SurfSpot
+from models.crew_member_model import CrewMember
+
 
 from schemas.condition_profile_schema import (
     ProviderConditionEntry,
@@ -43,23 +46,13 @@ class AsyncConditionProfileRepository:
         result = await self.session.execute(
             select(ConditionProfile).where(ConditionProfile.spot_id == spot_id)
         )
-        condition_profiles = result.scalars().all()
-
-        if not condition_profiles:
-            raise ConditionProfileNotFoundError(spot_id, "spot_id")
-
-        return condition_profiles
+        return result.scalars().all()
 
     async def get_all_by_user_id(self, user_id: int) -> Sequence[ConditionProfile]:
         result = await self.session.execute(
             select(ConditionProfile).where(ConditionProfile.user_id == user_id)
         )
-        condition_profiles = result.scalars().all()
-
-        if not condition_profiles:
-            raise ConditionProfileNotFoundError(user_id, "user_id")
-
-        return condition_profiles
+        return result.scalars().all()
 
     async def get_all_for_spot_ids(
         self, spot_ids: set[int]
@@ -67,12 +60,30 @@ class AsyncConditionProfileRepository:
         result = await self.session.execute(
             select(ConditionProfile).where(ConditionProfile.spot_id.in_(spot_ids))
         )
-        condition_profiles = result.scalars().all()
+        return result.scalars().all()
 
-        if not condition_profiles:
-            raise ConditionProfileNotFoundError(spot_ids, "spot_id")
-
-        return condition_profiles
+    async def get_all_viewable_for_user(
+        self, user_id: int
+    ) -> Sequence[ConditionProfile]:
+        """
+        Return all active profiles on spots the user can view
+        (spots they own OR spots in a crew they're a member of).
+        """
+        stmt = (
+            select(ConditionProfile)
+            .join(SurfSpot, ConditionProfile.spot_id == SurfSpot.id)
+            .outerjoin(CrewMember, SurfSpot.crew_id == CrewMember.crew_id)
+            .where(
+                ConditionProfile.is_active,
+                or_(
+                    SurfSpot.user_id == user_id,
+                    CrewMember.user_id == user_id,
+                ),
+            )
+            .distinct()
+        )
+        results = await self.session.execute(stmt)
+        return results.scalars().all()
 
     async def create(self, profile_data: dict):
         condition_profile = ConditionProfile(

@@ -55,6 +55,22 @@ class SurfSpotNotInRegionError(SurfSpotError):
         )
 
 
+class SurfSpotPermissionError(SurfSpotError):
+    """Raised when a user doesn't have permission to access/modify a surf spot"""
+
+    def __init__(self, user_id: int, spot_id: int, action: str):
+        super().__init__(
+            message=f"You don't have permission to {action} this surf spot",
+            error_code="surf_spot_permission_denied",
+            status_code=HTTPStatus.FORBIDDEN,
+            details={
+                "user_id": user_id,
+                "spot_id": spot_id,
+                "action": action,
+            },
+        )
+
+
 class InvalidCoordBoundsError(SurfSpotError):
     """Raised when coordinate bounds are invalid"""
 

@@ -26,7 +26,7 @@ class ConditionProfileNotFoundError(ConditionProfileError):
 
 
 class ConditionProfilePermissionError(ConditionProfileError):
-    def __init__(self, user_id, condition_profile_id: int, action: str):
+    def __init__(self, user_id: int, condition_profile_id: int, action: str):
         super().__init__(
             message=f"You don't have permission to {action} this condition profile",
             error_code="condition_profile_permission_denied",

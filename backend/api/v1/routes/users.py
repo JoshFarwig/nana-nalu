@@ -14,8 +14,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-# NOTE: Cloudflare R2 for profile pic / surf spot photos?
-
 
 @router.get("/me")
 async def get_current_user_profile(

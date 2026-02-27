@@ -29,7 +29,7 @@ def transform_forecasts(
         logger.warning("No raw forecasts to transform")
         return {}
 
-    region = config.region.value
+    region = config.region
     provider_forecasts = {
         spot_id: map_pacioos_tide_forecast(
             spot_id, region, raw_data, config.data_summary

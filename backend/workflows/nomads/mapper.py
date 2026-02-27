@@ -10,10 +10,11 @@ from services.forecast.forecast_schema import (
     ProviderForecast,
 )
 from utils.geo_validation import wave_direction_to_toward
+from utils.region import Region
 
 
 def map_nwps_forecast(
-    spot_id: int, location: str, nwps_forecast_data: dict, data_summary: dict[str, str]
+    spot_id: int, region: Region, nwps_forecast_data: dict, data_summary: dict[str, str]
 ) -> ProviderForecast:
     """
     Map NWPS data fields to unified schema.
@@ -27,7 +28,7 @@ def map_nwps_forecast(
 
     Args:
         spot_id: The surf spot ID
-        location: Regional variant (e.g., "maui", "oahu")
+        region: Regional variant (e.g., "maui", "oahu")
         nwps_forecast_data: Raw data from NWPS GRIB2 extraction
         data_summary: Category-level descriptions from config
     """
@@ -61,7 +62,7 @@ def map_nwps_forecast(
         spot_id=spot_id,
         provider=ForecastProvider.NOMADS,
         model=ForecastModel.NWPS,
-        location=location,
+        region=region,
         analysis_time=nwps_forecast_data["analysis_time"],
         grid_metadata=GridMetadata(
             selected_lat=nwps_forecast_data["grid_metadata"]["selected_lat"],

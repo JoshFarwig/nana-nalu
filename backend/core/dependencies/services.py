@@ -33,6 +33,9 @@ from services.crew_service import CrewService
 from services.email_service import EmailService
 from services.forecast.forecast_service import ForecastService
 from services.magic_link_service import MagicLinkService
+from services.policies.condition_profile_policy import ConditionProfilePolicy
+from services.policies.surf_spot_policy import SurfSpotPolicy
+from services.surf_spot_service import SurfSpotService
 
 
 def get_email_service(
@@ -43,11 +46,26 @@ def get_email_service(
     return EmailService(http_manager, template_renderer, settings)
 
 
+def get_surf_spot_policy(
+    session: AsyncSession = Depends(get_async_db_session),
+) -> SurfSpotPolicy:
+    return SurfSpotPolicy(session)
+
+
+def get_surf_spot_service(
+    spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
+    policy: SurfSpotPolicy = Depends(get_surf_spot_policy),
+    session: AsyncSession = Depends(get_async_db_session),
+) -> SurfSpotService:
+    return SurfSpotService(spot_repo, policy, session)
+
+
 def get_forecast_service(
     redis_manager: AsyncRedisManager = Depends(get_async_redis_manager),
     surf_spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
+    policy: SurfSpotPolicy = Depends(get_surf_spot_policy),
 ) -> ForecastService:
-    return ForecastService(redis_manager, surf_spot_repo)
+    return ForecastService(redis_manager, surf_spot_repo, policy)
 
 
 def get_magic_link_service(
@@ -79,15 +97,25 @@ def get_auth_service(
     )
 
 
+def get_condition_profile_policy(
+    session: AsyncSession = Depends(get_async_db_session),
+) -> ConditionProfilePolicy:
+    return ConditionProfilePolicy(session)
+
+
 def get_condition_profile_service(
     forecast_service: ForecastService = Depends(get_forecast_service),
     profile_repo: AsyncConditionProfileRepository = Depends(
         get_condition_profile_repository
     ),
     spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
+    policy: ConditionProfilePolicy = Depends(get_condition_profile_policy),
+    spot_policy: SurfSpotPolicy = Depends(get_surf_spot_policy),
     session: AsyncSession = Depends(get_async_db_session),
 ) -> ConditionProfileService:
-    return ConditionProfileService(forecast_service, profile_repo, spot_repo, session)
+    return ConditionProfileService(
+        forecast_service, profile_repo, spot_repo, policy, spot_policy, session
+    )
 
 
 def get_crew_service(

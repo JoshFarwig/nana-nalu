@@ -1,5 +1,5 @@
 import logging
-from typing import Sequence
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
