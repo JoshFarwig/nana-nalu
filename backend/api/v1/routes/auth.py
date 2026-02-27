@@ -48,13 +48,25 @@ def _set_refresh_token_cookie(
 
 @router.post("/register")
 async def register(
-    response: Response,
     user_data: UserCreate,
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    """Register a new user via the AuthService and issue out refresh + access tokens"""
+    """Start registration — sends verification email. No tokens issued yet."""
 
-    tokens = await auth_service.register(user_data)
+    await auth_service.register(user_data)
+
+    return SuccessResponse(message="Check your email to complete registration")
+
+
+@router.post("/verify-email")
+async def verify_email(
+    response: Response,
+    token: str,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Complete registration — verifies email, creates user, issues tokens."""
+
+    tokens = await auth_service.verify_email_and_create_user(token)
 
     _set_refresh_token_cookie(
         refresh_token=tokens.refresh_token,
@@ -63,22 +75,11 @@ async def register(
     )
 
     return SuccessResponse(
-        message="Successfully registered account",
+        message="Email verified and account created",
         data=AuthTokenReponse(
             access_token=tokens.access_token, access_token_type=tokens.access_token_type
         ),
     )
-
-
-@router.post("/verify-email")
-async def verify_email(
-    token: str, auth_service: AuthService = Depends(get_auth_service)
-):
-    """Verify a user's account with magic link token"""
-
-    await auth_service.verify_email(token)
-
-    return SuccessResponse(message="User account verified via email")
 
 
 @router.post("/login")

@@ -31,10 +31,8 @@ class EmailService:
     def _handle_http_status_error(
         self, error: HTTPStatusError, to_email: str, email_type: str
     ):
-        """Parse Resend API errors and raise appropriate domain exceptions"""
+        """Maps Resend API HTTP errors to domain exceptions."""
         status_code = error.response.status_code
-
-        # rate limiting and quota errors (429)
         if status_code == 429:
             # parse error code from response body
             try:
@@ -46,7 +44,6 @@ class EmailService:
             retry_after = error.response.headers.get("Retry-After")
             retry_after_int = int(retry_after) if retry_after else None
 
-            # check specific quota/rate limit type
             if error_code == "daily_quota_exceeded":
                 raise EmailDailyQuotaExceededError(
                     to_email=to_email,
@@ -58,21 +55,18 @@ class EmailService:
                     email_type=email_type,
                 ) from error
             else:
-                # default to per-second rate limit
                 raise EmailRateLimitError(
                     to_email=to_email,
                     email_type=email_type,
                     retry_after=retry_after_int,
                 ) from error
 
-        # configuration errors (unauthorized, forbidden)
         elif status_code in (401, 403):
             raise EmailConfigurationError(
                 reason="Invalid API key or insufficient permissions",
                 resend_status=status_code,
             ) from error
 
-        # service unavailable (5xx errors)
         elif status_code >= 500:
             raise EmailServiceUnavailableError(
                 to_email=to_email,
@@ -80,7 +74,6 @@ class EmailService:
                 resend_status=status_code,
             ) from error
 
-        # other client errors (4xx)
         else:
             raise EmailDeliveryError(
                 to_email=to_email,
@@ -96,16 +89,6 @@ class EmailService:
         email_type: str,
         username: str,
     ):
-        """
-        Centralized email sending with error handling
-
-        Args:
-            to_email: Recipient email address
-            subject: Email subject line
-            html_body: HTML content for email body
-            email_type: Type of email for logging/errors (e.g., "verification email")
-            username: Recipient username for logging
-        """
         try:
             await self.http_manager.post(
                 "https://api.resend.com/emails",
@@ -129,7 +112,6 @@ class EmailService:
             self._handle_http_status_error(e, str(to_email), email_type)
 
         except HTTPError as e:
-            # network errors, timeouts, etc.
             raise EmailDeliveryError(
                 to_email=str(to_email),
                 email_type=email_type,
@@ -144,7 +126,6 @@ class EmailService:
         first_name: str,
         last_name: str,
     ):
-        """Send email verification link"""
         link = f"{self.settings.app_url}/auth/verify_email?token={magic_token}"
 
         # TODO: Once UI development starts, build templates
@@ -166,7 +147,6 @@ class EmailService:
     async def send_passsword_reset(
         self, magic_token: str, to_email: EmailStr, username: str
     ):
-        """Send password reset link"""
         link = f"{self.settings.app_url}/auth/reset-password?token={magic_token}"
 
         # TODO: Once UI development starts, build templates

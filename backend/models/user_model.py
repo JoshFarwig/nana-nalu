@@ -1,6 +1,5 @@
 from typing import TYPE_CHECKING
-from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.base_model import Base
@@ -28,10 +27,7 @@ class User(Base, TimestampMixin):
     first_name: Mapped[str] = mapped_column(String(25))
     last_name: Mapped[str] = mapped_column(String(50))
     bio: Mapped[str | None] = mapped_column(String(100), default=None)
-    location: Mapped[str | None] = mapped_column(String(50), default=None)
 
-    verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relationships

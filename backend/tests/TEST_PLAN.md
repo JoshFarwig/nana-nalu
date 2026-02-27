@@ -26,10 +26,12 @@ This is a **pragmatic split** — routes that only need a single repo call skip 
 |-------|-------------------|---------------|
 | **Range helpers** (`in_range`, `direction_in_range`) | Yes — boundary conditions, None handling, north-wrapping | Unit test (pure functions) |
 | **Service matching** (`_entry_matches`, `_evaluate_profile`) | Yes — AND logic, missing data, JSONB deserialization | Unit test (construct service with `None` deps) |
+| **Nearest forecast point** (`_find_nearest_forecast_point`) | Yes — empty list, timezone math, closest-to-now selection | Unit test (pure function) |
 | **Schema validation** (Pydantic validators) | Yes — min>max rejection, duplicate providers, required fields | Unit test (construct schemas directly) |
-| **Workflow transforms** (mapper + transform tasks) | Yes — data parsing, unit conversion, grid selection | Unit test (feed raw data, check output) |
+| **Geo utilities** (`direction_to_toward`, `longitude_to_360/180`) | Yes — direction convention, coordinate normalization | Unit test (pure functions) |
 | **Repo queries** (complex JOINs, filters) | Yes — `get_all_viewable_for_user` has crew membership logic | Integration test (real DB) |
 | **Service orchestration** (evaluation pipeline) | Yes — concurrent fetches, forecast lookup, batch results | Integration test (real DB + Redis) |
+| **Authorization policies** (`require_view_access`) | Yes — crew membership gates, owner vs member vs outsider | Integration test (real DB) |
 | **Routes** | No — just glue | Covered by integration tests or skip entirely |
 
 ### Practical Testing Rules
@@ -56,7 +58,7 @@ Shared fixtures for constructing test data:
 - `make_swell(height=, period=, direction=)` — factory for `SwellPartition` dicts
 - `typical_wave_point` — realistic Maui north shore ForecastPoint (sig_height=2.1m, peak_period=14s, primary_swell NW, wind=5.5m/s NE, tide=0.3m)
 - `mock_profile(spot_id, conditions)` — lightweight fake that quacks like `ConditionProfile` ORM model (avoids DB dependency)
-- `service` — bare `ConditionProfileService(None, None, None, None)` for testing pure methods
+- `service` — bare `ConditionProfileService(None, None, None, None, None, None)` for testing pure methods
 
 ### File: `tests/unit/test_condition_matching.py`
 
@@ -111,6 +113,14 @@ Shared fixtures for constructing test data:
 | `test_and_across_providers_one_fails` | Two providers, one misses → False |
 | `test_none_forecast_point_in_lookup` | Key exists but value is None (Redis miss) → False |
 
+#### `TestFindNearestForecastPoint` (~3 tests)
+
+| Test | What it verifies |
+|------|-----------------|
+| `test_empty_forecast_list_returns_none` | No forecast points → None (no crash) |
+| `test_selects_closest_to_now` | Given 3 points at different valid_times, returns the one nearest to `now` |
+| `test_prefers_future_and_past_equally` | Point 1hr ago and point 1hr ahead are equally valid (abs distance) |
+
 ### File: `tests/unit/test_condition_schema.py`
 
 Pydantic validation edge cases — tests that schemas reject invalid input correctly.
@@ -137,17 +147,19 @@ Serialization round-trip tests — ensures Redis storage doesn't lose data.
 | `test_forecast_point_optional_categories` | Point with only wave (no wind/tide) roundtrips correctly |
 | `test_swell_partitions_roundtrip` | Primary/secondary/tertiary swells survive serialization |
 
-### File: `tests/unit/test_workflow_transform.py`
+### File: `tests/unit/test_geo_utils.py`
 
-Transform task and mapper logic — pure data processing.
+Pure coordinate/direction utilities — small functions, high blast radius if wrong.
 
 | Test | What it verifies |
 |------|-----------------|
-| `test_nomads_mapper_wave_fields` | NOMADS raw data → WaveData mapping |
-| `test_nomads_mapper_swell_partitions` | Swell partition extraction from GRIB fields |
-| `test_pacioos_mapper_tide_fields` | PacIOOS tide data → TideData mapping |
-| `test_transform_produces_forecast_points` | Full transform output has correct ForecastPoint structure |
-| `test_transform_handles_missing_variables` | Graceful handling when model output lacks optional fields |
+| `test_wave_direction_to_toward_0` | 0° (from north) → 180° (toward south) |
+| `test_wave_direction_to_toward_180` | 180° → 0° |
+| `test_wave_direction_to_toward_350` | 350° → 170° |
+| `test_wave_direction_to_toward_none` | None input → None (no crash) |
+| `test_longitude_to_360_negative` | -157.8° (Maui) → 202.2° |
+| `test_longitude_to_360_positive` | 10° → 10° (no-op) |
+| `test_longitude_to_180_from_360` | 202.2° → -157.8° (round-trip) |
 
 ---
 
@@ -200,6 +212,17 @@ Fixtures needed:
 | `test_get_forecasts_for_providers_pipeline` | Redis pipeline fetches correct subset |
 | `test_get_forecasts_returns_empty_on_miss` | No Redis data → empty list (no crash) |
 
+### File: `tests/integration/test_policies.py`
+
+Authorization gate tests — these are the access control boundaries.
+
+| Test | What it verifies |
+|------|-----------------|
+| `test_owner_can_view_own_profile` | Owner access passes |
+| `test_crew_member_can_view_shared_profile` | Crew member of the spot's crew can view |
+| `test_outsider_denied_view_access` | Non-owner, non-crew-member → PermissionError |
+| `test_spot_view_access_no_crew` | Spot without a crew — owner OK, anyone else denied |
+
 ---
 
 ## What NOT to Test
@@ -212,6 +235,9 @@ Fixtures needed:
 | FastAPI DI wiring | If deps are typed correctly, they compose correctly |
 | Redis get/set operations | That's testing the Redis library, not your code |
 | Pydantic serialization basics | Pydantic is well-tested; test YOUR validators, not theirs |
+| Workflow transforms / mappers | Mostly field renaming; covered by geo_utils tests + production visibility. The direction conversion (`wave_direction_to_toward`) is tested via `test_geo_utils.py` |
+| Auth service (deferred registration + token rotation) | Registration is now stateless until verification — creates a Redis key with TTL, no DB interaction. verify_email() is a straightforward create-user-and-issue-tokens sequence. No custom logic beyond what's already tested via magic link TTLs and user repo CRUD. Token rotation's crash window is a known Redis-level concern, not something unit tests catch. Revisit if auth flows grow more complex |
+| Crew service (quota/capacity) | Simple integer comparisons (`count >= max`). The `SELECT FOR UPDATE` locking is a DB guarantee. The owner removal stub is a known TODO, not a testable bug |
 
 ---
 
@@ -270,16 +296,17 @@ tests/
 ├── unit/
 │   ├── __init__.py
 │   ├── conftest.py                          # Factories: make_forecast_point, mock_profile, etc.
-│   ├── test_condition_matching.py           # in_range, direction_in_range, entry_matches, evaluate_profile
+│   ├── test_condition_matching.py           # in_range, direction_in_range, entry_matches, evaluate_profile, find_nearest
 │   ├── test_condition_schema.py             # Pydantic validation edge cases
 │   ├── test_forecast_schema.py              # Redis serialization round-trips
-│   └── test_workflow_transform.py           # Mapper + transform pure logic
+│   └── test_geo_utils.py                    # direction_to_toward, longitude_to_360/180
 └── integration/
     ├── __init__.py
     ├── conftest.py                          # DB + Redis fixtures, seed helpers
     ├── test_condition_profile_repo.py       # Complex query testing (viewable profiles JOIN)
     ├── test_condition_profile_service.py    # Full evaluation pipeline
-    └── test_forecast_service.py             # Redis pipeline fetch
+    ├── test_forecast_service.py             # Redis pipeline fetch
+    └── test_policies.py                     # Authorization gate tests (owner/crew/outsider)
 ```
 
 ---
@@ -288,22 +315,25 @@ tests/
 
 | Phase | Tests | Time |
 |-------|-------|------|
-| Unit test setup (conftest + first file) | ~30 tests | 2-3 hours |
+| Unit test setup (conftest + condition matching) | ~34 tests | 2-3 hours |
 | Schema + serialization unit tests | ~12 tests | 1-2 hours |
-| Workflow transform unit tests | ~5 tests | 1-2 hours |
+| Geo utility unit tests | ~7 tests | 30 min |
 | Integration conftest (fresh fixtures) | — | 1-2 hours |
-| Integration tests | ~12 tests | 2-3 hours |
+| Integration tests (repo + service + policies) | ~15 tests | 2-3 hours |
 | GitHub Actions workflows | 2 files | 30 min |
-| **Total** | **~60 tests** | **~8-12 hours** |
+| **Total** | **~68 tests** | **~7-10 hours** |
 
 ---
 
 ## Priority Order
 
-1. `test_condition_matching.py` — highest risk logic, write first
+1. `test_condition_matching.py` — highest risk logic (including `_find_nearest_forecast_point`), write first
 2. `test_condition_schema.py` — catches bad user input before it hits the DB
-3. `test_forecast_schema.py` — ensures Redis round-trips don't silently lose data
-4. Integration `conftest.py` — foundation for all integration tests
-5. `test_condition_profile_repo.py` — the viewable profiles query is the most complex SQL
-6. `test_condition_profile_service.py` — full pipeline smoke test
-7. `test_workflow_transform.py` — lower priority, workflows are already running in production
+3. `test_geo_utils.py` — small file, high impact if `direction_to_toward` or `longitude_to_360` break
+4. `test_forecast_schema.py` — quick safety net for Redis round-trips
+5. Integration `conftest.py` — foundation for all integration tests
+6. `test_condition_profile_repo.py` — the viewable profiles query is the most complex SQL
+7. `test_policies.py` — authorization boundaries, catches access control regressions
+8. `test_condition_profile_service.py` — full pipeline smoke test
+
+---

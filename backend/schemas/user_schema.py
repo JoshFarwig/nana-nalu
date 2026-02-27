@@ -23,8 +23,6 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Schema for creating a new user via registration."""
 
-    bio: str | None = Field(default=None, max_length=150)
-    location: str | None = Field(default=None, max_length=50)
     password: str = Field(min_length=8, max_length=256)
 
 
@@ -36,7 +34,6 @@ class UserUpdate(BaseModel):
     first_name: str | None = Field(default=None, max_length=25)
     last_name: str | None = Field(default=None, max_length=25)
     bio: str | None = Field(default=None, max_length=150)
-    location: str | None = Field(default=None, max_length=50)
 
 
 class UserPasswordUpdate(BaseModel):
@@ -54,7 +51,6 @@ class UserResponse(UserBase):
     """Schema for user responses (excludes password)."""
 
     bio: str | None = Field(default=None, max_length=150)
-    location: str | None = Field(default=None, max_length=50)
     model_config = {"from_attributes": True}
 
 

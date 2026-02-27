@@ -12,16 +12,16 @@ class SurfSpotService:
     def __init__(
         self,
         spot_repo: AsyncSurfSpotRepository,
-        policy: SurfSpotPolicy,
+        spot_policy: SurfSpotPolicy,
         session: AsyncSession,
     ):
         self.spot_repo = spot_repo
-        self.policy = policy
+        self.spot_policy = spot_policy
         self.session = session
 
     async def get_spot(self, user_id: int, spot_id: int) -> SurfSpot:
         spot = await self.spot_repo.get_by_id(spot_id)
-        await self.policy.require_view_access(user_id, spot)
+        await self.spot_policy.require_view_access(user_id, spot)
         return spot
 
     async def get_user_spots(self, user_id: int) -> Sequence[SurfSpot]:
@@ -40,7 +40,7 @@ class SurfSpotService:
         self, user_id: int, spot_id: int, data: SurfSpotUpdate
     ) -> SurfSpot:
         spot = await self.spot_repo.get_by_id(spot_id)
-        self.policy.require_ownership(user_id, spot, "update")
+        self.spot_policy.require_ownership(user_id, spot, "update")
         spot = await self.spot_repo.update_profile(spot_id, data)
         await self.session.commit()
         await self.session.refresh(spot)
@@ -48,7 +48,7 @@ class SurfSpotService:
 
     async def delete_spot(self, user_id: int, spot_id: int) -> bool:
         spot = await self.spot_repo.get_by_id(spot_id)
-        self.policy.require_ownership(user_id, spot, "delete")
+        self.spot_policy.require_ownership(user_id, spot, "delete")
         result = await self.spot_repo.delete(spot_id)
         await self.session.commit()
         return result

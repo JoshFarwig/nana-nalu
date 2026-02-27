@@ -32,14 +32,7 @@ from services.forecast.forecast_schema import (
 from services.condition_profile_service import ConditionProfileService
 
 
-# =============================================================
-# in_range — standard numeric range checks
-# =============================================================
-
-
 class TestInRange:
-    """Tests for in_range(value, RangeCondition)."""
-
     def test_value_within_range(self):
         assert in_range(5.0, RangeCondition(min=2.0, max=8.0)) is True
 
@@ -67,22 +60,15 @@ class TestInRange:
         assert in_range(9.0, RangeCondition(max=8.0)) is False
 
     def test_exact_value(self):
-        """min == max: only that exact value matches."""
         assert in_range(5.0, RangeCondition(min=5.0, max=5.0)) is True
         assert in_range(5.1, RangeCondition(min=5.0, max=5.0)) is False
 
 
-# =============================================================
-# direction_in_range — compass direction with north-wrapping
-# =============================================================
-
-
 class TestDirectionInRange:
-    """Tests for direction_in_range(value, RangeCondition)."""
-
     def test_normal_range(self):
-        """Standard range not crossing north."""
         assert direction_in_range(180.0, RangeCondition(min=90.0, max=270.0)) is True
+        assert direction_in_range(90.0, RangeCondition(min=90.0, max=270.0)) is True
+        assert direction_in_range(270.0, RangeCondition(min=90.0, max=270.0)) is True
 
     def test_outside_normal_range(self):
         assert direction_in_range(45.0, RangeCondition(min=90.0, max=270.0)) is False
@@ -92,41 +78,32 @@ class TestDirectionInRange:
 
     def test_min_only_direction(self):
         assert direction_in_range(350.0, RangeCondition(min=300.0)) is True
+        assert direction_in_range(300.0, RangeCondition(min=300.0)) is True
         assert direction_in_range(290.0, RangeCondition(min=300.0)) is False
 
     def test_max_only_direction(self):
         assert direction_in_range(20.0, RangeCondition(max=90.0)) is True
+        assert direction_in_range(90.0, RangeCondition(max=90.0)) is True
         assert direction_in_range(100.0, RangeCondition(max=90.0)) is False
 
-    # TODO(human): north-wrapping edge cases
-    # The tricky part of direction_in_range is when min > max,
-    # meaning the range crosses 0°/360° (north).
-    #
-    # Example: a NW swell window of 290°→030° should match 350° and 10°
-    # but NOT 180° (south).
-    #
-    # Write 3-4 test methods covering:
-    #   1. Value inside a north-crossing range (e.g., 350° in 330°→030°)
-    #   2. Value inside on the other side (e.g., 10° in 330°→030°)
-    #   3. Value outside a north-crossing range (e.g., 180° in 330°→030°)
-    #   4. Boundary values (exactly at min or max of a wrapping range)
-
-
-# =============================================================
-# _entry_matches — single provider forecast matching
-# =============================================================
+    def test_north_crossing_range(self):
+        north_crossing_range = RangeCondition(min=330.0, max=30.0)
+        assert direction_in_range(350.0, north_crossing_range) is True
+        assert direction_in_range(10.0, north_crossing_range) is True
+        assert direction_in_range(330.0, north_crossing_range) is True
+        assert direction_in_range(30.0, north_crossing_range) is True
+        assert direction_in_range(180.0, north_crossing_range) is False
 
 
 class TestEntryMatches:
-    """Tests for ConditionProfileService._entry_matches."""
-
     @pytest.fixture
     def service(self):
-        """Bare service instance — _entry_matches is pure computation."""
         return ConditionProfileService(
             forecast_service=None,
             profile_repo=None,
             spot_repo=None,
+            profile_policy=None,
+            spot_policy=None,
             session=None,
         )
 
@@ -242,27 +219,20 @@ class TestEntryMatches:
         assert service._entry_matches(entry, typical_wave_point) is False
 
 
-# =============================================================
-# _evaluate_profile — full profile against flat forecast lookup
-# =============================================================
-
-
 class TestEvaluateProfile:
-    """Tests for ConditionProfileService._evaluate_profile."""
-
     @pytest.fixture
     def service(self):
         return ConditionProfileService(
             forecast_service=None,
             profile_repo=None,
             spot_repo=None,
+            profile_policy=None,
+            spot_policy=None,
             session=None,
         )
 
     @pytest.fixture
     def mock_profile(self):
-        """Minimal mock that quacks like ConditionProfile ORM model."""
-
         class FakeProfile:
             def __init__(self, spot_id, conditions):
                 self.id = 1
@@ -273,9 +243,7 @@ class TestEvaluateProfile:
 
         return FakeProfile
 
-    def test_single_entry_matches(
-        self, service, mock_profile, typical_wave_point
-    ):
+    def test_single_entry_matches(self, service, mock_profile, typical_wave_point):
         profile = mock_profile(
             spot_id=1,
             conditions=[

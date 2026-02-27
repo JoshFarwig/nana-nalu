@@ -28,7 +28,6 @@ async def get_current_user_profile(
         first_name=user.first_name,
         last_name=user.last_name,
         bio=user.bio,
-        location=user.location,
     )
 
     return SuccessResponse(message="Retrieved user profile", data=user_profile)

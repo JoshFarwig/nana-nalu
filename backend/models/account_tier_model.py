@@ -18,7 +18,6 @@ class AccountTier(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    # tier types free + kokua
     name: Mapped[str] = mapped_column(unique=True)
     display_name: Mapped[str]
 
@@ -45,5 +44,5 @@ DEFAULT_TIERS = {
         "price_monthly_cents": 0,
     },
     # TODO: after adjusting free tier w/ test users,
-    # consider what some valid 5 a month value options would be?
+    # consider what some valid suppoer tiers would be?
 }

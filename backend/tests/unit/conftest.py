@@ -1,5 +1,5 @@
 """
-Unit test fixtures — no external services required.
+Unit test fixtures
 
 Provides factory helpers for building forecast data and condition profiles
 used across unit tests.
@@ -15,11 +15,6 @@ from services.forecast.forecast_schema import (
     TideData,
     SwellPartition,
 )
-
-
-# =========================
-# FORECAST POINT FACTORIES
-# =========================
 
 
 @pytest.fixture
@@ -53,7 +48,11 @@ def make_swell():
     ) -> dict:
         return {
             k: v
-            for k, v in {"height": height, "period": period, "direction": direction}.items()
+            for k, v in {
+                "height": height,
+                "period": period,
+                "direction": direction,
+            }.items()
             if v is not None
         }
 
@@ -63,6 +62,7 @@ def make_swell():
 @pytest.fixture
 def typical_wave_point(make_forecast_point):
     """A realistic Maui north shore forecast point."""
+
     return make_forecast_point(
         wave={
             "significant_height": 2.1,

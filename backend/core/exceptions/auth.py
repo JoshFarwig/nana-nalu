@@ -62,17 +62,6 @@ class InvalidCredentialsError(AuthenticationError):
         )
 
 
-class EmailNotVerifiedError(AuthenticationError):
-    """Raised when user tries to login with unverified email"""
-
-    def __init__(self, message: str = "Email not verified"):
-        super().__init__(
-            message=message,
-            error_code="email_not_verified",
-            status_code=HTTPStatus.UNAUTHORIZED,
-        )
-
-
 class InvalidRefreshTokenError(AuthenticationError):
     """Raised when refresh token is invalid or expired"""
 

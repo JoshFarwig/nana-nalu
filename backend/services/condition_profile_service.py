@@ -41,20 +41,20 @@ class ConditionProfileService:
         forecast_service: ForecastService,
         profile_repo: AsyncConditionProfileRepository,
         spot_repo: AsyncSurfSpotRepository,
-        policy: ConditionProfilePolicy,
+        profile_policy: ConditionProfilePolicy,
         spot_policy: SurfSpotPolicy,
         session: AsyncSession,
     ):
         self.forecast_service = forecast_service
         self.profile_repo = profile_repo
         self.spot_repo = spot_repo
-        self.policy = policy
+        self.profile_policy = profile_policy
         self.spot_policy = spot_policy
         self.session = session
 
     async def get_profile(self, user_id: int, profile_id: int) -> ConditionProfile:
         profile = await self.profile_repo.get_by_id(profile_id)
-        await self.policy.require_view_access(user_id, profile)
+        await self.profile_policy.require_view_access(user_id, profile)
         return profile
 
     async def get_user_profiles(self, user_id: int) -> Sequence[ConditionProfile]:
@@ -81,7 +81,7 @@ class ConditionProfileService:
         self, user_id: int, profile_id: int, data: ConditionProfileUpdate
     ) -> ConditionProfile:
         profile = await self.profile_repo.get_by_id(profile_id)
-        self.policy.require_ownership(user_id, profile, "update")
+        self.profile_policy.require_ownership(user_id, profile, "update")
         profile = await self.profile_repo.update_from_user(profile_id, data)
         await self.session.commit()
         await self.session.refresh(profile)
@@ -89,7 +89,7 @@ class ConditionProfileService:
 
     async def delete_profile(self, user_id: int, profile_id: int) -> bool:
         profile = await self.profile_repo.get_by_id(profile_id)
-        self.policy.require_ownership(user_id, profile, "delete")
+        self.profile_policy.require_ownership(user_id, profile, "delete")
         await self.profile_repo.delete(profile_id)
         await self.session.commit()
         return True

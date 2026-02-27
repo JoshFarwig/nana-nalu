@@ -54,10 +54,10 @@ def get_surf_spot_policy(
 
 def get_surf_spot_service(
     spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
-    policy: SurfSpotPolicy = Depends(get_surf_spot_policy),
+    spot_policy: SurfSpotPolicy = Depends(get_surf_spot_policy),
     session: AsyncSession = Depends(get_async_db_session),
 ) -> SurfSpotService:
-    return SurfSpotService(spot_repo, policy, session)
+    return SurfSpotService(spot_repo, spot_policy, session)
 
 
 def get_forecast_service(
@@ -109,12 +109,12 @@ def get_condition_profile_service(
         get_condition_profile_repository
     ),
     spot_repo: AsyncSurfSpotRepository = Depends(get_surf_spot_repository),
-    policy: ConditionProfilePolicy = Depends(get_condition_profile_policy),
+    profile_policy: ConditionProfilePolicy = Depends(get_condition_profile_policy),
     spot_policy: SurfSpotPolicy = Depends(get_surf_spot_policy),
     session: AsyncSession = Depends(get_async_db_session),
 ) -> ConditionProfileService:
     return ConditionProfileService(
-        forecast_service, profile_repo, spot_repo, policy, spot_policy, session
+        forecast_service, profile_repo, spot_repo, profile_policy, spot_policy, session
     )
 
 
