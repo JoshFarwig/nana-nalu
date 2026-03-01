@@ -58,7 +58,7 @@ def test_redis_config() -> RedisConfig:
 @pytest.fixture(scope="session")
 def sync_db_engine(test_db_config: DatabaseConfig):
     """Create test database engine (session-scoped for performance)"""
-    engine = create_engine(test_db_config.get_sy────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────nc_url())
+    engine = create_engine(test_db_config.get_sync_url)
 
     # Create all tables
     Base.metadata.create_all(bind=engine)

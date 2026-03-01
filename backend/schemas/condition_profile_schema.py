@@ -8,7 +8,6 @@ class RangeCondition(BaseModel):
     A min/max range for a single measurement.
 
     Supports a selected min, a selected max, ranges (min < max) and single values (min == max).
-    Direction ranges can wrap around north (min > max).
     """
 
     min: float | None = None
@@ -18,6 +17,36 @@ class RangeCondition(BaseModel):
     def at_least_one_bound(self):
         if self.min is None and self.max is None:
             raise ValueError("Must specify at least one min or max")
+        return self
+
+    @model_validator(mode="after")
+    def min_lte_max(self):
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError("Min must be less than or equal to max")
+        return self
+
+
+class DirectionRangeCondition(BaseModel):
+    """A min/max range for direction fields (degrees, 0–360).
+
+    Bounds are validated individually; min > max is valid for north-crossing ranges (e.g., 330°→030°)."""
+
+    min: float | None = None
+    max: float | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_bound(self):
+        if self.min is None and self.max is None:
+            raise ValueError("Must specify at least one min or max")
+        return self
+
+    @model_validator(mode="after")
+    def bounds_in_compass_range(self):
+        for name, val in [("min", self.min), ("max", self.max)]:
+            if val is not None and not (0 <= val <= 360):
+                raise ValueError(
+                    f"Direction {name} must be between 0 and 360, got {val}"
+                )
         return self
 
 
@@ -32,7 +61,7 @@ def in_range(value: float | None, condition: RangeCondition) -> bool:
     return True
 
 
-def direction_in_range(value: float | None, condition: RangeCondition) -> bool:
+def direction_in_range(value: float | None, condition: DirectionRangeCondition) -> bool:
     """
     Check if a direction falls within a range, handling north-crossing wraps.
 
@@ -62,7 +91,7 @@ class SwellConditions(BaseModel):
 
     height: RangeCondition | None = None  # → swell.height (m)
     period: RangeCondition | None = None  # → swell.period (s)
-    direction: RangeCondition | None = (
+    direction: DirectionRangeCondition | None = (
         None  # → swell.direction (degrees, wraps around north)
     )
 
@@ -72,20 +101,20 @@ class WaveConditions(BaseModel):
     Condition ranges for wave data.
 
     Maps to ForecastPoint.wave (WaveData) fields.
-    All directions are in "toward" convention (0-360°).
+    All directions are in "from" convention (0-360°).
     """
 
     # Total sea state (combined)
     significant_height: RangeCondition | None = None  # → wave.significant_height (m)
     peak_period: RangeCondition | None = None  # → wave.peak_period (s)
-    peak_direction: RangeCondition | None = (
+    peak_direction: DirectionRangeCondition | None = (
         None  # → wave.peak_direction (degrees, wraps)
     )
 
     # Wind waves (locally generated)
     wind_wave_height: RangeCondition | None = None  # → wave.wind_wave_height (m)
     wind_wave_period: RangeCondition | None = None  # → wave.wind_wave_period (s)
-    wind_wave_direction: RangeCondition | None = (
+    wind_wave_direction: DirectionRangeCondition | None = (
         None  # → wave.wind_wave_direction (degrees, wraps)
     )
 
@@ -103,7 +132,9 @@ class WindConditions(BaseModel):
     """
 
     speed: RangeCondition | None = None  # → wind.speed (m/s)
-    direction: RangeCondition | None = None  # → wind.direction (degrees, wraps)
+    direction: DirectionRangeCondition | None = (
+        None  # → wind.direction (degrees, wraps)
+    )
 
 
 class TideConditions(BaseModel):
@@ -139,68 +170,6 @@ class ProviderConditionEntry(BaseModel):
             raise ValueError(
                 "Entry must specify at least one condition category (wave, wind, or tide)"
             )
-        return self
-
-    @model_validator(mode="after")
-    def validate_ranges(self):
-        """
-        Validate non-direction ranges have min <= max.
-        Direction ranges can have min > max (wrapping around north).
-        Single-value ranges (min == max) are allowed.
-        """
-        non_direction_ranges = []
-
-        # Collect wave non-direction ranges
-        if self.wave:
-            non_direction_ranges.extend(
-                [
-                    ("wave.significant_height", self.wave.significant_height),
-                    ("wave.peak_period", self.wave.peak_period),
-                    ("wave.wind_wave_height", self.wave.wind_wave_height),
-                    ("wave.wind_wave_period", self.wave.wind_wave_period),
-                ]
-            )
-
-            # Swell partitions (non-direction only)
-            if self.wave.primary_swell:
-                non_direction_ranges.extend(
-                    [
-                        ("wave.primary_swell.height", self.wave.primary_swell.height),
-                        ("wave.primary_swell.period", self.wave.primary_swell.period),
-                    ]
-                )
-            if self.wave.secondary_swell:
-                non_direction_ranges.extend(
-                    [
-                        (
-                            "wave.secondary_swell.height",
-                            self.wave.secondary_swell.height,
-                        ),
-                        (
-                            "wave.secondary_swell.period",
-                            self.wave.secondary_swell.period,
-                        ),
-                    ]
-                )
-
-        # Collect wind non-direction ranges
-        if self.wind:
-            non_direction_ranges.append(("wind.speed", self.wind.speed))
-
-        # Collect tide ranges
-        if self.tide:
-            non_direction_ranges.append(("tide.height", self.tide.height))
-
-        # Validate: min must be <= max IF both min and max exist, (min == max allowed for single values)
-        for name, rng in non_direction_ranges:
-            if (
-                rng is not None
-                and rng.min is not None
-                and rng.max is not None
-                and rng.min > rng.max
-            ):
-                raise ValueError(f"{name}: min ({rng.min}) must be <= max ({rng.max})")
-
         return self
 
 

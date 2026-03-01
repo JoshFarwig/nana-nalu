@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, Self
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.region import Region
@@ -40,17 +40,17 @@ class WaveUnits(BaseModel):
     # Total sea state
     significant_height: Literal["m"] = "m"
     peak_period: Literal["s"] = "s"
-    peak_direction: Literal["degrees_true_toward"] = "degrees_true_toward"
+    peak_direction: Literal["degrees_true_from"] = "degrees_true_from"
 
     # Wind waves
     wind_wave_height: Literal["m"] = "m"
     wind_wave_period: Literal["s"] = "s"
-    wind_wave_direction: Literal["degrees_true_toward"] = "degrees_true_toward"
+    wind_wave_direction: Literal["degrees_true_from"] = "degrees_true_from"
 
     # Swell components (applies to all partitions)
     swell_height: Literal["m"] = "m"
     swell_period: Literal["s"] = "s"
-    swell_direction: Literal["degrees_true_toward"] = "degrees_true_toward"
+    swell_direction: Literal["degrees_true_from"] = "degrees_true_from"
 
 
 class WindUnits(BaseModel):
@@ -95,7 +95,7 @@ class SwellPartition(BaseModel):
         default=None,
         ge=0,
         le=360,
-        description="Swell direction, degrees true (toward)",
+        description="Swell direction, degrees true (from)",
     )
 
 
@@ -106,7 +106,7 @@ class WaveData(BaseModel):
     Includes total combined conditions, wind-generated waves,
     and individual swell partitions ordered by energy/significance.
 
-    All heights in meters, directions in degrees true (0-360, toward),
+    All heights in meters, directions in degrees true (0-360, from),
     periods in seconds.
     """
 
@@ -124,7 +124,7 @@ class WaveData(BaseModel):
         default=None,
         ge=0,
         le=360,
-        description="Direction of dominant wave component, degrees true (toward)",
+        description="Direction of dominant wave component, degrees true (from)",
     )
 
     # ===== Wind Waves (Locally Generated) =====
@@ -138,7 +138,7 @@ class WaveData(BaseModel):
         default=None,
         ge=0,
         le=360,
-        description="Direction of wind waves, degrees true (toward)",
+        description="Direction of wind waves, degrees true (from)",
     )
 
     # ===== Swell Partitions (Remotely Generated) =====
@@ -276,7 +276,7 @@ class ProviderForecast(BaseModel):
         return self.model_dump_json(exclude_none=True)
 
     @classmethod
-    def from_redis_json(cls, data: str) -> "ProviderForecast":
+    def from_redis_json(cls, data: str) -> Self:
         """Deserialize from Redis JSON string."""
         return cls.model_validate_json(data)
 

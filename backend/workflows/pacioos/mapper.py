@@ -31,7 +31,7 @@ def map_pacioos_tide_forecast(
 
     for i, valid_time in enumerate(raw_data["valid_times"]):
         # Sea level from sea surface height
-        tide = TideData(height=raw_data["data"]["ssh"][i])
+        tide = TideData(height=round(raw_data["data"]["ssh"][i], 2))
 
         forecast.append(ForecastPoint(valid_time=valid_time, tide=tide))
 

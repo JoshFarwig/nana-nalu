@@ -96,6 +96,6 @@ class SurfSpotResponse(SurfSpotBase):
 
     id: int
     region: str
-    geometry: dict  # GeoJSON point geometry
+    geometry: dict
 
     model_config = {"from_attributes": True}

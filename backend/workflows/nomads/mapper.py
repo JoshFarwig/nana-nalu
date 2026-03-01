@@ -9,7 +9,6 @@ from services.forecast.forecast_schema import (
     ForecastModel,
     ProviderForecast,
 )
-from utils.geo_validation import wave_direction_to_toward
 from utils.region import Region
 
 
@@ -22,9 +21,9 @@ def map_nwps_forecast(
     NWPS provides only swell height (shts) — no separate swell direction or period.
     Maps shts to primary_swell.height; period and direction remain None.
 
-    Direction convention: NWPS reports wave direction as "from" (Degree true).
-    Converted to "toward" at ingestion: (direction + 180) % 360.
-    Wind direction remains "from" (meteorological convention).
+    Direction convention: all directions stored as "from" (degrees true).
+    NWPS reports wave direction as "from" — no conversion needed.
+    Wind direction is also "from" (meteorological convention).
 
     Args:
         spot_id: The surf spot ID
@@ -39,20 +38,20 @@ def map_nwps_forecast(
         data = nwps_forecast_data["data"]
 
         wave = WaveData(
-            significant_height=data["swh"][i],
-            peak_period=data["perpw"][i],
-            peak_direction=wave_direction_to_toward(data["dirpw"][i]),
+            significant_height=round(data["swh"][i], 2),
+            peak_period=round(data["perpw"][i], 1),
+            peak_direction=round(data["dirpw"][i], 1),
             primary_swell=SwellPartition(
-                height=data["shts"][i],
+                height=round(data["shts"][i], 2),
             ),
         )
 
         wind = WindData(
-            speed=data["ws"][i],
-            direction=data["wdir"][i],
+            speed=round(data["ws"][i], 2),
+            direction=round(data["wdir"][i], 1),
         )
 
-        tide = TideData(height=data["zos"][i])
+        tide = TideData(height=round(data["zos"][i], 2))
 
         forecast.append(
             ForecastPoint(valid_time=valid_time, wave=wave, wind=wind, tide=tide)

@@ -49,7 +49,10 @@ async def create_surf_spot(
 ):
     spot = await surf_spot_service.create_spot(current_user.user_id, data)
 
-    return SuccessResponse(message=f"Created surf spot '{spot.name}'", data=spot)
+    return SuccessResponse(
+        message=f"Created surf spot '{spot.name}'",
+        data=SurfSpotResponse.model_validate(spot),
+    )
 
 
 # TODO: figure out how to refactor surf spot endpoints / repo methods for is_demo
@@ -64,8 +67,11 @@ async def get_user_surf_spots(
     surf_spot_service: SurfSpotService = Depends(get_surf_spot_service),
 ):
     spots = await surf_spot_service.get_user_spots(current_user.user_id)
+    spot_responses = [SurfSpotResponse.model_validate(s) for s in spots]
 
-    return SuccessResponse(message=f"Retrieved {len(spots)} surf spot(s)", data=spots)
+    return SuccessResponse(
+        message=f"Retrieved {len(spot_responses)} surf spot(s)", data=spot_responses
+    )
 
 
 @router.get("/{id}", summary="Get surf spot data")
@@ -76,7 +82,10 @@ async def get_surf_spot(
 ):
     spot = await surf_spot_service.get_spot(current_user.user_id, id)
 
-    return SuccessResponse(message=f"Retrieved data for {spot.name}", data=spot)
+    return SuccessResponse(
+        message=f"Retrieved data for {spot.name}",
+        data=SurfSpotResponse.model_validate(spot),
+    )
 
 
 @router.patch("/{id}", summary="Update a surf spot")
@@ -88,7 +97,10 @@ async def update_surf_spot(
 ):
     spot = await surf_spot_service.update_spot(current_user.user_id, id, data)
 
-    return SuccessResponse(message=f"Updated surf spot '{spot.name}'", data=spot)
+    return SuccessResponse(
+        message=f"Updated surf spot '{spot.name}'",
+        data=SurfSpotResponse.model_validate(spot),
+    )
 
 
 @router.delete("/{id}", summary="Delete a surf spot")
