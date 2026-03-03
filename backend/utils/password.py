@@ -17,7 +17,7 @@ def password_needs_rehash(hashed_password: str, rounds: int) -> bool:
     try:
         # bcrypt hashes use $version$cost$salt+hash
         parts = hashed_password.split("$")
-        current_cost = int(parts[1])
+        current_cost = int(parts[2])
         return current_cost < rounds
     except (ValueError, IndexError):
         return True

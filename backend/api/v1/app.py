@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.exceptions.base import NanaNaluException, StartupError
+from utils.region import get_enabled_regions
 from core.exceptions.handlers import (
     generic_exception_handler,
     validation_exception_handler,
@@ -42,9 +43,10 @@ def create_lifespan(config: str):
             logger.info(
                 "Application started successfully",
                 extra={
-                    "config": config,
+                    "environment": config,
                     "api_name": app.state.settings.api.name,
                     "api_version": app.state.settings.api.version,
+                    "regions": [r.value for r in get_enabled_regions()],
                 },
             )
 

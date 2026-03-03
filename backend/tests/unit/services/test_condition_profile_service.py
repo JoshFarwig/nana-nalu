@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from inspect import signature
 from types import SimpleNamespace
 
 import pytest
@@ -24,7 +25,6 @@ from services.forecast.forecast_schema import (
 
 @pytest.fixture
 def service():
-    """Bare service with no deps — only pure methods are callable."""
     return ConditionProfileService(None, None, None, None, None, None)  # type: ignore[non-args]
 
 
@@ -38,11 +38,16 @@ def make_point(valid_time: datetime, wave=None, wind=None, tide=None) -> Forecas
 
 
 def make_wave_entry(
-    sig_height=None, peak_period=None, peak_direction=None, primary_swell=None
+    provider="nomads",
+    model="nwps",
+    sig_height=None,
+    peak_period=None,
+    peak_direction=None,
+    primary_swell=None,
 ) -> ProviderConditionEntry:
     return ProviderConditionEntry(
-        provider="nomads",
-        model="nwps",
+        provider=provider,
+        model=model,
         wave=WaveConditions(
             significant_height=sig_height,
             peak_period=peak_period,
@@ -52,24 +57,27 @@ def make_wave_entry(
     )
 
 
-def make_wind_entry(speed=None, direction=None) -> ProviderConditionEntry:
+def make_wind_entry(
+    provider="nomads", model="nwps", speed=None, direction=None
+) -> ProviderConditionEntry:
     return ProviderConditionEntry(
-        provider="nomads",
-        model="nwps",
+        provider=provider,
+        model=model,
         wind=WindConditions(speed=speed, direction=direction),
     )
 
 
-def make_tide_entry(height=None) -> ProviderConditionEntry:
+def make_tide_entry(
+    provider="pacioos", model="tide_mhi", height=None
+) -> ProviderConditionEntry:
     return ProviderConditionEntry(
-        provider="pacioos",
-        model="tide_mhi",
+        provider=provider,
+        model=model,
         tide=TideConditions(height=height),
     )
 
 
-def mock_profile(spot_id: int, conditions: list[dict]):
-    """Lightweight stand-in for ConditionProfile ORM object."""
+def mock_profile(spot_id: int, conditions: list[ProviderConditionEntry]):
     return SimpleNamespace(spot_id=spot_id, id=1, name="Test", conditions=conditions)
 
 
@@ -95,7 +103,7 @@ class TestFindNearestForecastPoint:
             [one_hour_ago, one_hour_ahead], now
         )
 
-        # both are equidistant. either is valid, just not None
+        # both equidistant. either is valid, just not None
         assert result is not None
         assert abs(result.valid_time - now) == timedelta(hours=1)
 
@@ -186,32 +194,80 @@ class TestEntryMatches:
         assert service._entry_matches(entry, point) is False
 
 
-# ============================================================================
-# Tests: _evaluate_profile
-# ============================================================================
-
-
 @pytest.mark.unit
 class TestEvaluateProfile:
-    # TODO(human): Implement these tests.
-    #
-    # _evaluate_profile(profile, forecast_lookup) does AND logic across all
-    # provider+model entries in a profile's conditions list.
-    #
-    # The profile is a mock object with:
-    #   - profile.spot_id: int
-    #   - profile.conditions: list[dict]  ← raw JSONB dicts, not Pydantic objects
-    #
-    # The forecast_lookup is a flat dict keyed by (spot_id, provider, model):
-    #   {(1, "nomads", "nwps"): ForecastPoint, (1, "pacioos", "tide_mhi"): None}
-    #
-    # Tests to implement (see TEST_PLAN for descriptions):
-    #   - test_single_entry_matches
-    #   - test_missing_forecast_data_returns_false   ← key not in lookup at all
-    #   - test_and_across_providers                  ← two providers, both match
-    #   - test_and_across_providers_one_fails        ← two providers, one misses
-    #   - test_none_forecast_point_in_lookup         ← key exists but value is None
-    #
-    # Hint: use mock_profile() and the condition dicts should look like:
-    #   {"provider": "nomads", "model": "nwps", "wave": {"significant_height": {"min": 1.0}}}
-    pass
+    def test_single_entry_matches(self, service, now):
+        lookup = {
+            (1, "nomads", "nwps"): make_point(
+                now, wave=WaveData(significant_height=2.0)
+            ),
+        }
+        entry = make_wave_entry(sig_height=RangeCondition(min=1.0, max=3.0))
+        profile = mock_profile(1, [entry])
+        assert service._evaluate_profile(profile, lookup) is True
+
+    def test_missing_lookup_key_returns_false(self, service, now):
+        lookup = {
+            (1, "nomads", "gfs"): make_point(now, wave=WaveData(significant_height=2.0))
+        }
+        entry = make_wave_entry(sig_height=RangeCondition(min=1.0, max=3.0))
+        profile = mock_profile(1, [entry])
+        assert service._evaluate_profile(profile, lookup) is False
+
+    def test_and_across_providers(self, service, now):
+        lookup = {
+            (1, "nomads", "gfs"): make_point(
+                now, wave=WaveData(significant_height=2.0)
+            ),
+            (1, "pacioos", "swan"): make_point(
+                now, wave=WaveData(significant_height=2.4)
+            ),
+        }
+
+        wave_entries = [
+            make_wave_entry(
+                provider="nomads",
+                model="gfs",
+                sig_height=RangeCondition(min=1.0, max=3.0),
+            ),
+            make_wave_entry(
+                provider="pacioos",
+                model="swan",
+                sig_height=RangeCondition(min=1.0, max=3.0),
+            ),
+        ]
+
+        profile = mock_profile(1, wave_entries)
+        assert service._evaluate_profile(profile, lookup) is True
+
+    def test_and_across_providers_one_fails(self, service, now):
+        lookup = {
+            (1, "nomads", "gfs"): make_point(
+                now, wave=WaveData(significant_height=0.5)
+            ),
+            (1, "pacioos", "swan"): make_point(
+                now, wave=WaveData(significant_height=2.4)
+            ),
+        }
+
+        wave_entries = [
+            make_wave_entry(
+                provider="nomads",
+                model="gfs",
+                sig_height=RangeCondition(min=1.0, max=3.0),
+            ),
+            make_wave_entry(
+                provider="pacioos",
+                model="swan",
+                sig_height=RangeCondition(min=1.0, max=3.0),
+            ),
+        ]
+
+        profile = mock_profile(1, wave_entries)
+        assert service._evaluate_profile(profile, lookup) is False
+
+    def test_none_forecast_point_in_lookup(self, service):
+        lookup = {(1, "nomads", "nwps"): None}
+        entry = make_wave_entry(sig_height=RangeCondition(min=1.0, max=3.0))
+        profile = mock_profile(1, [entry])
+        assert service._evaluate_profile(profile, lookup) is False

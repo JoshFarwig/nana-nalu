@@ -136,7 +136,6 @@ class AuthService:
         )
 
     async def verify_email_and_create_user(self, token: str) -> AuthTokens:
-
         data = await self.magic_link_service.validate_link(
             link_type="email_verification", token=token
         )
@@ -233,7 +232,6 @@ class AuthService:
         return tokens
 
     async def revoke_all_sessions(self, user_id: int):
-
         sessions_key = self._get_user_sessions_key(user_id)
 
         token_hashes = await self.redis_manager.client.smembers(sessions_key)  # type: ignore https://github.com/redis/redis-py/issues/3169
@@ -256,7 +254,6 @@ class AuthService:
         return 0
 
     async def enable_account(self, user_id: int) -> EnabledAccount:
-
         user = await self.user_repo.get_by_id(user_id)
 
         if user.is_active:
@@ -362,7 +359,6 @@ class AuthService:
         )
 
     async def request_password_reset_email(self, email: EmailStr):
-
         user = await self.user_repo.get_by_email(email)
 
         payload = PasswordResetPayload(user_id=user.id, email=user.email)
