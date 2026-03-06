@@ -20,6 +20,9 @@ build/
 alembic/versions/*.pyc
 alembic/versions/*.pyo
 
+# Docs scratch notes
+docs/random_notes/
+
 # Jupyter Notebook
 .ipynb_checkpoints
 */.ipynb_checkpoints/*

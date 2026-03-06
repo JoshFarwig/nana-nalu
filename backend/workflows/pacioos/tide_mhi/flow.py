@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 
 from prefect import State, flow, get_run_logger
-from prefect.states import Cancelled, Completed, Failed
+from prefect.states import Completed, Failed
 
 from workflows.resources import get_resources
 from workflows.utils import stale_flow
@@ -32,7 +32,7 @@ def orchestrate_tide_forecasts() -> State[dict]:
 
     if stale_flow(timedelta(hours=2)):
         logger.warning("Stale run, skipping execution")
-        return Cancelled(message="Stale run, cancelling execution")
+        return Completed(message="Stale run, skipping", data={"status": "skipped", "reason": "stale"})
 
     logger.info("Starting PacIOOS Tide MHI orchestration")
 

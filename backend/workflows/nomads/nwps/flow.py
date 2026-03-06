@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from prefect import State, flow, get_run_logger
-from prefect.states import Cancelled, Failed, Completed
+from prefect.states import Failed, Completed
 
 from services.forecast.nomads_config import (
     NOMADSModel,
@@ -36,8 +36,8 @@ def orchestrate_nwps_forecasts() -> State[dict]:
     logger = get_run_logger()
 
     if stale_flow(timedelta(hours=2)):
-        logger.warning("Stale run, skipping exeuction")
-        return Cancelled(message="Stale run, cancelling exeuction")
+        logger.warning("Stale run, skipping execution")
+        return Completed(message="Stale run, skipping", data={"status": "skipped", "reason": "stale"})
 
     logger.info("Starting NWPS orchestration")
 

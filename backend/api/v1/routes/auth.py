@@ -211,7 +211,7 @@ async def disable_account(
             f"Disabled account for user: {user_id}-{disabled_account.username}, "
             f"revoked ({disabled_account.sessions_revoked}) session(s)"
         ),
-        data=enabled_account,
+        data=disabled_account,
     )
 
 
