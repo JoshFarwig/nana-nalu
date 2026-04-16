@@ -10,17 +10,12 @@ x-db-env: &db-env
   DB__PASSWORD: ${DB__PASSWORD}
   DB__NAME: ${DB__NAME}
 
-x-redis-env: &redis-env
-  REDIS__HOST: ${REDIS__HOST}
-  REDIS__PORT: ${REDIS__PORT}
-  REDIS__PASSWORD: ${REDIS__PASSWORD}
-
 x-common-env: &common-env
   ENV: ${ENV}
   REGIONS: ${REGIONS}
 
 services:
-  # TODO: convert to timescale db for historical data?
+  # TODO(phase-2b): swap PostGIS base image for TimescaleDB + PostGIS extension
   db:
     build:
       context: ./db
@@ -43,41 +38,19 @@ services:
       retries: 3
       start_period: 10s
 
-  redis:
-    build:
-      context: ./redis
-      dockerfile: Dockerfile.redis
-    environment:
-    # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12:
-      REDIS__PASSWORD: ${REDIS__PASSWORD}
-    restart: always
-    volumes: 
-      - redis_data:/data
-    networks: [nn_network]
-    healthcheck:
-      test: |
-        REDISCLI_AUTH=$REDIS__PASSWORD redis-cli SET hc ok EX 10 && \
-        REDISCLI_AUTH=$REDIS__PASSWORD redis-cli GET hc | grep -q ok || exit 1
-      interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
       target: api
     environment:
-      <<: [*common-env, *db-env, *redis-env]
+      <<: [*common-env, *db-env]
       # use __ nested env delimiter syntax for nested pydantic-settings objects
       # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12
       API__ADMIN_USERNAME: ${API__ADMIN_USERNAME}
       API__ADMIN_PASSWORD: ${API__ADMIN_PASSWORD}
     depends_on:
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks: [nn_network]
     healthcheck:
@@ -114,15 +87,13 @@ services:
       dockerfile: Dockerfile.dev
       target: worker
     environment:
-      <<: [*common-env, *db-env, *redis-env]
+      <<: [*common-env, *db-env]
       PREFECT_API_URL: http://prefect-server:${PREFECT__PORT:-4200}/api
       PREFECT_HOME: /backend/.prefect
       PREFECT_LOGGING_SETTINGS_PATH: /backend/core/logging/logging.prefect.yaml
       POOL_NAME: forecasts
     depends_on:
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       prefect-server:
         condition: service_healthy
@@ -131,28 +102,23 @@ services:
 
 volumes:
   pg_data:
-  redis_data:
 
 
 networks: 
   nn_network:
     driver: bridge
 
-# TODO: roll-out secrets with new release for pydantic-settings v.2.12!  
+# TODO: roll-out secrets with new release for pydantic-settings v.2.12!
 #
-# secrets: 
-#   db__username:  
+# secrets:
+#   db__username:
 #     environment: "DB__USERNAME"
-#   db__password: 
+#   db__password:
 #     environment: "DB__PASSWORD"
-#   redis__password: 
-#     environment: "REDIS__PASSWORD"
-#   api__admin_username: 
-#     environment: "API__ADMIN_USERNAME" 
-#   api__admin_password: 
-#     enviroment: "API__ADMIN_PASSWORD" 
-#   api__admin_email:
-#     enviroment: "API__ADMIN_EMAIL"
+#   api__admin_username:
+#     environment: "API__ADMIN_USERNAME"
+#   api__admin_password:
+#     enviroment: "API__ADMIN_PASSWORD"
   
 
 

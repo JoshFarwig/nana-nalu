@@ -19,7 +19,7 @@ from typing import Literal, Union, overload
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .configs import APIConfig, DatabaseConfig, HTTPConfig, RedisConfig
+from .configs import APIConfig, DatabaseConfig, HTTPConfig
 
 
 # ============================================================================
@@ -30,7 +30,7 @@ from .configs import APIConfig, DatabaseConfig, HTTPConfig, RedisConfig
 class APISettings(BaseSettings):
     """
     Configuration for API service.
-    Requires: Database, Redis (Phase 2 removes), API config, HTTP client
+    Requires: Database, API config, HTTP client
     """
 
     model_config = SettingsConfigDict(
@@ -42,7 +42,6 @@ class APISettings(BaseSettings):
     )
 
     db: DatabaseConfig
-    redis: RedisConfig
     api: APIConfig
     http: HTTPConfig = HTTPConfig()
 
@@ -51,7 +50,7 @@ class PrefectSettings(BaseSettings):
     """
     Configuration for Prefect worker service.
 
-    Requires: Database (async), Redis (async — Phase 2 removes), HTTP client (async)
+    Requires: Database (async), HTTP client (async)
     """
 
     model_config = SettingsConfigDict(
@@ -63,7 +62,6 @@ class PrefectSettings(BaseSettings):
     )
 
     db: DatabaseConfig
-    redis: RedisConfig
     http: HTTPConfig = HTTPConfig()
 
 

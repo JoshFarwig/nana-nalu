@@ -3,7 +3,6 @@ from fastapi import FastAPI
 
 from core.database import AsyncDatabaseManager
 from core.http import AsyncHTTPManager
-from core.redis import AsyncRedisManager
 from core.config import APISettings
 from core.logging.config import configure_logging
 from utils.env import Environment, EnvironmentMapper
@@ -126,16 +125,6 @@ async def _init_infrastructure(app: FastAPI, settings: APISettings) -> None:
         "Database manager created", extra={"pool_size": settings.db.async_pool_size}
     )
 
-    # initialize Redis manager (using cache_url for caching)
-    redis_manager = AsyncRedisManager(settings.redis, settings.redis.get_cache_url())
-    app.state.redis_manager = redis_manager
-    logger.debug(
-        "Redis manager created",
-        extra={
-            "max_connections": settings.redis.async_max_connections,
-        },
-    )
-
     # initialize HTTP manager for external API calls
     http_manager = AsyncHTTPManager(settings.http)
     app.state.http_manager = http_manager
@@ -167,13 +156,6 @@ async def _health_check_infrastructure(app: FastAPI) -> None:
         raise RuntimeError("Database health check failed")
     logger.info("Database health check passed")
 
-    # check Redis
-    redis_healthy = await app.state.redis_manager.health_check()
-    if not redis_healthy:
-        logger.error("Redis health check failed")
-        raise RuntimeError("Redis health check failed")
-    logger.info("Redis health check passed")
-
 
 async def _cleanup_infrastructure(app: FastAPI) -> None:
     """
@@ -199,19 +181,6 @@ async def _cleanup_infrastructure(app: FastAPI) -> None:
             )
         finally:
             app.state.db_manager = None
-
-    # clean up Redis manager
-    redis_manager: AsyncRedisManager | None = getattr(app.state, "redis_manager", None)
-    if redis_manager:
-        try:
-            await redis_manager.close()
-            logger.info("Redis manager closed successfully")
-        except Exception as e:
-            logger.error(
-                "Error closing Redis manager", extra={"error": str(e)}, exc_info=True
-            )
-        finally:
-            app.state.redis_manager = None
 
     # clean up HTTP manager
     http_manager: AsyncHTTPManager | None = getattr(app.state, "http_manager", None)

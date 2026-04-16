@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.http import AsyncHTTPManager
 from core.database import AsyncDatabaseManager
-from core.redis import AsyncRedisManager
 from core.config import APISettings
 from core.exceptions.base import DependencyError
 
@@ -83,30 +82,6 @@ def get_async_db_manager(request: Request) -> AsyncDatabaseManager:
     if manager is None:
         raise DependencyError(
             "Database manager not available in app.state. "
-            "Ensure application initialized properly."
-        )
-    return manager
-
-
-def get_async_redis_manager(request: Request) -> AsyncRedisManager:
-    """
-    Get Redis manager from app state.
-
-    Args:
-        request: FastAPI request object
-
-    Returns:
-        Redis manager instance
-
-    Raises:
-        DependencyError: If Redis manager not configured in app.state
-    """
-    manager: AsyncRedisManager | None = getattr(
-        request.app.state, "redis_manager", None
-    )
-    if manager is None:
-        raise DependencyError(
-            "Redis manager not available in app.state. "
             "Ensure application initialized properly."
         )
     return manager

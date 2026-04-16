@@ -19,13 +19,6 @@ services:
       - "127.0.0.1:${DB__H_PORT:-5432}:${DB__PORT:-5432}"
     networks: [nn_network]
 
-  redis:
-    container_name: nn_redis_prod
-    image: nn_redis:prod
-    ports:
-      - "127.0.0.1:${REDIS__H_PORT:-6379}:${REDIS__PORT:-6379}"
-    networks: [nn_network]
-
   api:
     container_name: nn_api_prod
     build:

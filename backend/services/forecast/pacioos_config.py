@@ -135,7 +135,7 @@ class MauiTideConfig(PacIOOSModelConfig):
     model_name: PacIOOSModel = PacIOOSModel.TIDE_MHI
 
     # tide model provides hourly predictions extending ~1 year into future
-    # data is pre-computed, we only fetch for Redis TTL maintenance (weekly)
+    # data is pre-computed, we fetch weekly to keep TimescaleDB current
 
     max_forecast_age_hours: int = 168  # 7 days - weekly refresh sufficient
     forecast_horizon_days: int = 7  # Fetch 7 days of hourly predictions

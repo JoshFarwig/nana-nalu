@@ -26,26 +26,6 @@ services:
       start_period: 5s
     networks: [test_network]
 
-  test-redis:
-    container_name: nn_redis_test
-    image: nn_redis:test
-    build:
-      context: ./redis
-      dockerfile: Dockerfile.redis
-    environment:
-      REDIS__PASSWORD: test_redis_password
-    ports:
-      - "6380:6379" 
-    healthcheck:
-      test: |
-        REDISCLI_AUTH=test_redis_password redis-cli SET hc ok EX 10 && \
-        REDISCLI_AUTH=test_redis_password redis-cli GET hc | grep -q ok || exit 1
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    networks: [test_network]
-
 networks:
   test_network:
     driver: bridge
