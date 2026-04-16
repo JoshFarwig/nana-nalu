@@ -74,10 +74,6 @@ services:
       # TODO: remove sensitive vars set as secret w/ pydantic-settings v2.12
       API__ADMIN_USERNAME: ${API__ADMIN_USERNAME}
       API__ADMIN_PASSWORD: ${API__ADMIN_PASSWORD}
-      API__ADMIN_EMAIL: ${API__ADMIN_EMAIL}
-      API__JWT_SECRET_KEY: ${API__JWT_SECRET_KEY}
-      API__RESEND_API_KEY: ${API__RESEND_API_KEY}
-      API__APP_URL: ${API__APP_URL}
     depends_on:
       db:
         condition: service_healthy

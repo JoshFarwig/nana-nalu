@@ -1,9 +1,8 @@
 from typing import Any
 
-# NOTE: make sure to use http lib and not fastapi for
-# status_code since celery workers acesses services which
-# throw NanaNaluExceptions and the workers do not exist
-# in a fastapi context nor do they have the package installed
+# NOTE: uses stdlib `http` for status codes, not fastapi.status — Prefect
+# workflow tasks raise NanaNaluException subclasses but run outside any
+# FastAPI context, so the fastapi dep must not be required at import time.
 from http import HTTPStatus
 
 

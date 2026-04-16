@@ -134,16 +134,7 @@ def create_app(config: str | None = None) -> FastAPI:
     # ======================================================
     # API v1 Router Setup
     # ======================================================
-
-    from fastapi import APIRouter
-    from api.v1.routes import auth, users, surf_spots
-
-    api_v1_router = APIRouter(prefix="/api/v1")
-    api_v1_router.include_router(auth.router)
-    api_v1_router.include_router(users.router)
-    api_v1_router.include_router(surf_spots.router)
-
-    # mount the entire v1 API under /api/v1
-    app.include_router(api_v1_router)
+    # Phase 5 of refactor will mount public routes (grid, forecast, buoys, health)
+    # under /api/v1. Currently empty after Phase 1 teardown of auth/user/spot routes.
 
     return app

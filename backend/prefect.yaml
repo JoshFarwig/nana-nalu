@@ -1,5 +1,4 @@
 # Prefect deployment configuration
-# Mirrors the Celery beat schedule from workers/celery_app.py
 #
 # Usage:
 #   1. Create work pool: prefect work-pool create forecasts --type process

@@ -6,7 +6,7 @@ RED := \033[31m
 CYAN := \033[36m
 RESET := \033[0m
 
-.PHONY: help seed-dev seed-prod up-dev up-prod up-dev-full up-prod-full down-dev down-prod logs-dev logs-prod restart-dev restart-prod migrate-dev migrate-prod migrate-local migrate-create watch-dev
+.PHONY: help up-dev up-prod up-dev-full up-prod-full down-dev down-prod logs-dev logs-prod restart-dev restart-prod migrate-dev migrate-prod migrate-local migrate-create watch-dev
 
 help:  ## Show this help message
 	@echo "$(CYAN)Available commands:$(RESET)"
@@ -39,22 +39,16 @@ logs-dev:  ## Follow logs for development environment
 	@echo "$(CYAN)Following development logs (Ctrl+C to exit)...$(RESET)"
 	@docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev logs -f
 
-seed-dev:  ## Seed development database
-	@echo "$(BLUE)Seeding development database...$(RESET)"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev exec api python -m scripts.seed.seed
-	@echo "$(GREEN)✓ Development database seeded successfully!$(RESET)"
-
 migrate-dev:  ## Apply latest Alembic migration to development database
 	@echo "$(BLUE)Applying migrations to development database...$(RESET)"
 	@docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev exec api alembic upgrade head
 	@echo "$(GREEN)✓ Migrations applied successfully!$(RESET)"
 
-up-dev-full:  ## Start dev environment, run migrations, and seed database
+up-dev-full:  ## Start dev environment and run migrations
 	@echo "$(CYAN)Starting full development environment setup...$(RESET)"
 	@$(MAKE) up-dev
 	@sleep 3
 	@$(MAKE) migrate-dev
-	@$(MAKE) seed-dev
 	@echo "$(GREEN)✓ Full development environment ready!$(RESET)"
 
 # Production environment commands
@@ -77,22 +71,16 @@ logs-prod:  ## Follow logs for production environment
 	@echo "$(CYAN)Following production logs (Ctrl+C to exit)...$(RESET)"
 	@docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod logs -f
 
-seed-prod:  ## Seed production database
-	@echo "$(BLUE)Seeding production database...$(RESET)"
-	@docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod exec api python -m scripts.seed.seed
-	@echo "$(GREEN)✓ Production database seeded successfully!$(RESET)"
-
 migrate-prod:  ## Apply latest Alembic migration to production database
 	@echo "$(BLUE)Applying migrations to production database...$(RESET)"
 	@docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod exec api alembic upgrade head
 	@echo "$(GREEN)✓ Migrations applied successfully!$(RESET)"
 
-up-prod-full:  ## Start prod environment, run migrations, and seed database
+up-prod-full:  ## Start prod environment and run migrations
 	@echo "$(CYAN)Starting full production environment setup...$(RESET)"
 	@$(MAKE) up-prod
 	@sleep 3
 	@$(MAKE) migrate-prod
-	@$(MAKE) seed-prod
 	@echo "$(GREEN)✓ Full production environment ready!$(RESET)"
 
 # Local Alembic commands (run from host machine)

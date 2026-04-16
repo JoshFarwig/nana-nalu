@@ -21,7 +21,7 @@ class HTTPConfig(BaseModel):
     # one other provider task
 
     # sync http manager settings
-    # used for celery workers
+    # used for Prefect worker tasks
     sync_max_connections: int = 2
     sync_max_keepalive_connections: int = 0
     sync_keepalive_expiry: float = 5.0
