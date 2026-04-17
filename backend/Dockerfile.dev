@@ -42,7 +42,6 @@ CMD ["uvicorn", "api.v1.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # ==============================================================================
 # Prefect Worker service (with eccodes support)
-# Replaces: Celery worker + beat + flower (3 containers → 1)
 # Built directly in this stage rather than separate build stage to avoid
 # cross-stage contamination of Python environment during COPY operations.
 # ==============================================================================

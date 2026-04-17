@@ -15,18 +15,15 @@ x-common-env: &common-env
   REGIONS: ${REGIONS}
 
 services:
-  # TODO(phase-2b): swap PostGIS base image for TimescaleDB + PostGIS extension
   db:
-    build:
-      context: ./db
-      dockerfile: Dockerfile.postgis
+    image: timescale/timescaledb-ha:pg16-ts2.26
     environment:
       POSTGRES_USER: ${DB__USERNAME}
       POSTGRES_PASSWORD: ${DB__PASSWORD}
       POSTGRES_DB: ${DB__NAME}
     restart: always
     volumes:
-      - pg_data:/var/lib/postgresql
+      - pg_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
     networks: [nn_network]
     healthcheck:

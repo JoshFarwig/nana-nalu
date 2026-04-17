@@ -610,6 +610,64 @@ The `NOMADSModel.GFS_WAVE` enum already exists but has no config implementation.
 
 ---
 
+## Phase 7 — Forecast Verification (Future / Post-MVP)
+
+> **Not MVP.** Depends on Phase 3 (grid ingest) + Phase 4 (buoy ingest) being stable and producing real data.
+
+### Purpose
+
+Compare NWPS grid forecasts against NDBC buoy ground truth to measure model error over time. Stored permanently as a compact verification record — raw forecast and buoy data expire per retention policy, but the delta lives forever as ML training material.
+
+### New Table: `forecast_verification`
+
+```sql
+CREATE TABLE forecast_verification (
+    time         TIMESTAMPTZ  NOT NULL,   -- valid_time of the forecast step
+    station_id   TEXT         NOT NULL,   -- NDBC station
+    model        TEXT         NOT NULL,
+    lead_hours   INT          NOT NULL,   -- hours between run_time and valid_time
+
+    -- predicted (nearest grid cell to buoy)
+    pred_wvht    FLOAT,
+    pred_dpd     FLOAT,
+    pred_wdir    FLOAT,
+    pred_wspd    FLOAT,
+    pred_wdir    FLOAT,
+
+    -- observed (buoy ground truth)
+    obs_wvht     FLOAT,
+    obs_dpd      FLOAT,
+    obs_mwd      FLOAT,
+    obs_wspd     FLOAT,
+    obs_wdir     FLOAT,
+
+    -- delta (pred - obs, stored explicitly — cheap, survives raw data expiry)
+    err_wvht     FLOAT,
+    err_dpd      FLOAT,
+    err_wdir     FLOAT,
+
+    PRIMARY KEY (time, station_id, model, lead_hours)
+);
+```
+
+`lead_hours` is the critical ML feature — NWPS error at 6h lead vs 120h lead is structurally different. Grouping error by `lead_hours` produces a **bias correction lookup table** as v1 ML: at `lead=96, station=51202`, NWPS underpredicts NW swell by ~X% → apply correction at query time. Nonlinear bias (direction/season-dependent) is where real ML enters.
+
+### Prefect Flow
+
+Daily Prefect task after buoy ingest. For each buoy station:
+1. Fetch all `forecast_grid_points` rows at nearest grid cell to station `(lat, lon)` within last 24h
+2. Join against `buoy_observations` on `time` (exact or nearest 1h bucket)
+3. Compute `lead_hours = valid_time - run_time` via `model_runs` join
+4. Upsert into `forecast_verification`
+
+Retention: **permanent** (no retention policy). Table stays small — one row per `(time, station, model, lead_hours)`. Even at 3 stations × 84 lead steps × 2 runs/day × 365 days = ~185k rows/year.
+
+### Buoy Retention
+
+Extend `buoy_observations` retention to 90 days (vs 14-day forecast retention). Buoy data is tiny — ~1k rows/day across all stations. 90 days = ~90k rows total, negligible storage.
+
+---
+
 ## Build Order for Subagents
 
 Phases have hard dependencies. Suggested agent breakdown:
@@ -623,6 +681,7 @@ Phase 3:  agent-grid-ingest     — rewrite extract/transform/load for full grid
 Phase 4:  agent-buoy-workflow   — new NDBC flow
 Phase 5:  agent-api             — new public routes
 Phase 6:  agent-frontend        — React dashboard (separate repo or frontend/)
+Phase 7:  [future] agent-verification — forecast vs buoy delta pipeline + forecast_verification table
 ```
 
-Phases 2a and 2b can run in parallel. Phase 3 depends on 2a (new schema). Phase 5 depends on 3 + 4.
+Phases 2a and 2b can run in parallel. Phase 3 depends on 2a (new schema). Phase 5 depends on 3 + 4. Phase 7 depends on 3 + 4 producing stable data (run post-MVP).
