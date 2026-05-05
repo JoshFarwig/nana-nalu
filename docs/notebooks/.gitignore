@@ -2,6 +2,8 @@
 *.grib2
 *.idx
 *.grib2.*.idx
+*.nc
+*.netcdf
 
 # macOS
 .DS_Store
