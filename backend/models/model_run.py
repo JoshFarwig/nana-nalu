@@ -6,17 +6,10 @@ Prefect workers check this before processing a new run.
 """
 
 from datetime import datetime
-from enum import Enum
-from sqlalchemy import DateTime, String, Enum as SQLEnum, UniqueConstraint
+from sqlalchemy import DateTime, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from models.base_model import Base
 from models.mixins import TimestampMixin
-
-
-class IngestStatus(Enum):
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
 
 
 class ModelRun(Base, TimestampMixin):
@@ -31,5 +24,6 @@ class ModelRun(Base, TimestampMixin):
     provider: Mapped[str] = mapped_column(String(20))
     model: Mapped[str] = mapped_column(String(20))
     region: Mapped[str] = mapped_column(String(50))
+    # run_time = analysis time of model run (time model pulled data) or
+    # time forecast was processed/ingested into nana-nalu
     run_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    ingest_status: Mapped[IngestStatus] = mapped_column(SQLEnum(IngestStatus))

@@ -14,12 +14,15 @@ Usage:
     settings = load_settings("prefect")
 """
 
+import os
 from functools import lru_cache
 from typing import Literal, Union, overload
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .configs import APIConfig, DatabaseConfig, HTTPConfig
+
+_env_file = f".env.{os.getenv('ENV', 'local')}"
 
 
 # ============================================================================
@@ -35,6 +38,7 @@ class APISettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         frozen=True,
+        env_file=_env_file,
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,
@@ -55,6 +59,7 @@ class PrefectSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         frozen=True,
+        env_file=_env_file,
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         env_nested_max_split=1,

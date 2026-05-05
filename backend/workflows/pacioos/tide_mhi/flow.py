@@ -3,7 +3,6 @@ from datetime import datetime, timezone, timedelta
 from prefect import State, flow, get_run_logger
 from prefect.states import Completed, Failed
 
-from workflows.resources import get_resources
 from workflows.utils import stale_flow
 from services.forecast.pacioos_config import (
     PacIOOSModel,
@@ -113,25 +112,19 @@ def process_region_forecast(
     Process PacIOOS Tide forecast for a single region.
 
     Pipeline:
-    1. Check last run time from Redis (idempotency)
+    1. Check last run time from DB (idempotency)
     2. Skip if refresh not due (weekly refresh cycle)
-    3. Download NetCDF via GridDAP (Extract)
-    4. Extract raw forecasts for surf spots
-    5. Transform raw data to unified schema
-    6. Load forecasts to Redis with TTL
+    3. Download NetCDF via GridDAP
+    4. Extract raw grid cell forecasts
+    5. Transform to unified GridCellForecast schema
+    6. Load to TimescaleDB
     7. Cleanup temp files
 
-    Unlike NOMADS, no availability check needed - tide data is pre-computed
-    and always available from ERDDAP.
-
-    Args:
-        region: Geographic region to process
-
-    Returns:
-        Processing result with status and metadata
+    Unlike NOMADS, no availability check needed — tide data is pre-computed
+    and always available from ERDDAP. run_time truncates to day since harmonics
+    have no model cycle; the unique constraint on model_runs handles idempotency.
     """
     logger = get_run_logger()
-    resources = get_resources()
     config = get_pacioos_config(region, PacIOOSModel.TIDE_MHI)
 
     logger.info(
@@ -139,11 +132,7 @@ def process_region_forecast(
         extra={"model": config.model_name.value, "dataset": config.dataset_id},
     )
 
-    # Get last run time for refresh interval check
-    last_run_id = get_last_run_time(config.provider_name, config.model_name.value, region.value)
-    last_run_time = datetime.fromisoformat(last_run_id) if last_run_id else None
-
-    # Check if refresh is due (weekly cycle for tide predictions)
+    last_run_time = get_last_run_time(config.provider_name, config.model_name.value, region.value)
     now = datetime.now(timezone.utc)
 
     if last_run_time:
@@ -156,50 +145,37 @@ def process_region_forecast(
             return {
                 "status": "skip_not_due",
                 "region": region.value,
-                "last_run": last_run_id,
+                "last_run": last_run_time.isoformat(),
                 "hours_since": round(hours_since_last_run, 1),
             }
 
-    # Generate run ID (download timestamp since no model analysis time for pre-computed data)
-    run_id = now.isoformat()
+    # Truncate to day — harmonics have no model run cycle
+    run_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # Download
-    file_path = download_netcdf(
-        config=config,
-    )
+    file_path = download_netcdf(config=config)
 
-    # Extract raw forecasts
-    raw_forecasts = extract_forecasts(
-        config=config,
-        file_path=file_path,
-    )
+    raw_cells = extract_forecasts(config=config, file_path=file_path)
 
-    # Transform to unified schema
-    transformed_forecasts = transform_forecasts(
-        raw_forecasts=raw_forecasts,
-        config=config,
-    )
+    cells = transform_forecasts(raw_cells=raw_cells, config=config)
 
-    # Load to Redis
-    spots_loaded = load(
-        forecasts=transformed_forecasts,
+    rows_loaded = load(
+        cells=cells,
         provider=config.provider_name,
         model=config.model_name.value,
         region=region.value,
-        run_id=run_id,
+        run_time=run_time,
     )
 
-    # Cleanup
     cleanup_netcdf_file(file_path)
 
     logger.info(
         f"Successfully processed {region.value}",
-        extra={"run_id": run_id, "spots": spots_loaded},
+        extra={"run_time": run_time.isoformat(), "rows": rows_loaded},
     )
 
     return {
         "status": "success",
         "region": region.value,
-        "run": run_id,
-        "spots_processed": spots_loaded,
+        "run": run_time.isoformat(),
+        "rows_loaded": rows_loaded,
     }

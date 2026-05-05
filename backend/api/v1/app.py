@@ -24,12 +24,9 @@ logger = logging.getLogger(__name__)
 # ======================================================
 
 
-def create_lifespan(config: str):
+def create_lifespan():
     """
-    Create lifespan context manager with configuration.
-
-    Args:
-        config: Environment configuration ("dev", "prod", etc.)
+    Create lifespan context manager.
 
     Returns:
         Async context manager for app lifecycle
@@ -39,11 +36,10 @@ def create_lifespan(config: str):
     async def lifespan(app: FastAPI):
         try:
             # startup phase
-            await init_app(app, config)
+            await init_app(app)
             logger.info(
                 "Application started successfully",
                 extra={
-                    "environment": config,
                     "api_name": app.state.settings.api.name,
                     "api_version": app.state.settings.api.version,
                     "regions": [r.value for r in get_enabled_regions()],
@@ -55,7 +51,7 @@ def create_lifespan(config: str):
         except StartupError as e:
             logger.critical(
                 "Application startup failed - cannot start server",
-                extra={"error": str(e), "config": config},
+                extra={"error": str(e)},
             )
             raise  # re-raise to prevent app from starting
         finally:
@@ -70,28 +66,14 @@ def create_lifespan(config: str):
 # ======================================================
 
 
-def create_app(config: str | None = None) -> FastAPI:
+def create_app() -> FastAPI:
     """
     Factory function to create and configure FastAPI application.
-
-    Args:
-        config: Environment configuration ("local", "dev", "prod").
-                If None, reads from ENV environment variable.
-                String will be normalized using EnvironmentMapper.
 
     Returns:
         Configured FastAPI application instance
     """
     import os
-    from utils.env import EnvironmentMapper
-
-    # normalize config if provided as string, otherwise use ENV variable
-    if config:
-        env = EnvironmentMapper.normalize(config)
-        config = env.value
-    else:
-        env = EnvironmentMapper.normalize()
-        config = env.value
 
     api_name = os.getenv("API_NAME", "nānā-nalu-api")
     api_version = os.getenv("API_VERSION", "0.1.0")
@@ -100,7 +82,7 @@ def create_app(config: str | None = None) -> FastAPI:
         title=api_name,
         version=api_version,
         description="Surf forecasting and spot management API",
-        lifespan=create_lifespan(config),
+        lifespan=create_lifespan(),
     )
 
     # exception handlers

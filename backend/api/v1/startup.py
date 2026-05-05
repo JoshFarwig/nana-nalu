@@ -5,7 +5,7 @@ from core.database import AsyncDatabaseManager
 from core.http import AsyncHTTPManager
 from core.config import APISettings
 from core.logging.config import configure_logging
-from utils.env import Environment, EnvironmentMapper
+from utils.env import get_env
 from core.exceptions.base import StartupError
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # ======================================================
 
 
-async def init_app(app: FastAPI, config: Environment | str | None = None) -> None:
+async def init_app(app: FastAPI) -> None:
     """
     Initialize FastAPI application with all required resources.
 
@@ -26,18 +26,10 @@ async def init_app(app: FastAPI, config: Environment | str | None = None) -> Non
         3. Initialize infrastructure managers
         4. Perform health checks
 
-    Args:
-        app: FastAPI application instance
-        config: Environment configuration (Environment enum or string like "dev", "prod", etc.)
-
     Raises:
         StartupError: If any initialization step fails
     """
-    # normalize config to Environment enum
-    if isinstance(config, Environment):
-        env = config
-    else:
-        env = EnvironmentMapper.normalize(config)
+    env = get_env()
 
     # configure logging first
     configure_logging(env)

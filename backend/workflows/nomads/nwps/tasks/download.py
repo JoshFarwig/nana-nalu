@@ -51,8 +51,7 @@ def download_grib2(
 
     # append task_name to file_path to ensure no back-scheduled tasks run concurrently on the same grib2 file
     ctx = get_run_context()
-    task_name = ctx.task.name
-    file_path = DOWNLOAD_DIR / filename.replace(".grib2", f"_{task_name}.grib2")
+    file_path = DOWNLOAD_DIR / filename.replace(".grib2", f"_{ctx.task_run}.grib2")
 
     logger.info(
         "Downloading GRIB2 file",

@@ -1,45 +1,26 @@
 from prefect import task, get_run_logger
 
 from services.forecast.pacioos_config import PacIOOSModelConfig
-from workflows.pacioos.mapper import map_pacioos_tide_forecast
-from services.forecast.forecast_schema import ProviderForecast
+from workflows.pacioos.mappers import map_pacioos_tide_forecast
+from services.forecast.forecast_schema import GridCellForecast
 
 
 @task(name="tide-mhi-transform-forecasts")
 def transform_forecasts(
-    raw_forecasts: dict[int, dict],
+    raw_cells: list[dict],
     config: PacIOOSModelConfig,
-) -> dict[int, ProviderForecast]:
-    """
-    Transform raw PacIOOS tide data to unified ProviderForecast schema.
-
-    Maps provider-specific field names, units, and structures to the
-    standardized schema used across all forecast providers.
-
-    Args:
-        raw_forecasts: Dictionary mapping spot_id -> raw forecast data
-        config: PacIOOS model configuration containing data summary info
-
-    Returns:
-        Dictionary mapping spot_id -> ProviderForecast
-    """
+) -> list[GridCellForecast]:
+    """Transform raw PacIOOS tide grid cells to unified GridCellForecast schema."""
     logger = get_run_logger()
 
-    if not raw_forecasts:
-        logger.warning("No raw forecasts to transform")
-        return {}
+    if not raw_cells:
+        logger.warning("No raw cells to transform")
+        return []
 
-    region = config.region
-    provider_forecasts = {
-        spot_id: map_pacioos_tide_forecast(
-            spot_id, region, raw_data, config.data_summary
-        )
-        for spot_id, raw_data in raw_forecasts.items()
-    }
+    cells = [
+        map_pacioos_tide_forecast(cell["lat"], cell["lon"], cell, config.data_summary)
+        for cell in raw_cells
+    ]
 
-    logger.info(
-        f"Transformed {len(provider_forecasts)} forecasts to unified schema",
-        extra={"spot_ids": list(provider_forecasts.keys())},
-    )
-
-    return provider_forecasts
+    logger.info(f"Transformed {len(cells)} grid cells to unified schema")
+    return cells

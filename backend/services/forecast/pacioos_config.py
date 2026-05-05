@@ -44,8 +44,6 @@ class PacIOOSModelConfig(BaseModel):
     max_forecast_age_hours: int
     time_step_hours: int
 
-    max_nearest_neighbor_distance_km: float
-
     # variables to fetch from dataset
     data_variables: list[str]
 
@@ -140,9 +138,6 @@ class MauiTideConfig(PacIOOSModelConfig):
     max_forecast_age_hours: int = 168  # 7 days - weekly refresh sufficient
     forecast_horizon_days: int = 7  # Fetch 7 days of hourly predictions
     time_step_hours: int = 1  # Hourly resolution
-
-    # tide model resolution ~1km, allow 1.5x radius for nearest neighbor
-    max_nearest_neighbor_distance_km: float = 1.5
 
     # tide variable: ssh (sea surface height only, no currents)
     # Note: Tidal currents (u/v) are available in tide_mhi_vel dataset but not needed for surfers

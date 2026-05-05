@@ -10,8 +10,6 @@ Read path: Core select() or raw SQL with PostGIS/TimescaleDB functions.
 from sqlalchemy import (
     DateTime,
     ForeignKey,
-    Index,
-    PrimaryKeyConstraint,
     Table,
     Column,
     func,
@@ -25,12 +23,9 @@ forecast_data = Table(
     Base.metadata,
     Column("ingested_at", DateTime(timezone=True), server_default=func.now()),
     Column("valid_time", DateTime(timezone=True), nullable=False),
+    # geoalchemy2 creates GIST index on 'loc' for KNN queries via <-> operator;
+    # TimescaleDB propagates this index to each chunk automatically
     Column("loc", Geography(geometry_type="POINT", srid=4326), nullable=False),
     Column("model_run_id", ForeignKey("model_runs.id"), nullable=False),
     Column("payload", JSONB, nullable=False),
-    PrimaryKeyConstraint("time", "model_run_id", name="pk_forecast_data"),
 )
-
-# GIST index for KNN queries via <-> operator
-# TimescaleDB propagates this index to each chunk automatically
-Index("ix_forecast_data_loc", forecast_data.c.loc, postgresql_using="gist")

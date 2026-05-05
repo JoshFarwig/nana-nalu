@@ -2,6 +2,7 @@
 Spatial operations for forecast data using KDTree for nearest neighbor search.
 Requires numpy, scipy, and xarray - only used in worker containers.
 """
+
 from typing import Any
 import logging
 
@@ -14,6 +15,7 @@ from utils.geo_validation import EARTH_MEAN_RADIUS_KM
 logger = logging.getLogger(__name__)
 
 
+# NOTE: DEPCREATED
 def build_forecast_kdtree(
     ds: xr.Dataset, valid_var: str, time_slice: dict[str, Any]
 ) -> tuple[cKDTree, np.ndarray, np.ndarray]:
@@ -50,6 +52,7 @@ def build_forecast_kdtree(
     return (tree, valid_lats, valid_lons)
 
 
+# NOTE: DEPCREATED
 def query_nearest_forecast_points(
     tree: cKDTree,
     valid_lats: np.ndarray,

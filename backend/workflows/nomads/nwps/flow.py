@@ -37,7 +37,9 @@ def orchestrate_nwps_forecasts() -> State[dict]:
 
     if stale_flow(timedelta(hours=2)):
         logger.warning("Stale run, skipping execution")
-        return Completed(message="Stale run, skipping", data={"status": "skipped", "reason": "stale"})
+        return Completed(
+            message="Stale run, skipping", data={"status": "skipped", "reason": "stale"}
+        )
 
     logger.info("Starting NWPS orchestration")
 
@@ -127,7 +129,7 @@ def process_region_forecast(
     4. Download GRIB2 file (Extract)
     5. Extract raw forecasts for surf spots
     6. Transform raw data to unified schema
-    7. Load forecasts to Redis with TTL
+    7. Load forecasts to DB
     8. Cleanup temp files
 
     Args:
@@ -144,8 +146,9 @@ def process_region_forecast(
         extra={"wfo": config.wfo.value, "cg": config.cg},
     )
 
-    last_run_id = get_last_run_time(config.provider_name, config.model_name.value, region.value)
-    last_run_time = datetime.fromisoformat(last_run_id) if last_run_id else None
+    last_run_time = get_last_run_time(
+        config.provider_name, config.model_name.value, region.value
+    )
 
     latest_run = check_availability(
         config=config,
@@ -160,11 +163,10 @@ def process_region_forecast(
     forecast_date, analysis_time = latest_run
 
     run_datetime = datetime.combine(forecast_date, analysis_time, tzinfo=timezone.utc)
-    run_id = run_datetime.isoformat()
 
-    if last_run_id == run_id:
-        logger.info(f"Already have last run {run_id}, skipping")
-        return {"status": "already_current", "run": run_id}
+    if last_run_time and last_run_time == run_datetime:
+        logger.info(f"Already have last run {run_datetime.isoformat()}, skipping")
+        return {"status": "already_current", "run": run_datetime.isoformat()}
 
     file_path = download_grib2(
         config=config,
@@ -172,34 +174,34 @@ def process_region_forecast(
         forecast_date=forecast_date,
     )
 
-    raw_forecasts = extract_forecasts(
+    raw_cells = extract_forecasts(
         config=config,
         file_path=file_path,
     )
 
-    transformed_forecasts = transform_forecasts(
-        raw_forecasts=raw_forecasts,
+    cells = transform_forecasts(
+        raw_cells=raw_cells,
         config=config,
     )
 
-    spots_loaded = load(
-        forecasts=transformed_forecasts,
+    rows_loaded = load(
+        cells=cells,
         provider=config.provider_name,
         model=config.model_name.value,
         region=region.value,
-        run_id=run_id,
+        run_time=run_datetime,
     )
 
     cleanup_grib2_file(file_path)
 
     logger.info(
         f"Successfully processed {region.value}",
-        extra={"run_id": run_id, "spots": spots_loaded},
+        extra={"run_time": run_datetime.isoformat(), "rows": rows_loaded},
     )
 
     return {
         "status": "success",
         "region": region.value,
-        "run": run_id,
-        "spots_processed": spots_loaded,
+        "run": run_datetime.isoformat(),
+        "rows_loaded": rows_loaded,
     }

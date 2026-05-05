@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal, Self
 from pydantic import BaseModel, Field, ConfigDict
+from geoalchemy2.elements import WKTElement
 
 from utils.region import Region
 
@@ -217,8 +218,30 @@ class ForecastPoint(BaseModel):
 
 
 # ============================================================================
-# Internal DTOs (Redis Storage)
+# Internal DTOs (TimescaleDB Storage)
 # ============================================================================
+
+
+class GridCellForecast(BaseModel):
+    """Internal DTO: complete forecast timeseries for a single grid cell."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lat: float
+    lon: float
+    forecast: list[ForecastPoint]
+
+    def to_db_rows(self, model_run_id: int) -> list[dict]:
+        loc = WKTElement(f"POINT({self.lon} {self.lat})", srid=4326)
+        return [
+            {
+                "valid_time": point.valid_time,
+                "model_run_id": model_run_id,
+                "loc": loc,
+                "payload": point.model_dump(exclude_none=True, mode="json"),
+            }
+            for point in self.forecast
+        ]
 
 
 class GridMetadata(BaseModel):

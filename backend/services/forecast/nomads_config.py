@@ -80,22 +80,6 @@ class NWPSConfig(BaseModel):
     # https://nomads.ncep.noaa.gov/gribfilter.php?ds=prnwps
     # change ds={region}nwps for your specific region
 
-    # NOTE: IMPORTANT!!! nearest neighbor search for ocean
-    # lat/lons using a cKDTree requires a max distance. this field
-    # will essentially make sure that IF any SurfSpots are placed
-    # very inland, they won't select the nearest ocean cell outside
-    # of the max distance set. Refer to the NWPS resolution of your
-    # region / grib2 file to calculate the max distance.
-
-    # EXAMPLE:
-    # maui's NWPS resolution ~500m x 500m. want around ~4 cells
-    # radius so set the max distance to 2.0
-    # this may change in the future with some like of rough polygon
-    # check to ensure spots are not created inland, but its good
-    # defensive programming as of now.
-
-    max_nearest_neighbor_distance_km: float = 4.5
-
     filename_pattern: str = "{wfo}_nwps_{cg}_{date}_{time}.grib2"
     nomads_region: str  # NOMADS region code (e.g., "pr" for Pacific)
     params: list[str]
@@ -200,7 +184,6 @@ class MauiNWPSConfig(NWPSConfig):
 
     max_forecast_age_hours: int = 24
 
-    max_nearest_neighbor_distance_km: float = 2.0
     grib_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_prnwps.pl"
     filename_pattern: str = "{wfo}_nwps_{cg}_{date}_{time}.grib2"
     nomads_region: str = "pr"
