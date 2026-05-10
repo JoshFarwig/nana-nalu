@@ -1,7 +1,7 @@
 from prefect import task, get_run_logger
 
 from services.forecast.pacioos_config import PacIOOSModelConfig
-from workflows.pacioos.mappers import map_pacioos_tide_forecast
+from workflows.pacioos.tide_mhi.mapper import map_pacioos_tide_forecast
 from services.forecast.forecast_schema import GridCellForecast
 
 

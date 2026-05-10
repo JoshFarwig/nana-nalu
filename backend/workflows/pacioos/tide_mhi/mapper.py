@@ -4,6 +4,8 @@ from services.forecast.forecast_schema import (
     ForecastPoint,
 )
 
+from utils.region import Region
+
 
 def map_pacioos_tide_forecast(
     lat: float, lon: float, raw_data: dict, data_summary: dict[str, str]

@@ -14,12 +14,10 @@ from workflows.utils import stale_flow
 from workflows.nomads.nwps.tasks import (
     check_availability,
     download_grib2,
-    extract_forecasts,
-    transform_forecasts,
-    load,
+    ingest_forecasts,
 )
 from workflows.nomads.nwps.tasks.download import cleanup_grib2_file
-from workflows.nomads.nwps.tasks.load import get_last_run_time
+from workflows.nomads.nwps.tasks.sub_tasks import get_last_run_time
 
 
 @flow(name="nwps-orchestration")
@@ -123,14 +121,12 @@ def process_region_forecast(
     Process NWPS forecast for a single region.
 
     Pipeline:
-    1. Check last run time from Redis (idempotency)
+    1. Check last run time from DB (idempotency)
     2. Check NOMADS for latest available run
     3. Skip if already current or forecast too old
-    4. Download GRIB2 file (Extract)
-    5. Extract raw forecasts for surf spots
-    6. Transform raw data to unified schema
-    7. Load forecasts to DB
-    8. Cleanup temp files
+    4. Download GRIB2 file
+    5. Ingest: extract → build rows → bulk insert
+    6. Cleanup temp files
 
     Args:
         region: Geographic region to process
@@ -174,18 +170,9 @@ def process_region_forecast(
         forecast_date=forecast_date,
     )
 
-    raw_cells = extract_forecasts(
+    rows_loaded = ingest_forecasts(
         config=config,
         file_path=file_path,
-    )
-
-    cells = transform_forecasts(
-        raw_cells=raw_cells,
-        config=config,
-    )
-
-    rows_loaded = load(
-        cells=cells,
         provider=config.provider_name,
         model=config.model_name.value,
         region=region.value,

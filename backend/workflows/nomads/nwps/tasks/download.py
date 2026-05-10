@@ -9,7 +9,7 @@ from datetime import date, datetime, time, timezone
 from pathlib import Path
 
 from prefect import task, get_run_logger
-from prefect.context import get_run_context
+from prefect.context import FlowRunContext, TaskRunContext, get_run_context
 
 from workflows.resources import get_resources
 from services.forecast.nomads_config import NWPSConfig
@@ -51,8 +51,7 @@ def download_grib2(
 
     # append task_name to file_path to ensure no back-scheduled tasks run concurrently on the same grib2 file
     ctx = get_run_context()
-    file_path = DOWNLOAD_DIR / filename.replace(".grib2", f"_{ctx.task_run}.grib2")
-
+    file_path = DOWNLOAD_DIR / filename.replace(".grib2", f"_{ctx.task_run.name}.grib2")
     logger.info(
         "Downloading GRIB2 file",
         extra={

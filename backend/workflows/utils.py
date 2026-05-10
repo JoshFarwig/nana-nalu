@@ -1,7 +1,13 @@
+import math
 import numpy as np
 from datetime import datetime, timedelta, timezone
 from prefect.runtime.flow_run import get_scheduled_start_time
 from xarray import Dataset
+
+
+def nan_to_none(val) -> float | None:
+    v = float(val)
+    return None if math.isnan(v) else v
 
 
 def stale_flow(fresh_threshold: timedelta) -> bool:
@@ -17,13 +23,10 @@ def stale_flow(fresh_threshold: timedelta) -> bool:
 
 def valid_ocean_lat_lon(
     ds: Dataset,
-    t0_slice: np.ndarray,
+    mask_var: str,
     lat_dim: str = "latitude",
     lon_dim: str = "longitude",
 ) -> tuple[np.ndarray, np.ndarray]:
-    ocean_mask = ~np.isnan(t0_slice)
+    ocean_mask = ~np.isnan(ds[mask_var].values).all(axis=0)
     lat2d, lon2d = np.meshgrid(ds[lat_dim].values, ds[lon_dim].values, indexing="ij")
-    valid_lats = lat2d[ocean_mask]
-    valid_lons = lon2d[ocean_mask]
-
-    return valid_lats, valid_lons
+    return lat2d[ocean_mask], lon2d[ocean_mask]
