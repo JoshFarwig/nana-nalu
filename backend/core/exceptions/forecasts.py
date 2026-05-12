@@ -2,11 +2,6 @@ from http import HTTPStatus
 from core.exceptions.base import NanaNaluException
 
 
-# =======================
-# BASE FORECAST EXCEPTION
-# =======================
-
-
 class ForecastError(NanaNaluException):
     """Base exception for forecast errors"""
 
@@ -20,53 +15,49 @@ class ForecastError(NanaNaluException):
         super().__init__(message, error_code, status_code, details)
 
 
-# =======================
-# FORECAST EXCEPTIONS
-# =======================
+class NoModelRunError(ForecastError):
+    """No model runs ingested for provider/model/region combo."""
+
+    def __init__(self, provider: str, model: str, region: str):
+        super().__init__(
+            message=f"No model run found for {provider}:{model}:{region}",
+            error_code="no_model_run",
+            status_code=HTTPStatus.NOT_FOUND,
+            details={"provider": provider, "model": model, "region": region},
+        )
 
 
 class NoForecastDataError(ForecastError):
-    """Raised when no forecast data available in Redis (could be expired, not yet fetched, or provider down)"""
+    """Model run exists but no forecast rows match the query (coords or time filter)."""
 
     def __init__(
         self,
-        spot_id: int,
-        provider: str | None = None,
-        model: str | None = None,
+        provider: str,
+        model: str,
+        region: str,
         reason: str | None = None,
     ):
-        msg = f"No forecast data available for spot {spot_id}"
-        if provider and model:
-            msg += f" from {provider}:{model}"
-        elif provider:
-            msg += f" from provider {provider}"
-
+        msg = f"No forecast data for {provider}:{model}:{region}"
         if reason:
             msg += f". {reason}"
-        else:
-            msg += ". Data may be expired (TTL), not yet available, or provider skipped this run."
-
-        details = {"spot_id": spot_id, "provider": provider, "model": model}
-        if reason:
-            details["reason"] = reason
 
         super().__init__(
             message=msg,
             error_code="no_forecast_data",
             status_code=HTTPStatus.NOT_FOUND,
-            details=details,
+            details={"provider": provider, "model": model, "region": region},
         )
 
 
 class InvalidProviderError(ForecastError):
-    """Raised when provider name is not recognized"""
+    """Provider name is not recognized."""
 
     def __init__(self, provider: str, available_providers: list[str] | None = None):
         msg = f"Provider '{provider}' is not supported"
         details: dict[str, str | list[str]] = {"provider": provider}
 
         if available_providers:
-            msg += f". Available providers: {', '.join(available_providers)}"
+            msg += f". Available: {', '.join(available_providers)}"
             details["available_providers"] = available_providers
 
         super().__init__(
@@ -78,7 +69,7 @@ class InvalidProviderError(ForecastError):
 
 
 class InvalidModelError(ForecastError):
-    """Raised when model name is not supported for given provider"""
+    """Model name is not supported for the given provider."""
 
     def __init__(
         self, provider: str, model: str, available_models: list[str] | None = None
@@ -87,7 +78,7 @@ class InvalidModelError(ForecastError):
         details: dict[str, str | list[str]] = {"provider": provider, "model": model}
 
         if available_models:
-            msg += f". Available models: {', '.join(available_models)}"
+            msg += f". Available: {', '.join(available_models)}"
             details["available_models"] = available_models
 
         super().__init__(

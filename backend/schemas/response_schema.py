@@ -13,7 +13,7 @@ class SuccessResponse(BaseModel, Generic[T]):
     """Standard success response envelope."""
 
     success: bool = True
-    message: str = "Success"
+    message: str | None = None
     data: T | None = None
 
 

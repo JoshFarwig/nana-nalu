@@ -116,7 +116,8 @@ def create_app() -> FastAPI:
     # ======================================================
     # API v1 Router Setup
     # ======================================================
-    # Phase 5 of refactor will mount public routes (grid, forecast, buoys, health)
-    # under /api/v1. Currently empty after Phase 1 teardown of auth/user/spot routes.
+
+    from api.v1.routes.forecasts import router as forecasts_router
+    app.include_router(forecasts_router, prefix="/api/v1")
 
     return app

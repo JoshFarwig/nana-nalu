@@ -27,7 +27,9 @@ forecast_data = Table(
     Column("valid_time", DateTime(timezone=True), nullable=False),
     Column("lat", DOUBLE_PRECISION, nullable=False),
     Column("lon", DOUBLE_PRECISION, nullable=False),
-    Column("model_run_id", ForeignKey("model_runs.id"), nullable=False),
+    Column(
+        "model_run_id", ForeignKey("model_runs.id", ondelete="CASCADE"), nullable=False
+    ),
     Column("payload", JSONB, nullable=False),
     Index("ix_forecast_data_lookup", "model_run_id", "lat", "lon", "valid_time"),
 )

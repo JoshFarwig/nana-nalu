@@ -35,9 +35,11 @@ class ModelRun(Base, TimestampMixin):
     lon_origin: Mapped[float] = mapped_column(DOUBLE_PRECISION)
     lat_res: Mapped[float] = mapped_column(DOUBLE_PRECISION)
     lon_res: Mapped[float] = mapped_column(DOUBLE_PRECISION)
-    # run_time = analysis time of model run (time model pulled data) or
-    # time forecast was processed/ingested into nana-nalu
+    # run_time = analysis time published by the source model (e.g. NOMADS cycle time)
     run_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # ingest_status: Mapped[IngestStatus] = mapped_column(
     #     Enum(IngestStatus, name="ingeststatus")
+    # )
+    #     op.execute(
+    #   "SELECT create_hypertable('forecast_data', by_range('valid_time'), if_not_exists => TRUE)"
     # )

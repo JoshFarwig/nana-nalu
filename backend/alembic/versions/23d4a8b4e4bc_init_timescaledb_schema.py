@@ -1,8 +1,8 @@
 """init timescaledb schema
 
-Revision ID: 181f2a0999a0
+Revision ID: 23d4a8b4e4bc
 Revises:
-Create Date: 2026-05-09 22:17:46.038995
+Create Date: 2026-05-10 12:12:30.451396
 
 """
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "181f2a0999a0"
+revision: str = "23d4a8b4e4bc"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -64,8 +64,7 @@ def upgrade() -> None:
         sa.Column("model_run_id", sa.Integer(), nullable=False),
         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.ForeignKeyConstraint(
-            ["model_run_id"],
-            ["model_runs.id"],
+            ["model_run_id"], ["model_runs.id"], ondelete="CASCADE"
         ),
     )
     op.create_index(
@@ -74,15 +73,9 @@ def upgrade() -> None:
         ["model_run_id", "lat", "lon", "valid_time"],
         unique=False,
     )
-
     # ### end Alembic commands ###
-
     op.execute(
         "SELECT create_hypertable('forecast_data', by_range('valid_time'), if_not_exists => TRUE)"
-    )
-    # TODO: move to prefect flow to use model_run ingested_at field for retention policy
-    op.execute(
-        "SELECT add_retention_policy('forecast_data', INTERVAL '14 days', if_not_exists => TRUE)"
     )
 
 
