@@ -1,8 +1,8 @@
 """init timescaledb schema
 
-Revision ID: 23d4a8b4e4bc
+Revision ID: 36ac89e70653
 Revises:
-Create Date: 2026-05-10 12:12:30.451396
+Create Date: 2026-05-12 16:02:49.991106
 
 """
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "23d4a8b4e4bc"
+revision: str = "36ac89e70653"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -32,6 +32,10 @@ def upgrade() -> None:
         sa.Column("lon_origin", sa.DOUBLE_PRECISION(), nullable=False),
         sa.Column("lat_res", sa.DOUBLE_PRECISION(), nullable=False),
         sa.Column("lon_res", sa.DOUBLE_PRECISION(), nullable=False),
+        sa.Column("lat_count", sa.Integer(), nullable=False),
+        sa.Column("lon_count", sa.Integer(), nullable=False),
+        sa.Column("horizon_start", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("horizon_end", sa.DateTime(timezone=True), nullable=False),
         sa.Column("run_time", sa.DateTime(timezone=True), nullable=False),
         sa.Column(
             "created_at",
@@ -74,6 +78,7 @@ def upgrade() -> None:
         unique=False,
     )
     # ### end Alembic commands ###
+
     op.execute(
         "SELECT create_hypertable('forecast_data', by_range('valid_time'), if_not_exists => TRUE)"
     )

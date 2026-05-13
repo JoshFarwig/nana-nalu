@@ -38,19 +38,21 @@ async def get_point_forecast(
     service: ForecastService = Depends(get_forecast_service),
 ) -> SuccessResponse[PointForecastResponse]:
     """
-    Point forecast for a lat/lon. Snaps coords to nearest grid cell.
+    Point forecast for a lat/lon. Server resolves which enabled grid covers
+    the point, snaps coords to nearest cell. Region is derived, not requested.
 
     Time filter (pick one):
     - valid_time: single forecast timestamp
     - start + end: inclusive time range
     - neither: full forecast horizon
 
-    Raises 404 via NanaNaluException if no model run or no data for coords/time.
+    Raises:
+    - 400 InvalidForecastFilterError: lat/lon outside any enabled grid.
+    - 404 NoForecastDataError: grid covers point but no data at snapped cell / time.
     """
     run, snapped_lat, snapped_lon, points = await service.get_point_forecast(
         filters.provider,
         filters.model,
-        filters.region,
         filters.lat,
         filters.lon,
         filters.valid_time,
@@ -59,9 +61,9 @@ async def get_point_forecast(
     )
 
     data = PointForecastResponse(
-        provider=filters.provider,
-        model=filters.model,
-        region=filters.region,
+        provider=run.provider,
+        model=run.model,
+        region=run.region,
         run_time=run.run_time,
         lat=snapped_lat,
         lon=snapped_lon,

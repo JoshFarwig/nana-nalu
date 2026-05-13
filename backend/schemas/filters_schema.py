@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class FiltersBase(BaseModel):
@@ -25,9 +25,13 @@ class ForecastTimeFilter(BaseModel):
 class PointForecastFilter(ForecastTimeFilter):
     provider: str
     model: str
-    region: str
-    lat: float
-    lon: float = Field(..., ge=0, le=360, description="Longitude 0-360")
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=360, description="Longitude (-180..180 or 0..360, normalized server-side)")
+
+    @field_validator("lon")
+    @classmethod
+    def _normalize_lon(cls, v: float) -> float:
+        return v + 360 if v < 0 else v
 
 
 class GridForecastFilter(ForecastTimeFilter):

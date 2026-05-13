@@ -5,11 +5,23 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.forecasts import NoForecastDataError, NoModelRunError
+from core.exceptions.forecasts import (
+    InvalidFilterReason,
+    InvalidForecastFilterError,
+    NoDataReason,
+    NoForecastDataError,
+    NoModelRunError,
+)
 from models.forecast_data import forecast_data
 from models.model_run import ModelRun
 from repositories.model_run_repository import ModelRunRepository
-from schemas.forecast_schema import AvailableRunsResponse, ForecastPoint, ModelRunInfo
+from schemas.forecast_schema import (
+    AvailableRunsResponse,
+    ForecastPoint,
+    GridBounds,
+    ModelRunInfo,
+    TimeHorizon,
+)
 from utils.geo_spatial import snap_lat_lon
 
 logger = logging.getLogger(__name__)
@@ -26,7 +38,6 @@ class ForecastService:
         self,
         provider: str,
         model: str,
-        region: str,
         lat: float,
         lon: float,
         valid_time: datetime | None = None,
@@ -34,13 +45,39 @@ class ForecastService:
         end: datetime | None = None,
     ) -> tuple[ModelRun, float, float, list[ForecastPoint]]:
         """
-        Resolve latest run → snap coords → query → return validated ForecastPoints.
+        Resolve covering run via lat/lon → snap coords → query → return validated ForecastPoints.
 
         Raises:
-            NoModelRunError: No runs ingested for provider/model/region.
-            NoForecastDataError: Run exists but no rows match coords/time filter.
+            InvalidForecastFilterError: No enabled grid covers (lat, lon) for provider/model.
+            NoForecastDataError: Grid covers point but no rows match snapped cell / time filter.
         """
-        run = await self._require_latest_run(provider, model, region)
+        run = await self.repo.get_latest_for_point(provider, model, lat, lon)
+        if not run:
+            available = await self.repo.get_enabled_grids(provider, model)
+            logger.warning(
+                f"OOB miss: provider={provider!r} model={model!r} available_count={len(available)}"
+            )
+            raise InvalidForecastFilterError(
+                reason=InvalidFilterReason.OUT_OF_BOUNDS,
+                context={
+                    "provider": provider,
+                    "model": model,
+                    "lat": lat,
+                    "lon": lon,
+                    "available_grids": [
+                        {
+                            "region": g.region,
+                            "bounds": GridBounds(
+                                lat_min=g.lat_origin,
+                                lat_max=g.lat_max,
+                                lon_min=g.lon_origin,
+                                lon_max=g.lon_max,
+                            ).model_dump(),
+                        }
+                        for g in available
+                    ],
+                },
+            )
 
         snapped_lat, snapped_lon = snap_lat_lon(
             run.lat_origin,
@@ -50,8 +87,6 @@ class ForecastService:
             lat,
             lon,
         )
-
-        logger.debug(f"snapped lat lon: {snapped_lat, snapped_lon}")
 
         rows = await self._query_point(
             run.id,
@@ -65,7 +100,24 @@ class ForecastService:
         )
 
         if not rows:
-            raise NoForecastDataError(provider, model, region)
+            reason = (
+                NoDataReason.TIME_FILTER
+                if (valid_time or start or end)
+                else NoDataReason.COORDINATES
+            )
+            raise NoForecastDataError(
+                run.provider,
+                run.model,
+                run.region,
+                reason=reason,
+                context={
+                    "snapped_lat": snapped_lat,
+                    "snapped_lon": snapped_lon,
+                    "valid_time": valid_time.isoformat() if valid_time else None,
+                    "start": start.isoformat() if start else None,
+                    "end": end.isoformat() if end else None,
+                },
+            )
 
         points = [ForecastPoint.model_validate(r.payload) for r in rows]
         return run, snapped_lat, snapped_lon, points
@@ -91,22 +143,34 @@ class ForecastService:
         rows = await self._query_grid(run.id, valid_time, start, end)
 
         if not rows:
-            raise NoForecastDataError(provider, model, region)
+            raise NoForecastDataError(
+                provider, model, region, reason=NoDataReason.TIME_FILTER
+            )
 
         return run, rows
 
     async def get_available_runs(self) -> AvailableRunsResponse:
-        """Returns all ingested provider/model/region combos with their latest run time."""
-        combos = await self.repo.get_distinct_combos()
+        """All ingested combos with bounds + time horizon. Frontend caches for map UX."""
+        runs = await self.repo.get_distinct_combos()
         return AvailableRunsResponse(
             runs=[
                 ModelRunInfo(
-                    provider=row.provider,
-                    model=row.model,
-                    region=row.region,
-                    latest_run_time=row.latest_run_time,
+                    provider=run.provider,
+                    model=run.model,
+                    region=run.region,
+                    latest_run_time=run.run_time,
+                    bounds=GridBounds(
+                        lat_min=run.lat_origin,
+                        lat_max=run.lat_max,
+                        lon_min=run.lon_origin,
+                        lon_max=run.lon_max,
+                    ),
+                    horizon=TimeHorizon(
+                        start=run.horizon_start,
+                        end=run.horizon_end,
+                    ),
                 )
-                for row in combos
+                for run in runs
             ]
         )
 

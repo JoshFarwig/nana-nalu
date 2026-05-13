@@ -66,6 +66,8 @@ def ingest_forecasts(
     lon_origin = float(lon_vals[0])
     lat_res = float(lat_vals[1] - lat_vals[0])
     lon_res = float(lon_vals[1] - lon_vals[0])
+    lat_count = len(lat_vals)
+    lon_count = len(lon_vals)
 
     # vectorized pointwise select across all ocean cells (lazy until .values below)
     cell_ds = ds.sel(
@@ -81,6 +83,9 @@ def ingest_forecasts(
         str(var): cell_ds[var].values for var in cell_ds.data_vars
     }
 
+    horizon_start = min(valid_times)
+    horizon_end = min(valid_times)
+
     ds.close()
     cell_ds.close()
 
@@ -94,7 +99,11 @@ def ingest_forecasts(
             lon_origin=lon_origin,
             lat_res=lat_res,
             lon_res=lon_res,
+            lat_count=lat_count,
+            lon_count=lon_count,
             run_time=run_time,
+            horizon_start=horizon_start,
+            horizon_end=horizon_end,
         )
         session.add(run)
         session.flush()

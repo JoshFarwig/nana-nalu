@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Literal
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ForecastProvider(str, Enum):
@@ -136,11 +136,30 @@ class GridForecastResponse(BaseModel):
     rows: list[GridForecastRow]
 
 
+class GridBounds(BaseModel):
+    lat_min: float
+    lat_max: float
+    lon_min: float = Field(description="Longitude min (0-360)")
+    lon_max: float = Field(description="Longitude max (0-360)")
+
+    @field_validator("lat_min", "lat_max", "lon_min", "lon_max")
+    @classmethod
+    def _round(cls, v: float) -> float:
+        return round(v, 6)
+
+
+class TimeHorizon(BaseModel):
+    start: datetime = Field(description="Earliest valid_time in run")
+    end: datetime = Field(description="Latest valid_time in run")
+
+
 class ModelRunInfo(BaseModel):
     provider: str
     model: str
     region: str
     latest_run_time: datetime
+    bounds: GridBounds
+    horizon: TimeHorizon
 
 
 class AvailableRunsResponse(BaseModel):
