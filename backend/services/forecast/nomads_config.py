@@ -4,7 +4,9 @@ from enum import Enum
 from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from utils.region import Region, RegionGrid, get_enabled_regions
+from domain.models import NOMADSModel
+from domain.provider import ForecastProvider
+from domain.region import Region, RegionGrid, get_enabled_regions
 from utils.geo_validation import longitude_to_360
 
 logger = logging.getLogger(__name__)
@@ -12,17 +14,6 @@ logger = logging.getLogger(__name__)
 # =======================
 # CORE CONFIGURATIONS
 # =======================
-
-
-class NOMADSModel(str, Enum):
-    """
-    Available NOMADS ocean models.
-
-    Generic model types - location determines regional variant.
-    """
-
-    NWPS = "nwps"
-    GFS_WAVE = "gfs_wave"
 
 
 class WFO(str, Enum):
@@ -36,7 +27,7 @@ class NWPSConfig(BaseModel):
 
     region: Region  # Geographic region (MAUI, OAHU, etc.)
     model_name: NOMADSModel
-    provider_name: str = "nomads"
+    provider_name: ForecastProvider = ForecastProvider.NOMADS
     wfo: WFO
 
     # NWPS computational grid identifier (CG0-CG5)

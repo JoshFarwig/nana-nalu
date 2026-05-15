@@ -1,21 +1,6 @@
 from datetime import datetime
-from enum import Enum
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-
-class ForecastProvider(str, Enum):
-    NOMADS = "nomads"
-    PACIOOS = "pacioos"
-
-
-class ForecastModel(str, Enum):
-    NWPS = "nwps"
-    GFS_WAVE = "gfs_wave"
-    TIDE = "tide"
-    SWAN = "swan"
-    WRF = "wrf"
-    WAVEWATCH3 = "wavewatch3"
 
 
 class WaveUnits(BaseModel):

@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services.forecast.forecast_schema import ForecastModel, ForecastProvider
+from domain.models import PacIOOSModel
+from domain.provider import ForecastProvider
 from utils.region import Region
 from workflows.pacioos.mapper import map_pacioos_tide_forecast
 
@@ -39,7 +40,7 @@ def result(raw_tide_data):
 class TestPacIOOSTideMetadata:
     def test_provider_and_model(self, result):
         assert result.provider == ForecastProvider.PACIOOS
-        assert result.model == ForecastModel.TIDE
+        assert result.model == PacIOOSModel.TIDE_MHI
 
     def test_forecast_length_matches_valid_times(self, result, raw_tide_data):
         assert len(result.forecast) == len(raw_tide_data["valid_times"])

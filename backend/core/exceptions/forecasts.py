@@ -136,3 +136,32 @@ class InvalidModelError(ForecastError):
             status_code=HTTPStatus.BAD_REQUEST,
             details=details,
         )
+
+
+class UnknownRegionError(ForecastError):
+    """Region is a valid enum value but not enabled in this deployment."""
+
+    def __init__(self, region: str, available_regions: list[str]):
+        super().__init__(
+            message=f"Region '{region}' is not enabled",
+            error_code="unknown_region",
+            status_code=HTTPStatus.BAD_REQUEST,
+            details={"region": region, "available_regions": available_regions},
+        )
+
+
+class UnknownRunComboError(ForecastError):
+    """Provider/model/region triple is well-typed but has no registered config."""
+
+    def __init__(self, provider: str, model: str, region: str, available: list[dict]):
+        super().__init__(
+            message=f"No registered configuration for {provider}/{model}/{region}",
+            error_code="unknown_run_combo",
+            status_code=HTTPStatus.BAD_REQUEST,
+            details={
+                "provider": provider,
+                "model": model,
+                "region": region,
+                "available": available,
+            },
+        )

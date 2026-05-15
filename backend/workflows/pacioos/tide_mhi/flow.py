@@ -4,12 +4,12 @@ from prefect import State, flow, get_run_logger
 from prefect.states import Completed, Failed
 
 from workflows.utils import stale_flow
+from domain.models import PacIOOSModel
+from domain.region import Region
 from services.forecast.pacioos_config import (
-    PacIOOSModel,
     get_enabled_regions_for_model,
     get_pacioos_config,
 )
-from utils.region import Region
 
 from .tasks import download_netcdf, extract_forecasts, transform_forecasts, load
 from .tasks.download import cleanup_netcdf_file

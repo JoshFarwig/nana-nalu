@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.exceptions.base import NanaNaluException, StartupError
-from utils.region import get_enabled_regions
+from domain.region import get_enabled_regions
 from core.exceptions.handlers import (
     generic_exception_handler,
     validation_exception_handler,

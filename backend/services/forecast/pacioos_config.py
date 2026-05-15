@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime, timezone, timedelta
-from enum import Enum
-from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
-from utils.region import Region, RegionGrid, get_enabled_regions
+from domain.models import PacIOOSModel
+from domain.provider import ForecastProvider
+from domain.region import Region, RegionGrid, get_enabled_regions
 
 logger = logging.getLogger(__name__)
 
@@ -14,19 +14,6 @@ logger = logging.getLogger(__name__)
 # =======================
 
 
-class PacIOOSModel(str, Enum):
-    """
-    Available PacIOOS ocean models.
-
-    Generic model types - location determines regional variant.
-    """
-
-    TIDE_MHI = "tide_mhi"
-    SWAN = "swan"
-    WRF = "wrf"
-    ROMS = "roms"
-
-
 class PacIOOSModelConfig(BaseModel):
     """Base configuration for all PacIOOS models."""
 
@@ -34,7 +21,7 @@ class PacIOOSModelConfig(BaseModel):
 
     region: Region  # geographic region (MAUI, OAHU, etc.)
     model_name: PacIOOSModel
-    provider_name: Literal["pacioos"] = "pacioos"
+    provider_name: ForecastProvider = ForecastProvider.PACIOOS
 
     # ERDDAP GridDAP access
     erddap_base_url: str = "https://pae-paha.pacioos.hawaii.edu/erddap"

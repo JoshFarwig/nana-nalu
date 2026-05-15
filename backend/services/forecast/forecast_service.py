@@ -105,18 +105,24 @@ class ForecastService:
                 if (valid_time or start or end)
                 else NoDataReason.COORDINATES
             )
+            context: dict = {
+                "available_horizon": {
+                    "start": run.horizon_start.isoformat(),
+                    "end": run.horizon_end.isoformat(),
+                },
+            }
+            if valid_time:
+                context["valid_time"] = valid_time.isoformat()
+            if start:
+                context["start"] = start.isoformat()
+            if end:
+                context["end"] = end.isoformat()
             raise NoForecastDataError(
                 run.provider,
                 run.model,
                 run.region,
                 reason=reason,
-                context={
-                    "snapped_lat": snapped_lat,
-                    "snapped_lon": snapped_lon,
-                    "valid_time": valid_time.isoformat() if valid_time else None,
-                    "start": start.isoformat() if start else None,
-                    "end": end.isoformat() if end else None,
-                },
+                context=context,
             )
 
         points = [ForecastPoint.model_validate(r.payload) for r in rows]
@@ -150,7 +156,10 @@ class ForecastService:
         return run, rows
 
     async def get_available_runs(self) -> AvailableRunsResponse:
-        """All ingested combos with bounds + time horizon. Frontend caches for map UX."""
+        """Enabled-region runs with bounds + time horizon. Frontend caches for map UX."""
+        from domain.region import get_enabled_regions
+
+        enabled = get_enabled_regions()
         runs = await self.repo.get_distinct_combos()
         return AvailableRunsResponse(
             runs=[
@@ -171,6 +180,7 @@ class ForecastService:
                     ),
                 )
                 for run in runs
+                if run.region in {r.value for r in enabled}
             ]
         )
 

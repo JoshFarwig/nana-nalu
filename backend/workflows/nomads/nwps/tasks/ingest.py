@@ -84,7 +84,7 @@ def ingest_forecasts(
     }
 
     horizon_start = min(valid_times)
-    horizon_end = min(valid_times)
+    horizon_end = max(valid_times)
 
     ds.close()
     cell_ds.close()

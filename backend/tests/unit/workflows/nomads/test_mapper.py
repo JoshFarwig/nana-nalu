@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services.forecast.forecast_schema import ForecastModel, ForecastProvider
+from domain.models import NOMADSModel
+from domain.provider import ForecastProvider
 from utils.region import Region
 from workflows.nomads.mapper import map_nwps_forecast
 
@@ -74,7 +75,7 @@ class TestNWPSFieldMapping:
 class TestNWPSMetadata:
     def test_provider_and_model(self, result):
         assert result.provider == ForecastProvider.NOMADS
-        assert result.model == ForecastModel.NWPS
+        assert result.model == NOMADSModel.NWPS
 
     def test_region_and_spot_id(self, result, raw_nwps_data):
         assert result.region == Region.MAUI

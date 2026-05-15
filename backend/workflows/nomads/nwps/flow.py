@@ -3,12 +3,12 @@ from datetime import datetime, timedelta, timezone
 from prefect import State, flow, get_run_logger
 from prefect.states import Failed, Completed
 
+from domain.models import NOMADSModel
+from domain.region import Region
 from services.forecast.nomads_config import (
-    NOMADSModel,
     get_enabled_regions_for_model,
     get_nomads_config,
 )
-from utils.region import Region
 
 from workflows.utils import stale_flow
 from workflows.nomads.nwps.tasks import (

@@ -1,10 +1,10 @@
-from services.forecast.forecast_schema import (
-    GridCellForecast,
+from schemas.forecast_schema import (
     TideData,
     ForecastPoint,
 )
+# TODO: GridCellForecast removed from forecast_schema — update return type
 
-from utils.region import Region
+from domain.region import Region
 
 
 def map_pacioos_tide_forecast(
@@ -23,7 +23,7 @@ def map_pacioos_tide_forecast(
         for i, valid_time in enumerate(raw_data["valid_times"])
     ]
 
-    return GridCellForecast(lat=lat, lon=lon, forecast=forecast)
+    return forecast
 
 
 def map_pacioos_swan_forecast(

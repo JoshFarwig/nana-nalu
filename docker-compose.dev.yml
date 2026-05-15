@@ -25,6 +25,7 @@ services:
       - ./backend/core:/backend/core:cached
       - ./backend/utils:/backend/utils:cached
       - ./backend/repositories:/backend/repositories:cached
+      - ./backend/domain:/backend/domain:cached
     networks: [nn_network]
 
   prefect-server:
@@ -47,6 +48,7 @@ services:
       - ./backend/core:/backend/core:cached
       - ./backend/utils:/backend/utils:cached
       - ./backend/repositories:/backend/repositories:cached
+      - ./backend/domain:/backend/domain:cached
     networks: [nn_network]
 
 networks:
