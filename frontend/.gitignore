@@ -12,6 +12,20 @@ dist
 dist-ssr
 *.local
 
+# TS incremental build cache
+*.tsbuildinfo
+
+# TanStack Router/Start cache
+.tanstack
+
+# TanStack Router generated route tree
+src/routeTree.gen.ts
+
+# Env
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
