@@ -7,6 +7,8 @@ from core.exceptions.base import NanaNaluException
 class ForecastError(NanaNaluException):
     """Base exception for forecast errors"""
 
+    client_safe_details: bool = True
+
     def __init__(
         self,
         message: str,
@@ -27,9 +29,9 @@ class InvalidForecastFilterError(ForecastError):
     """Input parameters rejected — not a data miss, a malformed query."""
 
     _MESSAGES = {
-        InvalidFilterReason.OUT_OF_BOUNDS: "Coordinates outside grid extent",
-        InvalidFilterReason.TIME_RANGE: "Invalid time range",
-        InvalidFilterReason.TIME_HORIZON: "Time outside forecast horizon",
+        InvalidFilterReason.OUT_OF_BOUNDS: "Coordinates are outside the available grid.",
+        InvalidFilterReason.TIME_RANGE: "Requested time range is invalid.",
+        InvalidFilterReason.TIME_HORIZON: "Requested time is outside the forecast horizon.",
     }
 
     def __init__(self, reason: InvalidFilterReason, context: dict | None = None):
@@ -37,7 +39,7 @@ class InvalidForecastFilterError(ForecastError):
         if context:
             details.update(context)
         super().__init__(
-            message=f"Invalid forecast filter: {self._MESSAGES[reason]}",
+            message=self._MESSAGES[reason],
             error_code="invalid_forecast_filter",
             status_code=HTTPStatus.BAD_REQUEST,
             details=details,
@@ -55,10 +57,10 @@ class NoForecastDataError(ForecastError):
     """Model run exists but no forecast rows match the query (coords or time filter)."""
 
     _MESSAGES = {
-        NoDataReason.TIME_FILTER: "No data for requested time range",
-        NoDataReason.COORDINATES: "No data at requested coordinates",
-        NoDataReason.BOTH: "No data for requested coordinates and time",
-        NoDataReason.UNKNOWN: "Query matched no rows",
+        NoDataReason.TIME_FILTER: "No forecast data for the requested time.",
+        NoDataReason.COORDINATES: "No forecast data at the requested coordinates.",
+        NoDataReason.BOTH: "No forecast data for the requested coordinates and time.",
+        NoDataReason.UNKNOWN: "No forecast data matches this query.",
     }
 
     def __init__(
@@ -79,7 +81,7 @@ class NoForecastDataError(ForecastError):
             details.update(context)
 
         super().__init__(
-            message=f"No forecast data for {provider}:{model}:{region}. {self._MESSAGES[reason]}",
+            message=self._MESSAGES[reason],
             error_code="no_forecast_data",
             status_code=HTTPStatus.NOT_FOUND,
             details=details,
@@ -90,15 +92,12 @@ class InvalidProviderError(ForecastError):
     """Provider name is not recognized."""
 
     def __init__(self, provider: str, available_providers: list[str] | None = None):
-        msg = f"Provider '{provider}' is not supported"
         details: dict[str, str | list[str]] = {"provider": provider}
-
         if available_providers:
-            msg += f". Available: {', '.join(available_providers)}"
             details["available_providers"] = available_providers
 
         super().__init__(
-            message=msg,
+            message="Selected provider is not available.",
             error_code="invalid_provider",
             status_code=HTTPStatus.BAD_REQUEST,
             details=details,
@@ -110,7 +109,7 @@ class NoModelRunError(ForecastError):
 
     def __init__(self, provider: str, model: str, region: str):
         super().__init__(
-            message=f"No model run found for {provider}:{model}:{region}",
+            message="No forecast run is available for this selection.",
             error_code="no_model_run",
             status_code=HTTPStatus.NOT_FOUND,
             details={"provider": provider, "model": model, "region": region},
@@ -123,15 +122,12 @@ class InvalidModelError(ForecastError):
     def __init__(
         self, provider: str, model: str, available_models: list[str] | None = None
     ):
-        msg = f"Model '{model}' is not supported for provider '{provider}'"
         details: dict[str, str | list[str]] = {"provider": provider, "model": model}
-
         if available_models:
-            msg += f". Available: {', '.join(available_models)}"
             details["available_models"] = available_models
 
         super().__init__(
-            message=msg,
+            message="Selected model is not available for this provider.",
             error_code="invalid_model",
             status_code=HTTPStatus.BAD_REQUEST,
             details=details,
@@ -143,7 +139,7 @@ class UnknownRegionError(ForecastError):
 
     def __init__(self, region: str, available_regions: list[str]):
         super().__init__(
-            message=f"Region '{region}' is not enabled",
+            message="Selected region is not enabled.",
             error_code="unknown_region",
             status_code=HTTPStatus.BAD_REQUEST,
             details={"region": region, "available_regions": available_regions},
@@ -155,7 +151,7 @@ class UnknownRunComboError(ForecastError):
 
     def __init__(self, provider: str, model: str, region: str, available: list[dict]):
         super().__init__(
-            message=f"No registered configuration for {provider}/{model}/{region}",
+            message="That provider, model, and region combination isn't available.",
             error_code="unknown_run_combo",
             status_code=HTTPStatus.BAD_REQUEST,
             details={

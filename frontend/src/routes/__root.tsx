@@ -1,8 +1,9 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 import { CornerPill } from "@/components/corner-pill";
-import { ThemeProvider } from "@/components/theme-provider";
+import { AppProviders } from "@/contexts/app-providers";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -10,14 +11,19 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+    <AppProviders>
       <div className="relative h-screen w-full">
         <main className="h-full w-full overflow-hidden">
           <Outlet />
         </main>
         <CornerPill />
-        <TanStackRouterDevtools />
+        {import.meta.env.DEV && (
+          <>
+            <ReactQueryDevtools />
+            <TanStackRouterDevtools />
+          </>
+        )}
       </div>
-    </ThemeProvider>
+    </AppProviders>
   );
 }

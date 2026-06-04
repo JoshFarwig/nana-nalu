@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 
 from core.exceptions.base import NanaNaluException
 from schemas.response_schema import ErrorResponse
+from utils.env import Environment, get_env
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +128,12 @@ def nana_nalu_exception_handler(
         extra=log_extra,
     )
 
-    # don't expose internal security details to client for 403 errors
-    response_details = None if status_code == status.HTTP_403_FORBIDDEN else exc.details
+    expose_details = get_env() != Environment.PROD or exc.client_safe_details
+    response_details = (
+        None
+        if (status_code == status.HTTP_403_FORBIDDEN or not expose_details)
+        else exc.details
+    )
 
     response = ErrorResponse(
         message=exc.message,

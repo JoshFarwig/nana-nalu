@@ -24,7 +24,7 @@ src/routeTree.gen.ts
 # Env
 .env
 .env.*
-!.env.example
+!.env.sample
 
 # Editor directories and files
 .vscode/*

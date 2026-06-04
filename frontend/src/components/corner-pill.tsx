@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
 import { ModeToggle } from "@/components/mode-toggle";
-import { useTheme } from "@/components/theme-provider";
+import { useTheme } from "@/contexts/theme-context";
 import { cn } from "@/lib/utils";
 
 type CornerPillProps = {
@@ -21,7 +21,7 @@ export function CornerPill({ className }: CornerPillProps) {
       <Link to="/map" className="flex items-center">
         <img
           src={resolvedTheme === "dark" ? "/dark_logo.svg" : "/light_logo.svg"}
-          className="h-7 w-auto"
+          className="h-7 m-1 w-auto"
           alt="Nana Nalu"
         />
       </Link>

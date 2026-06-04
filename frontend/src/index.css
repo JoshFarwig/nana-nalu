@@ -121,8 +121,22 @@
   * {
     @apply border-border outline-ring/50;
     }
+  @media (prefers-reduced-motion: no-preference) {
+    @supports not (view-transition-name: none) {
+      *, *::before, *::after {
+        transition:
+          background-color 200ms ease,
+          border-color 200ms ease,
+          color 200ms ease;
+      }
+    }
+  }
   body {
     @apply bg-background text-foreground;
+    }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 250ms;
     }
   .maplibregl-popup-content {
     @apply bg-transparent! shadow-none! p-0! rounded-none!;

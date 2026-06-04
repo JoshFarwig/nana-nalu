@@ -1,5 +1,10 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { MapPin, Map as MapIcon, Settings, type LucideIcon } from "lucide-react";
+import {
+  MapPin,
+  Map as MapIcon,
+  Settings,
+  type LucideIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -28,7 +33,7 @@ export function Sidebar({ children, className }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "fixed top-2 left-2 bottom-2 z-30 flex w-12 flex-col items-center gap-1 rounded-lg border bg-background py-2 shadow-sm",
+        "fixed top-1/2 left-2 -translate-y-1/2 z-30 flex w-12 flex-col items-center justify-center gap-1 rounded-lg border bg-background py-2 shadow-sm max-h-[90vh] overflow-y-auto",
         className,
       )}
     >

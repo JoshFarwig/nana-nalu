@@ -14,6 +14,8 @@ class NanaNaluException(Exception):
     allow for centralized logging and error handling
     """
 
+    client_safe_details: bool = False
+
     def __init__(
         self,
         message: str,

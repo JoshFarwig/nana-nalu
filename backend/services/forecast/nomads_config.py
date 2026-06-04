@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from domain.models import NOMADSModel
 from domain.provider import ForecastProvider
 from domain.region import Region, RegionGrid, get_enabled_regions
+from schemas.forecast_schema import FieldMeta
 from utils.geo_validation import longitude_to_360
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,10 @@ class NWPSConfig(BaseModel):
     def grid(self) -> RegionGrid:
         """Get grid bounds from the region."""
         return self.region.grid
+
+    @property
+    def fields(self) -> list[FieldMeta]:
+        raise NotImplementedError(f"{type(self).__name__} must define fields")
 
     @field_validator("params")
     @classmethod
@@ -156,6 +161,18 @@ class NWPSConfig(BaseModel):
 # HFO CONFIGURATIONS
 # =======================
 
+# directional: angle-only, uniform arrow length
+# scalar: heatmap
+_MAUI_NWPS_FIELDS: list[FieldMeta] = [
+    FieldMeta(id="wave_significant_height",   path="wave.significant_height",   label="Wave Height",      unit="m",   viz_type="scalar"),
+    FieldMeta(id="wave_peak_period",          path="wave.peak_period",          label="Peak Period",      unit="s",   viz_type="scalar"),
+    FieldMeta(id="wave_peak_direction",       path="wave.peak_direction",       label="Peak Direction",   unit="°",   viz_type="directional"),
+    FieldMeta(id="wave_primary_swell_height", path="wave.primary_swell.height", label="Swell Height",     unit="m",   viz_type="scalar"),
+    FieldMeta(id="wind_speed",                path="wind.speed",                label="Wind Speed",       unit="m/s", viz_type="scalar"),
+    FieldMeta(id="wind_direction",            path="wind.direction",            label="Wind Direction",   unit="°",   viz_type="directional"),
+    FieldMeta(id="tide_height",               path="tide.height",               label="Tide Height",      unit="m",   viz_type="scalar"),
+]
+
 
 class MauiNWPSConfig(NWPSConfig):
     model_config = ConfigDict(frozen=True)
@@ -204,6 +221,10 @@ class MauiNWPSConfig(NWPSConfig):
         "var_WIND",
     ]
     levels: list[str] = ["lev_surface"]
+
+    @property
+    def fields(self) -> list[FieldMeta]:
+        return _MAUI_NWPS_FIELDS
 
 
 # =================================

@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.exceptions.base import NanaNaluException, StartupError
@@ -12,6 +13,7 @@ from core.exceptions.handlers import (
     http_exception_handler,
     nana_nalu_exception_handler,
 )
+from utils.env import Environment, get_env
 
 from .startup import cleanup_app, init_app
 
@@ -83,6 +85,27 @@ def create_app() -> FastAPI:
         version=api_version,
         description="Surf forecasting and spot management API",
         lifespan=create_lifespan(),
+    )
+
+    # CORS — restrict per environment.
+    # LOCAL/DEV: allow Vite dev server origin(s).
+    # PROD: read from CORS_ALLOW_ORIGINS env var (comma-separated).
+    env = get_env()
+    if env in (Environment.LOCAL, Environment.DEV, Environment.TEST):
+        allow_origins = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+    else:
+        raw = os.getenv("CORS_ALLOW_ORIGINS", "")
+        allow_origins = [o.strip() for o in raw.split(",") if o.strip()]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     # exception handlers

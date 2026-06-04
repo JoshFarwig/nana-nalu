@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from domain.models import PacIOOSModel
 from domain.provider import ForecastProvider
 from domain.region import Region, RegionGrid, get_enabled_regions
+from schemas.forecast_schema import FieldMeta
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,10 @@ class PacIOOSModelConfig(BaseModel):
         default={},
         description="Category-level descriptions of what each data type represents",
     )
+
+    @property
+    def fields(self) -> list[FieldMeta]:
+        raise NotImplementedError(f"{type(self).__name__} must define fields")
 
     @property
     def grid(self) -> RegionGrid:
@@ -104,6 +109,10 @@ class PacIOOSModelConfig(BaseModel):
 # TIDAL MODEL CONFIGURATIONS
 # =======================
 
+_MAUI_TIDE_FIELDS: list[FieldMeta] = [
+    FieldMeta(id="tide_height", path="tide.height", label="Tide Height", unit="m", viz_type="scalar"),
+]
+
 
 class MauiTideConfig(PacIOOSModelConfig):
     """
@@ -138,6 +147,10 @@ class MauiTideConfig(PacIOOSModelConfig):
     data_summary: dict[str, str] = {
         "tide": "Astronomical tide predictions from harmonic analysis (does not include storm surge or wind effects)"
     }
+
+    @property
+    def fields(self) -> list[FieldMeta]:
+        return _MAUI_TIDE_FIELDS
 
 
 # =======================

@@ -3,39 +3,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class WaveUnits(BaseModel):
+class FieldMeta(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    significant_height: Literal["m"] = "m"
-    peak_period: Literal["s"] = "s"
-    peak_direction: Literal["degrees_true_from"] = "degrees_true_from"
-    wind_wave_height: Literal["m"] = "m"
-    wind_wave_period: Literal["s"] = "s"
-    wind_wave_direction: Literal["degrees_true_from"] = "degrees_true_from"
-    swell_height: Literal["m"] = "m"
-    swell_period: Literal["s"] = "s"
-    swell_direction: Literal["degrees_true_from"] = "degrees_true_from"
-
-
-class WindUnits(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    speed: Literal["m/s"] = "m/s"
-    direction: Literal["degrees_true_from"] = "degrees_true_from"
-
-
-class CurrentUnits(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    speed: Literal["m/s"] = "m/s"
-    direction: Literal["degrees_true_toward"] = "degrees_true_toward"
-
-
-class TideUnits(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    height: Literal["m"] = "m"
-    surge: Literal["m"] = "m"
+    id: str    # stable public slug, e.g. "wave_significant_height"
+    path: str  # dot-path into ForecastPoint for value extraction, e.g. "wave.significant_height"
+    label: str
+    unit: str
+    viz_type: Literal["scalar", "directional"]
 
 
 class SwellPartition(BaseModel):
@@ -43,35 +18,65 @@ class SwellPartition(BaseModel):
 
     height: float | None = Field(default=None, description="Swell height (m)")
     period: float | None = Field(default=None, description="Swell period (s)")
-    direction: float | None = Field(default=None, ge=0, le=360, description="Swell direction, degrees true (from)")
+    direction: float | None = Field(
+        default=None, ge=0, le=360, description="Swell direction, degrees true (from)"
+    )
 
 
 class WaveData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    significant_height: float | None = Field(default=None, description="Significant wave height, combined (m)")
-    peak_period: float | None = Field(default=None, description="Peak period of dominant component (s)")
-    peak_direction: float | None = Field(default=None, ge=0, le=360, description="Direction of dominant component, degrees true (from)")
-    wind_wave_height: float | None = Field(default=None, description="Significant height of wind waves (m)")
-    wind_wave_period: float | None = Field(default=None, description="Period of wind waves (s)")
-    wind_wave_direction: float | None = Field(default=None, ge=0, le=360, description="Direction of wind waves, degrees true (from)")
-    primary_swell: SwellPartition | None = Field(default=None, description="Dominant swell system")
-    secondary_swell: SwellPartition | None = Field(default=None, description="Second swell system")
-    tertiary_swell: SwellPartition | None = Field(default=None, description="Third swell system")
+    significant_height: float | None = Field(
+        default=None, description="Significant wave height, combined (m)"
+    )
+    peak_period: float | None = Field(
+        default=None, description="Peak period of dominant component (s)"
+    )
+    peak_direction: float | None = Field(
+        default=None,
+        ge=0,
+        le=360,
+        description="Direction of dominant component, degrees true (from)",
+    )
+    wind_wave_height: float | None = Field(
+        default=None, description="Significant height of wind waves (m)"
+    )
+    wind_wave_period: float | None = Field(
+        default=None, description="Period of wind waves (s)"
+    )
+    wind_wave_direction: float | None = Field(
+        default=None,
+        ge=0,
+        le=360,
+        description="Direction of wind waves, degrees true (from)",
+    )
+    primary_swell: SwellPartition | None = Field(
+        default=None, description="Dominant swell system"
+    )
+    secondary_swell: SwellPartition | None = Field(
+        default=None, description="Second swell system"
+    )
+    tertiary_swell: SwellPartition | None = Field(
+        default=None, description="Third swell system"
+    )
 
 
 class WindData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     speed: float | None = Field(default=None, description="Wind speed (m/s)")
-    direction: float | None = Field(default=None, ge=0, le=360, description="Wind direction, degrees true (from)")
+    direction: float | None = Field(
+        default=None, ge=0, le=360, description="Wind direction, degrees true (from)"
+    )
 
 
 class CurrentData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     speed: float | None = Field(default=None, description="Current speed (m/s)")
-    direction: float | None = Field(default=None, description="Current direction, degrees true (toward)")
+    direction: float | None = Field(
+        default=None, description="Current direction, degrees true (toward)"
+    )
 
 
 class TideData(BaseModel):
@@ -138,14 +143,23 @@ class TimeHorizon(BaseModel):
     end: datetime = Field(description="Latest valid_time in run")
 
 
-class ModelRunInfo(BaseModel):
-    provider: str
-    model: str
-    region: str
+class RegionInfo(BaseModel):
+    id: str
     latest_run_time: datetime
     bounds: GridBounds
     horizon: TimeHorizon
 
 
+class ModelInfo(BaseModel):
+    id: str
+    fields: list[FieldMeta]
+    regions: list[RegionInfo]
+
+
+class ProviderInfo(BaseModel):
+    id: str
+    models: list[ModelInfo]
+
+
 class AvailableRunsResponse(BaseModel):
-    runs: list[ModelRunInfo]
+    providers: list[ProviderInfo]

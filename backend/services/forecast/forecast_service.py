@@ -19,7 +19,9 @@ from schemas.forecast_schema import (
     AvailableRunsResponse,
     ForecastPoint,
     GridBounds,
-    ModelRunInfo,
+    ModelInfo,
+    ProviderInfo,
+    RegionInfo,
     TimeHorizon,
 )
 from utils.geo_spatial import snap_lat_lon
@@ -156,33 +158,46 @@ class ForecastService:
         return run, rows
 
     async def get_available_runs(self) -> AvailableRunsResponse:
-        """Enabled-region runs with bounds + time horizon. Frontend caches for map UX."""
-        from domain.region import get_enabled_regions
+        """Enabled-region runs grouped by provider → model, with fields + region metadata."""
+        from collections import defaultdict
 
-        enabled = get_enabled_regions()
-        runs = await self.repo.get_distinct_combos()
-        return AvailableRunsResponse(
-            runs=[
-                ModelRunInfo(
-                    provider=run.provider,
-                    model=run.model,
-                    region=run.region,
-                    latest_run_time=run.run_time,
-                    bounds=GridBounds(
-                        lat_min=run.lat_origin,
-                        lat_max=run.lat_max,
-                        lon_min=run.lon_origin,
-                        lon_max=run.lon_max,
-                    ),
-                    horizon=TimeHorizon(
-                        start=run.horizon_start,
-                        end=run.horizon_end,
-                    ),
-                )
-                for run in runs
-                if run.region in {r.value for r in enabled}
-            ]
-        )
+        from domain.region import get_enabled_regions
+        from services.forecast.config_registries import get_fields_for_run
+
+        enabled = {r.value for r in get_enabled_regions()}
+        all_runs = await self.repo.get_distinct_combos()
+        filtered = [r for r in all_runs if r.region in enabled]
+
+        provider_map: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+        for run in filtered:
+            provider_map[run.provider][run.model].append(run)
+
+        providers = []
+        for provider_id, models in provider_map.items():
+            model_list = []
+            for model_id, model_runs in models.items():
+                fields = get_fields_for_run(provider_id, model_id, model_runs[0].region)
+                regions = [
+                    RegionInfo(
+                        id=run.region,
+                        latest_run_time=run.run_time,
+                        bounds=GridBounds(
+                            lat_min=run.lat_origin,
+                            lat_max=run.lat_max,
+                            lon_min=run.lon_origin,
+                            lon_max=run.lon_max,
+                        ),
+                        horizon=TimeHorizon(
+                            start=run.horizon_start,
+                            end=run.horizon_end,
+                        ),
+                    )
+                    for run in model_runs
+                ]
+                model_list.append(ModelInfo(id=model_id, fields=fields, regions=regions))
+            providers.append(ProviderInfo(id=provider_id, models=model_list))
+
+        return AvailableRunsResponse(providers=providers)
 
     async def _require_latest_run(
         self, provider: str, model: str, region: str
