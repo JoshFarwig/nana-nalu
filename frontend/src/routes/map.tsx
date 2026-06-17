@@ -7,7 +7,6 @@ import { LayersTool } from "@/components/map/tools/layers-tool";
 import { Sidebar, SidebarTool } from "@/components/sidebar";
 
 import { useTheme } from "@/contexts/theme-context";
-import { useDataSelection } from "@/contexts/data-selection-context";
 
 export const Route = createFileRoute("/map")({
   component: MapPage,
@@ -18,7 +17,6 @@ type ToolId = "layers" | "inspect" | "time" | null;
 function MapPage() {
   const { resolvedTheme } = useTheme();
   const [openTool, setOpenTool] = useState<ToolId>(null);
-  const { selection } = useDataSelection();
 
   const handleToggleTool = (id: Exclude<ToolId, null>) => {
     setOpenTool((prev) => (prev === id ? null : id));
@@ -31,9 +29,6 @@ function MapPage() {
       <Sidebar>
         <LayersTool />
       </Sidebar>
-
-      {/* TODO: wire `selection` into map popups + field filtering */}
-      {selection.field && null}
     </>
   );
 }

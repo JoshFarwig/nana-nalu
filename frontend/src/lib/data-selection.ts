@@ -1,5 +1,6 @@
 import type {
   AvailableRunsResponse,
+  FieldMeta,
   ModelInfo,
   ProviderInfo,
 } from "@/api/forecasts";
@@ -131,4 +132,19 @@ export function availableFields(
   if (!providerId || !modelId) return [];
   const provider = data.providers.find((p) => p.id === providerId);
   return provider?.models.find((m) => m.id === modelId)?.fields ?? [];
+}
+
+/**
+ * Resolve the selected field id to its full FieldMeta against current data.
+ * Returns null if data missing or any selection dim is unset / not found.
+ */
+export function selectedField(
+  data: AvailableRunsResponse | null,
+  selection: DataSelection,
+): FieldMeta | null {
+  const { provider, model, field } = selection;
+  if (!data || !provider || !model || !field) return null;
+  return (
+    availableFields(data, provider, model).find((f) => f.id === field) ?? null
+  );
 }

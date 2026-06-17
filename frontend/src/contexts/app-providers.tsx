@@ -8,16 +8,17 @@ import {
 import { toast } from "sonner";
 
 import { ThemeProvider } from "@/contexts/theme-context";
-import { DataSelectionProvider } from "@/contexts/data-selection-context";
 import { Toaster } from "@/components/ui/sonner";
+
+import { ForecastDataBridge } from "@/components/data/forecast-data-bridge";
+
 import { ApiError } from "@/api/client";
 
 const FALLBACK_MESSAGE = "Something went wrong. Please try again.";
 
 function handleApiError(err: unknown, scope: "query" | "mutation") {
   const isApi = err instanceof ApiError;
-  const userMessage =
-    err instanceof Error ? err.message : FALLBACK_MESSAGE;
+  const userMessage = err instanceof Error ? err.message : FALLBACK_MESSAGE;
 
   if (import.meta.env.DEV) {
     console.error(`[${scope}]`, {
@@ -52,8 +53,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <DataSelectionProvider>{children}</DataSelectionProvider>
+        <ForecastDataBridge />
         <Toaster richColors closeButton />
+        {children}
       </QueryClientProvider>
     </ThemeProvider>
   );
