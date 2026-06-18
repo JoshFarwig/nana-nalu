@@ -11,7 +11,6 @@ from schemas.forecast_schema import (
 from schemas.response_schema import SuccessResponse
 from services.forecast.forecast_service import ForecastService
 
-
 router = APIRouter(prefix="/forecasts", tags=["forecasts"])
 
 
@@ -50,14 +49,16 @@ async def get_point_forecast(
     - 400 InvalidForecastFilterError: lat/lon outside any enabled grid.
     - 404 NoForecastDataError: grid covers point but no data at snapped cell / time.
     """
-    run, snapped_lat, snapped_lon, points = await service.get_point_forecast(
-        filters.provider,
-        filters.model,
-        filters.lat,
-        filters.lon,
-        filters.valid_time,
-        filters.start,
-        filters.end,
+    run, snapped_lat, snapped_lon, cell_bounds, points = (
+        await service.get_point_forecast(
+            filters.provider,
+            filters.model,
+            filters.lat,
+            filters.lon,
+            filters.valid_time,
+            filters.start,
+            filters.end,
+        )
     )
 
     data = PointForecastResponse(
@@ -67,6 +68,7 @@ async def get_point_forecast(
         run_time=run.run_time,
         lat=snapped_lat,
         lon=snapped_lon,
+        cell_bounds=cell_bounds,
         points=points,
     )
     return SuccessResponse(data=data)

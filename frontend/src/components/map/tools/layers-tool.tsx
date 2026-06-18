@@ -38,32 +38,6 @@ export function LayersTool() {
           <div className="flex flex-col min-w-0">
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2">
-                <Waves className="size-4" />
-                Data Selection
-              </SheetTitle>
-              <SheetDescription>
-                Pick a provider, model, and field to narrow data for the inspect
-                tool and your field map layer.
-              </SheetDescription>
-            </SheetHeader>
-
-            {/* Data selection context / statuses */}
-            <div className="flex flex-col gap-4 px-6">
-              <DataSelectionStatus>
-                <DataSelectionField label="Provider">
-                  <ProviderSelect />
-                </DataSelectionField>
-                <DataSelectionField label="Model">
-                  <ModelSelect />
-                </DataSelectionField>
-                <DataSelectionField label="Field">
-                  <FieldSelect />
-                </DataSelectionField>
-              </DataSelectionStatus>
-            </div>
-
-            <SheetHeader>
-              <SheetTitle className="flex items-center gap-2">
                 <Layers2 className="size-4" />
                 Map Layers
               </SheetTitle>

@@ -48,6 +48,61 @@ export type AvailableRunsResponse = {
 
 // getForecastPoint()
 
+export type SwellPartition = {
+  height: number | null;
+  period: number | null;
+  direction: number | null;
+};
+
+export type WaveData = {
+  significant_height: number | null;
+  peak_period: number | null;
+  peak_direction: number | null;
+  wind_wave_height: number | null;
+  wind_wave_period: number | null;
+  wind_wave_direction: number | null;
+  primary_swell: SwellPartition | null;
+  secondary_swell: SwellPartition | null;
+  tertiary_swell: SwellPartition | null;
+};
+
+export type WindData = { speed: number | null; direction: number | null };
+export type CurrentData = { speed: number | null; direction: number | null };
+export type TideData = { height: number | null };
+
+export type ForecastPoint = {
+  valid_time: string; // ISO
+  wave: WaveData | null;
+  wind: WindData | null;
+  tide: TideData | null;
+  current: CurrentData | null;
+};
+
+export type PointForecastResponse = {
+  provider: string;
+  model: string;
+  region: string;
+  run_time: string;
+  lat: number;
+  lon: number;
+  points: ForecastPoint[];
+};
+
+export async function getForecastPoint(p: {
+  provider: string;
+  model: string;
+  lat: number;
+  lon: number;
+  validTime?: string;
+}): Promise<PointForecastResponse> {
+  return apiFetch("/forecasts/point", {
+    provider: p.provider,
+    model: p.model,
+    lat: String(p.lat),
+    lon: String(p.lon), // raw lng, backend normalizes
+    ...(p.validTime ? { valid_time: p.validTime } : {}),
+  });
+}
 // getForecastGrind()
 
 // API functions

@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class FieldMeta(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    id: str    # stable public slug, e.g. "wave_significant_height"
+    id: str  # stable public slug, e.g. "wave_significant_height"
     path: str  # dot-path into ForecastPoint for value extraction, e.g. "wave.significant_height"
     label: str
     unit: str
@@ -102,16 +102,6 @@ class ForecastPoint(BaseModel):
 # ======================================================
 
 
-class PointForecastResponse(BaseModel):
-    provider: str
-    model: str
-    region: str
-    run_time: datetime
-    lat: float
-    lon: float
-    points: list[ForecastPoint]
-
-
 class GridForecastRow(BaseModel):
     lat: float
     lon: float
@@ -126,7 +116,7 @@ class GridForecastResponse(BaseModel):
     rows: list[GridForecastRow]
 
 
-class GridBounds(BaseModel):
+class CoordBounds(BaseModel):
     lat_min: float
     lat_max: float
     lon_min: float = Field(description="Longitude min (0-360)")
@@ -146,7 +136,7 @@ class TimeHorizon(BaseModel):
 class RegionInfo(BaseModel):
     id: str
     latest_run_time: datetime
-    bounds: GridBounds
+    region_bounds: CoordBounds
     horizon: TimeHorizon
 
 
@@ -163,3 +153,14 @@ class ProviderInfo(BaseModel):
 
 class AvailableRunsResponse(BaseModel):
     providers: list[ProviderInfo]
+
+
+class PointForecastResponse(BaseModel):
+    provider: str
+    model: str
+    region: str
+    run_time: datetime
+    lat: float
+    lon: float
+    cell_bounds: CoordBounds
+    points: list[ForecastPoint]

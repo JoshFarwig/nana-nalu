@@ -18,13 +18,13 @@ from repositories.model_run_repository import ModelRunRepository
 from schemas.forecast_schema import (
     AvailableRunsResponse,
     ForecastPoint,
-    GridBounds,
+    CoordBounds,
     ModelInfo,
     ProviderInfo,
     RegionInfo,
     TimeHorizon,
 )
-from utils.geo_spatial import snap_lat_lon
+from utils.geo_spatial import calc_cell_bounds, snap_lat_lon
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +45,16 @@ class ForecastService:
         valid_time: datetime | None = None,
         start: datetime | None = None,
         end: datetime | None = None,
-    ) -> tuple[ModelRun, float, float, list[ForecastPoint]]:
+    ) -> tuple[ModelRun, float, float, CoordBounds, list[ForecastPoint]]:
         """
         Resolve covering run via lat/lon → snap coords → query → return validated ForecastPoints.
+
+        Returns:
+            run: The ModelRun whose grid covers (lat, lon).
+            snapped_lat: Input lat snapped to the nearest grid cell center.
+            snapped_lon: Input lon snapped to the nearest grid cell center.
+            cell_bounds: Lat/lon extent of the snapped cell, for client display.
+            points: Validated ForecastPoints for the cell, ordered by valid_time.
 
         Raises:
             InvalidForecastFilterError: No enabled grid covers (lat, lon) for provider/model.
@@ -69,7 +76,7 @@ class ForecastService:
                     "available_grids": [
                         {
                             "region": g.region,
-                            "bounds": GridBounds(
+                            "bounds": CoordBounds(
                                 lat_min=g.lat_origin,
                                 lat_max=g.lat_max,
                                 lon_min=g.lon_origin,
@@ -88,6 +95,10 @@ class ForecastService:
             run.lon_res,
             lat,
             lon,
+        )
+
+        cell_bounds = calc_cell_bounds(
+            snapped_lat, snapped_lon, run.lat_res, run.lon_res
         )
 
         rows = await self._query_point(
@@ -128,7 +139,7 @@ class ForecastService:
             )
 
         points = [ForecastPoint.model_validate(r.payload) for r in rows]
-        return run, snapped_lat, snapped_lon, points
+        return run, snapped_lat, snapped_lon, cell_bounds, points
 
     async def get_grid_forecast(
         self,
@@ -168,7 +179,9 @@ class ForecastService:
         all_runs = await self.repo.get_distinct_combos()
         filtered = [r for r in all_runs if r.region in enabled]
 
-        provider_map: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+        provider_map: dict[str, dict[str, list]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         for run in filtered:
             provider_map[run.provider][run.model].append(run)
 
@@ -181,7 +194,7 @@ class ForecastService:
                     RegionInfo(
                         id=run.region,
                         latest_run_time=run.run_time,
-                        bounds=GridBounds(
+                        region_bounds=CoordBounds(
                             lat_min=run.lat_origin,
                             lat_max=run.lat_max,
                             lon_min=run.lon_origin,
@@ -194,7 +207,9 @@ class ForecastService:
                     )
                     for run in model_runs
                 ]
-                model_list.append(ModelInfo(id=model_id, fields=fields, regions=regions))
+                model_list.append(
+                    ModelInfo(id=model_id, fields=fields, regions=regions)
+                )
             providers.append(ProviderInfo(id=provider_id, models=model_list))
 
         return AvailableRunsResponse(providers=providers)
