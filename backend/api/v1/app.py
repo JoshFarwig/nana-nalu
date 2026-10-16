@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.exceptions.base import NanaNaluException, StartupError
@@ -111,7 +110,6 @@ def create_app() -> FastAPI:
     # exception handlers
     app.add_exception_handler(NanaNaluException, nana_nalu_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
-    app.add_exception_handler(ValidationError, validation_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, generic_exception_handler)
 

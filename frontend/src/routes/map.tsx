@@ -21,7 +21,8 @@ function MapPage() {
   return (
     <>
       <Map theme={resolvedTheme} center={[-156.5, 20.5]} zoom={6}>
-        <FieldmapLayer />
+        {/* SPIKE: static sample PNG, dev only until the raster pipeline lands */}
+        {import.meta.env.DEV && <FieldmapLayer />}
         <InspectToolListener />
         <InspectPopup />
       </Map>

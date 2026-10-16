@@ -60,6 +60,8 @@ class ForecastService:
             InvalidForecastFilterError: No enabled grid covers (lat, lon) for provider/model.
             NoForecastDataError: Grid covers point but no rows match snapped cell / time filter.
         """
+        # TODO: consider resolution + latest run time for selected point,
+        # no-op if none returned or err?
         run = await self.repo.get_latest_for_point(provider, model, lat, lon)
         if not run:
             available = await self.repo.get_enabled_grids(provider, model)

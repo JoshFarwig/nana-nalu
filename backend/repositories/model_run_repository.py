@@ -26,9 +26,7 @@ class ModelRunRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_enabled_grids(
-        self, provider: str, model: str
-    ) -> Sequence[ModelRun]:
+    async def get_enabled_grids(self, provider: str, model: str) -> Sequence[ModelRun]:
         """Latest run per region for provider/model. Used to advertise coverage on OOB errors."""
         latest = (
             select(
@@ -56,6 +54,8 @@ class ModelRunRepository:
         self, provider: str, model: str, lat: float, lon: float
     ) -> ModelRun | None:
         """Latest run from any enabled region whose grid covers (lat, lon)."""
+        # TODO: consider resolution + latest run time for selected point,
+        # no-op if none returned or err?
         result = await self.session.execute(
             select(ModelRun)
             .where(
