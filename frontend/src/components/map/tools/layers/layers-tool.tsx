@@ -1,13 +1,6 @@
 import { SidebarTool } from "@/components/sidebar";
-import {
-  DataSelectionField,
-  DataSelectionStatus,
-  FieldSelect,
-  ModelSelect,
-  ProviderSelect,
-} from "@/components/data-selection";
 import { useState } from "react";
-import { Layers2, Waves, SlidersHorizontal, MapPin } from "lucide-react";
+import { Layers2, SlidersHorizontal, MapPin } from "lucide-react";
 import {
   Sheet,
   SheetContent,

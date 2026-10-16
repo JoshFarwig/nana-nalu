@@ -56,12 +56,6 @@ def upgrade() -> None:
     )
     op.create_table(
         "forecast_data",
-        sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=True,
-        ),
         sa.Column("valid_time", sa.DateTime(timezone=True), nullable=False),
         sa.Column("lat", sa.DOUBLE_PRECISION(), nullable=False),
         sa.Column("lon", sa.DOUBLE_PRECISION(), nullable=False),

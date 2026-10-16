@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.exceptions.base import NanaNaluException, StartupError
@@ -16,7 +17,6 @@ from core.exceptions.handlers import (
 from utils.env import Environment, get_env
 
 from .startup import cleanup_app, init_app
-
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,7 @@ def create_app() -> FastAPI:
     # exception handlers
     app.add_exception_handler(NanaNaluException, nana_nalu_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(ValidationError, validation_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, generic_exception_handler)
 
@@ -141,6 +142,7 @@ def create_app() -> FastAPI:
     # ======================================================
 
     from api.v1.routes.forecasts import router as forecasts_router
+
     app.include_router(forecasts_router, prefix="/api/v1")
 
     return app

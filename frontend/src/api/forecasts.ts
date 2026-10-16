@@ -1,50 +1,67 @@
+import { z } from "zod";
 import { apiFetch } from "@/api/client";
 
 // types mirrored from backend schemas/forecast_schema.py
 
 // getAvailable()
 
-export type FieldMeta = {
-  id: string;
-  path: string;
-  label: string;
-  unit: string;
-  viz_type: "scalar" | "directional";
-};
+const CoordBoundsSchema = z.object({
+  lat_min: z.number(),
+  lat_max: z.number(),
+  lon_min: z.number(),
+  lon_max: z.number(),
+});
 
-export type GridBounds = {
-  lat_min: number;
-  lat_max: number;
-  lon_min: number;
-  lon_max: number;
-};
+const TimeHorizonSchema = z.object({
+  start: z.string(),
+  end: z.string(),
+});
 
-export type TimeHorizon = {
-  start: string;
-  end: string;
-};
+const RegionInfoSchema = z.object({
+  id: z.string(),
+  latest_run_time: z.string(),
+  region_bounds: CoordBoundsSchema,
+  horizon: TimeHorizonSchema,
+});
 
-export type RegionInfo = {
-  id: string;
-  latest_run_time: string;
-  bounds: GridBounds;
-  horizon: TimeHorizon;
-};
+const FieldMetaSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  label: z.string(),
+  unit: z.string(),
+  viz_type: z.enum(["scalar", "directional"]),
+  group: z.string(),
+  role: z.enum(["magnitude", "direction", "scalar"]),
+  // absent for non-direction fields (backend strips None via exclude_none)
+  direction_convention: z.enum(["from", "toward"]).optional(),
+});
 
-export type ModelInfo = {
-  id: string;
-  fields: FieldMeta[];
-  regions: RegionInfo[];
-};
+const ModelInfoSchema = z.object({
+  id: z.string(),
+  fields: z.array(FieldMetaSchema),
+  regions: z.array(RegionInfoSchema),
+});
 
-export type ProviderInfo = {
-  id: string;
-  models: ModelInfo[];
-};
+const ProviderInfoSchema = z.object({
+  id: z.string(),
+  models: z.array(ModelInfoSchema),
+});
 
-export type AvailableRunsResponse = {
-  providers: ProviderInfo[];
-};
+const AvailableRunsResponseSchema = z.object({
+  providers: z.array(ProviderInfoSchema),
+});
+
+export type FieldMeta = z.infer<typeof FieldMetaSchema>;
+export type RegionInfo = z.infer<typeof RegionInfoSchema>;
+export type ModelInfo = z.infer<typeof ModelInfoSchema>;
+export type ProviderInfo = z.infer<typeof ProviderInfoSchema>;
+export type AvailableRunsResponse = z.infer<typeof AvailableRunsResponseSchema>;
+
+export async function getAvailable(): Promise<AvailableRunsResponse> {
+  return await apiFetch("/forecasts/available", {
+    schema: AvailableRunsResponseSchema,
+  });
+}
 
 // getForecastPoint()
 
@@ -78,10 +95,18 @@ export type ForecastPoint = {
   current: CurrentData | null;
 };
 
+export type CellBounds = {
+  lat_min: number;
+  lat_max: number;
+  lon_min: number;
+  lon_max: number;
+};
+
 export type PointForecastResponse = {
   provider: string;
   model: string;
   region: string;
+  cell_bounds: CellBounds;
   run_time: string;
   lat: number;
   lon: number;
@@ -94,19 +119,18 @@ export async function getForecastPoint(p: {
   lat: number;
   lon: number;
   validTime?: string;
+  start?: string;
+  end?: string;
 }): Promise<PointForecastResponse> {
   return apiFetch("/forecasts/point", {
-    provider: p.provider,
-    model: p.model,
-    lat: String(p.lat),
-    lon: String(p.lon), // raw lng, backend normalizes
-    ...(p.validTime ? { valid_time: p.validTime } : {}),
+    params: {
+      provider: p.provider,
+      model: p.model,
+      lat: String(p.lat),
+      lon: String(p.lon), // raw lng, backend normalizes
+      ...(p.validTime ? { valid_time: p.validTime } : {}),
+      ...(p.start ? { start: p.start } : {}),
+      ...(p.end ? { end: p.end } : {}),
+    },
   });
-}
-// getForecastGrind()
-
-// API functions
-
-export async function getAvailable(): Promise<AvailableRunsResponse> {
-  return await apiFetch("/forecasts/available");
 }

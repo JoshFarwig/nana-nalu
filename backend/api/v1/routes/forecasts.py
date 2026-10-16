@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 
 from core.dependencies.services import get_forecast_service
 from schemas.filters_schema import GridForecastFilter, PointForecastFilter
@@ -33,7 +35,7 @@ async def get_available_runs(
     response_model_exclude_none=True,
 )
 async def get_point_forecast(
-    filters: PointForecastFilter = Depends(),
+    filters: Annotated[PointForecastFilter, Query()],
     service: ForecastService = Depends(get_forecast_service),
 ) -> SuccessResponse[PointForecastResponse]:
     """
@@ -80,7 +82,7 @@ async def get_point_forecast(
     response_model_exclude_none=True,
 )
 async def get_grid_forecast(
-    filters: GridForecastFilter = Depends(),
+    filters: Annotated[GridForecastFilter, Query()],
     service: ForecastService = Depends(get_forecast_service),
 ) -> SuccessResponse[GridForecastResponse]:
     """

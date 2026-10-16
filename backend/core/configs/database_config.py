@@ -21,7 +21,7 @@ class DatabaseConfig(BaseModel):
 
     # async engine config
     # set higher pool size / overflow depending on estimated traffic
-    async_pool_size: int = 10
+    async_pool_size: int = 15
     async_max_overflow: int = 20
     async_pool_timeout: int = 30
     async_pool_pre_ping: bool = True

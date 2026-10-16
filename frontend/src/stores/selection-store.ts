@@ -13,7 +13,7 @@ import {
   availableModels,
   availableFields,
   selectedField,
-} from "@/lib/data-selection";
+} from "@/lib/forecast/selection";
 import { type AvailableRunsResponse } from "@/api/forecasts";
 
 type Status = "loading" | "ready" | "empty" | "error";
@@ -125,6 +125,17 @@ export const useModelOptions = () =>
   );
 
 export const useFieldOptions = () =>
+  useSelectionStore(
+    useShallow((s) =>
+      s.available
+        ? availableFields(s.available, s.selection.provider, s.selection.model)
+        : [],
+    ),
+  );
+
+// full FieldMeta[] for the selected model — glyph/table build off ALL fields,
+// not the single focused field. Stable ref into `available` per option.
+export const useModelFields = () =>
   useSelectionStore(
     useShallow((s) =>
       s.available

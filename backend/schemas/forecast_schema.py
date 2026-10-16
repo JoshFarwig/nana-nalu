@@ -1,6 +1,16 @@
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
+
+# Max decimals worth keeping for coordinates; also strips float-arithmetic
+# noise from origin + n*res. ~0.11m at the equator — finer than any grid.
+MAX_COORD_DP = 6
 
 
 class FieldMeta(BaseModel):
@@ -10,7 +20,30 @@ class FieldMeta(BaseModel):
     path: str  # dot-path into ForecastPoint for value extraction, e.g. "wave.significant_height"
     label: str
     unit: str
-    viz_type: Literal["scalar", "directional"]
+    viz_type: Literal["scalar", "directional"]  # how to paint the raster layer
+    group: (
+        str  # physical component, e.g. "combined_sea", "wind", "primary_swell", "tide"
+    )
+    role: Literal["magnitude", "direction", "scalar"]
+    # FROM vs TOWARD reference frame for the arrow. Required iff role=="direction"
+    # (meaningless otherwise): "from" = meteorological origin (wave/wind comes FROM),
+    # "toward" = oceanographic travel (current flows TOWARD). Unset -> stripped by
+    # response_model_exclude_none, so it's absent on the wire for non-direction fields.
+    direction_convention: Literal["from", "toward"] | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def validate_direction_convention(self) -> "FieldMeta":
+        is_direction = self.role == "direction"
+        has_convention = self.direction_convention is not None
+        if is_direction and not has_convention:
+            raise ValueError(
+                f"FieldMeta {self.id!r}: role='direction' requires direction_convention"
+            )
+        if not is_direction and has_convention:
+            raise ValueError(
+                f"FieldMeta {self.id!r}: direction_convention only valid for role='direction'"
+            )
+        return self
 
 
 class SwellPartition(BaseModel):
@@ -125,7 +158,10 @@ class CoordBounds(BaseModel):
     @field_validator("lat_min", "lat_max", "lon_min", "lon_max")
     @classmethod
     def _round(cls, v: float) -> float:
-        return round(v, 6)
+        # Float-noise floor for any bounds (region extents, OOB grids).
+        # Cell bounds are already rounded per-resolution upstream; this is
+        # idempotent on those since res precision never exceeds MAX_COORD_DP.
+        return round(v, MAX_COORD_DP)
 
 
 class TimeHorizon(BaseModel):

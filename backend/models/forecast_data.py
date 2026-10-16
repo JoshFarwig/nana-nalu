@@ -15,7 +15,6 @@ from sqlalchemy import (
     Index,
     Table,
     Column,
-    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from models.base_model import Base
@@ -23,7 +22,6 @@ from models.base_model import Base
 forecast_data = Table(
     "forecast_data",
     Base.metadata,
-    Column("ingested_at", DateTime(timezone=True), server_default=func.now()),
     Column("valid_time", DateTime(timezone=True), nullable=False),
     Column("lat", DOUBLE_PRECISION, nullable=False),
     Column("lon", DOUBLE_PRECISION, nullable=False),

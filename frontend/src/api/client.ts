@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 if (import.meta.env.DEV && !BASE_URL) {
@@ -42,8 +44,9 @@ function devLog(path: string, params: unknown, error: unknown) {
 
 export async function apiFetch<T>(
   path: string,
-  params?: Record<string, string>,
+  opts?: { params?: Record<string, string>; schema?: z.ZodType<T> },
 ): Promise<T> {
+  const { params, schema } = opts ?? {};
   const url = new URL(`${BASE_URL}${path}`);
   if (params)
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -84,6 +87,21 @@ export async function apiFetch<T>(
     );
     devLog(path, params, error);
     throw error;
+  }
+
+  if (schema) {
+    const parsed = schema.safeParse(json.data);
+    if (!parsed.success) {
+      const error = new ApiError(
+        "invalid_response",
+        "API response failed schema validation.",
+        { cause: z.treeifyError(parsed.error) },
+        res.status,
+      );
+      devLog(path, params, error);
+      throw error;
+    }
+    return parsed.data;
   }
 
   return json.data as T;

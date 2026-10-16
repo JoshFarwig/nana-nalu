@@ -110,7 +110,7 @@ class PacIOOSModelConfig(BaseModel):
 # =======================
 
 _MAUI_TIDE_FIELDS: list[FieldMeta] = [
-    FieldMeta(id="tide_height", path="tide.height", label="Tide Height", unit="m", viz_type="scalar"),
+    FieldMeta(id="tide_height", path="tide.height", label="Tide Height", unit="m", viz_type="scalar", group="tide", role="scalar"),
 ]
 
 
